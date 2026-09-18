@@ -2,9 +2,10 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 export const BACKEND = process.env.RP_BACKEND || 'http://localhost:8293';
 if (!/^http:\/\/localhost:8293$/.test(BACKEND)) throw new Error(`S-C 只允许打 8293，当前 ${BACKEND}`);
-export const S = path.dirname(new URL(import.meta.url).pathname);
+export const S = path.dirname(fileURLToPath(import.meta.url));
 let cookie = '';
 export let FAILS = 0;
 export const pass = (m) => console.log('✅ PASS:', m);

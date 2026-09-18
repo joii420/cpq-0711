@@ -1,0 +1,52 @@
+{
+  "request": [
+    {
+      "col_key": "col_1",
+      "title": "col_1",
+      "hidden": false,
+      "source_type": "TAB_JOIN_FORMULA",
+      "expression": "[物料.材料成本(小计)]",
+      "tabs": [
+        {
+          "alias": "物料",
+          "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+          "rowKeyFields": [
+            "销售料号",
+            "料号"
+          ]
+        }
+      ]
+    }
+  ],
+  "response": {
+    "status": 200,
+    "body": {
+      "code": 200,
+      "message": "success",
+      "data": "[{\"col_key\":\"col_1\",\"title\":\"col_1\",\"hidden\":false,\"source_type\":\"TAB_JOIN_FORMULA\",\"expression\":\"[物料.材料成本(小计)]\",\"tabs\":[{\"alias\":\"物料\",\"tabKey\":\"b3445979-e3d6-4cdb-ab2d-53758b5f2eb2\",\"rowKeyFields\":[\"销售料号\",\"料号\"]}]}]"
+    }
+  },
+  "getAfter": {
+    "code": 200,
+    "message": "success",
+    "data": [
+      {
+        "tabs": [
+          {
+            "alias": "物料",
+            "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+            "rowKeyFields": [
+              "销售料号",
+              "料号"
+            ]
+          }
+        ],
+        "title": "col_1",
+        "hidden": false,
+        "col_key": "col_1",
+        "expression": "[物料.材料成本(小计)]",
+        "source_type": "TAB_JOIN_FORMULA"
+      }
+    ]
+  }
+}

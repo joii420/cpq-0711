@@ -1,0 +1,364 @@
+{
+  "config": {
+    "configFile": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/playwright.config.ts",
+    "rootDir": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/global-setup.ts",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ],
+      [
+        "list"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "quotation-flow.spec.ts",
+      "file": "quotation-flow.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "LEGACY SIMPLE smoke · 报价单流程: 苏州西门子 + 报价模板0608 v1.10 + 10110002(渲染层无回归)",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "timedOut",
+                  "duration": 30283,
+                  "error": {
+                    "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m",
+                    "stack": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                  },
+                  "errors": [
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    },
+                    {
+                      "location": {
+                        "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                        "column": 55,
+                        "line": 208
+                      },
+                      "message": "Error: locator.click: Test timeout of 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('.ant-form-item').filter({ has: locator('label').filter({ hasText: '报价模板' }) }).first().locator('.ant-select').first()\u001b[22m\n\n\n\u001b[0m \u001b[90m 206 |\u001b[39m       \u001b[33m.\u001b[39mfilter({ has\u001b[33m:\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'label'\u001b[39m\u001b[33m,\u001b[39m { hasText\u001b[33m:\u001b[39m \u001b[32m'报价模板'\u001b[39m }) })\n \u001b[90m 207 |\u001b[39m       \u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 208 |\u001b[39m     \u001b[36mawait\u001b[39m templateItem\u001b[33m.\u001b[39mlocator(\u001b[32m'.ant-select'\u001b[39m)\u001b[33m.\u001b[39mfirst()\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                       \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 209 |\u001b[39m     \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m300\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 210 |\u001b[39m\n \u001b[90m 211 |\u001b[39m     \u001b[90m// 输入 \"0608\" 缩小候选集\u001b[39m\u001b[0m\n\u001b[2m    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:208:55\u001b[22m"
+                    },
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "📸 after-login → /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/screenshots/qf-01-after-login.png\n"
+                    },
+                    {
+                      "text": "📸 step1-init → /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/screenshots/qf-02-step1-init.png\n"
+                    },
+                    {
+                      "text": "📸 customer-selected → /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/screenshots/qf-03-customer-selected.png\n"
+                    },
+                    {
+                      "text": "📸 after-customer → /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/screenshots/qf-04-after-customer.png\n"
+                    },
+                    {
+                      "text": "📸 name-filled → /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/screenshots/qf-05-name-filled.png\n"
+                    },
+                    {
+                      "text": "📸 category-selected → /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/screenshots/qf-06-category-selected.png\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-17T12:18:27.179Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/test-results/quotation-flow-LEGACY-SIMP-8153a-0608-v1-10-10110002-渲染层无回归-/error-context.md"
+                    }
+                  ]
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1fa41b2187e9a363d879-850b15906a277bee762b",
+          "file": "quotation-flow.spec.ts",
+          "line": 144,
+          "column": 1
+        },
+        {
+          "title": "TC-F1: 打开 DRAFT 报价单不自动发 refresh-card-snapshot",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 23082,
+                  "error": {
+                    "message": "Error: 编辑态 Step1(客户/模板已锁定预填)下一步应可点\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('button', { name: /下一步/ }).first()\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - 编辑态 Step1(客户/模板已锁定预填)下一步应可点 with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: /下一步/ }).first()\u001b[22m\n\u001b[2m    19 × locator resolved to <button disabled type=\"button\" title=\"请先填写产品分类和报价模板\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid\">…</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n",
+                    "stack": "Error: 编辑态 Step1(客户/模板已锁定预填)下一步应可点\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('button', { name: /下一步/ }).first()\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - 编辑态 Step1(客户/模板已锁定预填)下一步应可点 with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: /下一步/ }).first()\u001b[22m\n\u001b[2m    19 × locator resolved to <button disabled type=\"button\" title=\"请先填写产品分类和报价模板\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid\">…</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n\n    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:489:61",
+                    "location": {
+                      "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                      "column": 61,
+                      "line": 489
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 487 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m3000\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 488 |\u001b[39m   \u001b[36mconst\u001b[39m step1NextBtn \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[35m/下一步/\u001b[39m })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 489 |\u001b[39m   \u001b[36mawait\u001b[39m expect(step1NextBtn\u001b[33m,\u001b[39m \u001b[32m'编辑态 Step1(客户/模板已锁定预填)下一步应可点'\u001b[39m)\u001b[33m.\u001b[39mtoBeEnabled({ timeout\u001b[33m:\u001b[39m \u001b[35m15000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 490 |\u001b[39m   \u001b[36mawait\u001b[39m step1NextBtn\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 491 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForLoadState(\u001b[32m'networkidle'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 492 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m1000\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                        "column": 61,
+                        "line": 489
+                      },
+                      "message": "Error: 编辑态 Step1(客户/模板已锁定预填)下一步应可点\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('button', { name: /下一步/ }).first()\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - 编辑态 Step1(客户/模板已锁定预填)下一步应可点 with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: /下一步/ }).first()\u001b[22m\n\u001b[2m    19 × locator resolved to <button disabled type=\"button\" title=\"请先填写产品分类和报价模板\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid\">…</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n\n\n\u001b[0m \u001b[90m 487 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m3000\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 488 |\u001b[39m   \u001b[36mconst\u001b[39m step1NextBtn \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[35m/下一步/\u001b[39m })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 489 |\u001b[39m   \u001b[36mawait\u001b[39m expect(step1NextBtn\u001b[33m,\u001b[39m \u001b[32m'编辑态 Step1(客户/模板已锁定预填)下一步应可点'\u001b[39m)\u001b[33m.\u001b[39mtoBeEnabled({ timeout\u001b[33m:\u001b[39m \u001b[35m15000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                             \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 490 |\u001b[39m   \u001b[36mawait\u001b[39m step1NextBtn\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 491 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForLoadState(\u001b[32m'networkidle'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 492 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m1000\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:489:61\u001b[22m"
+                    },
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "[createMinimalDraft] 创建测试报价单成功 id=6d9d6c8c-e82f-4c38-8a6e-6d83a199d21a\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-17T12:19:28.063Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/test-results/quotation-flow-TC-F1-打开-DRAFT-报价单不自动发-refresh-card-snapshot/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                    "column": 61,
+                    "line": 489
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1fa41b2187e9a363d879-3d723d2a00db9e59d1b1",
+          "file": "quotation-flow.spec.ts",
+          "line": 463,
+          "column": 1
+        },
+        {
+          "title": "TC-F2: 显式刷新才触发 refresh-card-snapshot",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 21822,
+                  "error": {
+                    "message": "Error: 编辑态 Step1(客户/模板已锁定预填)下一步应可点\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('button', { name: /下一步/ }).first()\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - 编辑态 Step1(客户/模板已锁定预填)下一步应可点 with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: /下一步/ }).first()\u001b[22m\n\u001b[2m    19 × locator resolved to <button disabled type=\"button\" title=\"请先填写产品分类和报价模板\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid\">…</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n",
+                    "stack": "Error: 编辑态 Step1(客户/模板已锁定预填)下一步应可点\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('button', { name: /下一步/ }).first()\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - 编辑态 Step1(客户/模板已锁定预填)下一步应可点 with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: /下一步/ }).first()\u001b[22m\n\u001b[2m    19 × locator resolved to <button disabled type=\"button\" title=\"请先填写产品分类和报价模板\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid\">…</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n\n    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:554:60",
+                    "location": {
+                      "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                      "column": 60,
+                      "line": 554
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 552 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m1500\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 553 |\u001b[39m   \u001b[36mconst\u001b[39m tcf2NextBtn \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[35m/下一步/\u001b[39m })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 554 |\u001b[39m   \u001b[36mawait\u001b[39m expect(tcf2NextBtn\u001b[33m,\u001b[39m \u001b[32m'编辑态 Step1(客户/模板已锁定预填)下一步应可点'\u001b[39m)\u001b[33m.\u001b[39mtoBeEnabled({ timeout\u001b[33m:\u001b[39m \u001b[35m15000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                            \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 555 |\u001b[39m   \u001b[36mawait\u001b[39m tcf2NextBtn\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 556 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForLoadState(\u001b[32m'networkidle'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 557 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m1000\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                        "column": 60,
+                        "line": 554
+                      },
+                      "message": "Error: 编辑态 Step1(客户/模板已锁定预填)下一步应可点\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeEnabled\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator:  getByRole('button', { name: /下一步/ }).first()\nExpected: enabled\nReceived: disabled\nTimeout:  15000ms\n\nCall log:\n\u001b[2m  - 编辑态 Step1(客户/模板已锁定预填)下一步应可点 with timeout 15000ms\u001b[22m\n\u001b[2m  - waiting for getByRole('button', { name: /下一步/ }).first()\u001b[22m\n\u001b[2m    19 × locator resolved to <button disabled type=\"button\" title=\"请先填写产品分类和报价模板\" class=\"ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-primary ant-btn-color-primary ant-btn-variant-solid\">…</button>\u001b[22m\n\u001b[2m       - unexpected value \"disabled\"\u001b[22m\n\n\n\u001b[0m \u001b[90m 552 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m1500\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 553 |\u001b[39m   \u001b[36mconst\u001b[39m tcf2NextBtn \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mgetByRole(\u001b[32m'button'\u001b[39m\u001b[33m,\u001b[39m { name\u001b[33m:\u001b[39m \u001b[35m/下一步/\u001b[39m })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 554 |\u001b[39m   \u001b[36mawait\u001b[39m expect(tcf2NextBtn\u001b[33m,\u001b[39m \u001b[32m'编辑态 Step1(客户/模板已锁定预填)下一步应可点'\u001b[39m)\u001b[33m.\u001b[39mtoBeEnabled({ timeout\u001b[33m:\u001b[39m \u001b[35m15000\u001b[39m })\u001b[33m;\u001b[39m\n \u001b[90m     |\u001b[39m                                                            \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 555 |\u001b[39m   \u001b[36mawait\u001b[39m tcf2NextBtn\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 556 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForLoadState(\u001b[32m'networkidle'\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 557 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m1000\u001b[39m)\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:554:60\u001b[22m"
+                    },
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    }
+                  ],
+                  "stdout": [
+                    {
+                      "text": "[createMinimalDraft] 创建测试报价单成功 id=26cc5921-88d0-411f-afbb-8a66387f3e76\n"
+                    }
+                  ],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-17T12:20:21.814Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/test-results/quotation-flow-TC-F2-显式刷新才触发-refresh-card-snapshot/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts",
+                    "column": 60,
+                    "line": 554
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1fa41b2187e9a363d879-13009e67507b53ecab7e",
+          "file": "quotation-flow.spec.ts",
+          "line": 522,
+          "column": 1
+        },
+        {
+          "title": "TC-075 SIMPLE · Stage H 确定性精度单保存/刷新/重开后所有 Tab 稳定",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 2118,
+                  "error": {
+                    "message": "Error: 必须显式设置 PW_PRECISION_SEED_QUOTATION_NO，指向 Stage H 已加载的确定性 SIMPLE 精度种子；禁止回退到随机或普通业务单据。",
+                    "stack": "Error: 必须显式设置 PW_PRECISION_SEED_QUOTATION_NO，指向 Stage H 已加载的确定性 SIMPLE 精度种子；禁止回退到随机或普通业务单据。\n    at copyPrecisionSeed (/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/fixtures/precision.ts:83:11)\n    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:627:29",
+                    "location": {
+                      "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/fixtures/precision.ts",
+                      "column": 11,
+                      "line": 83
+                    },
+                    "snippet": "\u001b[90m   at \u001b[39mfixtures/precision.ts:83\n\n\u001b[0m \u001b[90m 81 |\u001b[39m \u001b[36mexport\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m copyPrecisionSeed(page\u001b[33m:\u001b[39m \u001b[33mPage\u001b[39m)\u001b[33m:\u001b[39m \u001b[33mPromise\u001b[39m\u001b[33m<\u001b[39m\u001b[33mstring\u001b[39m\u001b[33m>\u001b[39m {\n \u001b[90m 82 |\u001b[39m   \u001b[36mif\u001b[39m (\u001b[33m!\u001b[39m\u001b[33mPRECISION_FIXTURE\u001b[39m\u001b[33m.\u001b[39mseedQuotationNo) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 83 |\u001b[39m     \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\n \u001b[90m    |\u001b[39m           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 84 |\u001b[39m       \u001b[32m'必须显式设置 PW_PRECISION_SEED_QUOTATION_NO，指向 Stage H 已加载的确定性 SIMPLE 精度种子；'\u001b[39m \u001b[33m+\u001b[39m\n \u001b[90m 85 |\u001b[39m       \u001b[32m'禁止回退到随机或普通业务单据。'\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 86 |\u001b[39m     )\u001b[33m;\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/fixtures/precision.ts",
+                        "column": 11,
+                        "line": 83
+                      },
+                      "message": "Error: 必须显式设置 PW_PRECISION_SEED_QUOTATION_NO，指向 Stage H 已加载的确定性 SIMPLE 精度种子；禁止回退到随机或普通业务单据。\n\n\u001b[90m   at \u001b[39mfixtures/precision.ts:83\n\n\u001b[0m \u001b[90m 81 |\u001b[39m \u001b[36mexport\u001b[39m \u001b[36masync\u001b[39m \u001b[36mfunction\u001b[39m copyPrecisionSeed(page\u001b[33m:\u001b[39m \u001b[33mPage\u001b[39m)\u001b[33m:\u001b[39m \u001b[33mPromise\u001b[39m\u001b[33m<\u001b[39m\u001b[33mstring\u001b[39m\u001b[33m>\u001b[39m {\n \u001b[90m 82 |\u001b[39m   \u001b[36mif\u001b[39m (\u001b[33m!\u001b[39m\u001b[33mPRECISION_FIXTURE\u001b[39m\u001b[33m.\u001b[39mseedQuotationNo) {\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 83 |\u001b[39m     \u001b[36mthrow\u001b[39m \u001b[36mnew\u001b[39m \u001b[33mError\u001b[39m(\n \u001b[90m    |\u001b[39m           \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 84 |\u001b[39m       \u001b[32m'必须显式设置 PW_PRECISION_SEED_QUOTATION_NO，指向 Stage H 已加载的确定性 SIMPLE 精度种子；'\u001b[39m \u001b[33m+\u001b[39m\n \u001b[90m 85 |\u001b[39m       \u001b[32m'禁止回退到随机或普通业务单据。'\u001b[39m\u001b[33m,\u001b[39m\n \u001b[90m 86 |\u001b[39m     )\u001b[33m;\u001b[39m\u001b[0m\n\u001b[2m    at copyPrecisionSeed (/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/fixtures/precision.ts:83:11)\u001b[22m\n\u001b[2m    at /home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/quotation-flow.spec.ts:627:29\u001b[22m"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-17T12:21:14.280Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/test-results/quotation-flow-TC-075-SIMP-dc39a--H-确定性精度单保存-刷新-重开后所有-Tab-稳定/error-context.md"
+                    },
+                    {
+                      "name": "trace",
+                      "contentType": "application/zip",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/test-results/quotation-flow-TC-075-SIMP-dc39a--H-确定性精度单保存-刷新-重开后所有-Tab-稳定/trace.zip"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-master-ab/cpq-frontend/e2e/fixtures/precision.ts",
+                    "column": 11,
+                    "line": 83
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "1fa41b2187e9a363d879-d1a0107510b616a26f2e",
+          "file": "quotation-flow.spec.ts",
+          "line": 624,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-17T12:18:22.366Z",
+    "duration": 174283.53900000002,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 4,
+    "flaky": 0
+  }
+}

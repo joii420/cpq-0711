@@ -1,0 +1,209 @@
+{
+  "config": {
+    "configFile": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/playwright.config.ts",
+    "rootDir": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e",
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/global-setup.ts",
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "",
+        "name": "",
+        "testDir": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ],
+      [
+        "list"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.59.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "tabjoin-formula-drawer.spec.ts",
+      "file": "tabjoin-formula-drawer.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "括号可视化与光标行为（AC-7 / AC-8 / AC-9 / AC-12）",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 15720,
+                  "error": {
+                    "message": "Error: 应能看到组件卡片 COMP-0088\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\nExpected: visible\nTimeout: 10000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - 应能看到组件卡片 COMP-0088 with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\u001b[22m\n",
+                    "stack": "Error: 应能看到组件卡片 COMP-0088\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\nExpected: visible\nTimeout: 10000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - 应能看到组件卡片 COMP-0088 with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\u001b[22m\n\n    at openFormulaDrawer (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:45:42)\n    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:77:18",
+                    "location": {
+                      "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts",
+                      "column": 42,
+                      "line": 45
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 43 |\u001b[39m\n \u001b[90m 44 |\u001b[39m   \u001b[36mconst\u001b[39m card \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'.cmm-card'\u001b[39m)\u001b[33m.\u001b[39mfilter({ hasText\u001b[33m:\u001b[39m code })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 45 |\u001b[39m   \u001b[36mawait\u001b[39m expect(card\u001b[33m,\u001b[39m \u001b[32m`应能看到组件卡片 ${code}`\u001b[39m)\u001b[33m.\u001b[39mtoBeVisible({ timeout\u001b[33m:\u001b[39m \u001b[35m10\u001b[39m_000 })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                          \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 46 |\u001b[39m   \u001b[36mawait\u001b[39m card\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 47 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m500\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 48 |\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts",
+                        "column": 42,
+                        "line": 45
+                      },
+                      "message": "Error: 应能看到组件卡片 COMP-0088\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\nExpected: visible\nTimeout: 10000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - 应能看到组件卡片 COMP-0088 with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\u001b[22m\n\n\n\u001b[0m \u001b[90m 43 |\u001b[39m\n \u001b[90m 44 |\u001b[39m   \u001b[36mconst\u001b[39m card \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'.cmm-card'\u001b[39m)\u001b[33m.\u001b[39mfilter({ hasText\u001b[33m:\u001b[39m code })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 45 |\u001b[39m   \u001b[36mawait\u001b[39m expect(card\u001b[33m,\u001b[39m \u001b[32m`应能看到组件卡片 ${code}`\u001b[39m)\u001b[33m.\u001b[39mtoBeVisible({ timeout\u001b[33m:\u001b[39m \u001b[35m10\u001b[39m_000 })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                          \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 46 |\u001b[39m   \u001b[36mawait\u001b[39m card\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 47 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m500\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 48 |\u001b[39m\u001b[0m\n\u001b[2m    at openFormulaDrawer (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:45:42)\u001b[22m\n\u001b[2m    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:77:18\u001b[22m"
+                    },
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-17T12:07:26.642Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/test-results/tabjoin-formula-drawer-括号可视化与光标行为（AC-7-AC-8-AC-9-AC-12）/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts",
+                    "column": 42,
+                    "line": 45
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0f9f64b2cd7681f76993-e98b41f33a29baffc3ce",
+          "file": "tabjoin-formula-drawer.spec.ts",
+          "line": 73,
+          "column": 1
+        },
+        {
+          "title": "两栏布局 / 左栏搜索 / chip 插入光标处 / 宽度自适应（AC-1 / AC-3 / AC-16 / AC-18）",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "",
+              "projectName": "",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 15834,
+                  "error": {
+                    "message": "Error: 应能看到组件卡片 COMP-0088\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\nExpected: visible\nTimeout: 10000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - 应能看到组件卡片 COMP-0088 with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\u001b[22m\n",
+                    "stack": "Error: 应能看到组件卡片 COMP-0088\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\nExpected: visible\nTimeout: 10000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - 应能看到组件卡片 COMP-0088 with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\u001b[22m\n\n    at openFormulaDrawer (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:45:42)\n    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:131:18",
+                    "location": {
+                      "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts",
+                      "column": 42,
+                      "line": 45
+                    },
+                    "snippet": "\u001b[0m \u001b[90m 43 |\u001b[39m\n \u001b[90m 44 |\u001b[39m   \u001b[36mconst\u001b[39m card \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'.cmm-card'\u001b[39m)\u001b[33m.\u001b[39mfilter({ hasText\u001b[33m:\u001b[39m code })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 45 |\u001b[39m   \u001b[36mawait\u001b[39m expect(card\u001b[33m,\u001b[39m \u001b[32m`应能看到组件卡片 ${code}`\u001b[39m)\u001b[33m.\u001b[39mtoBeVisible({ timeout\u001b[33m:\u001b[39m \u001b[35m10\u001b[39m_000 })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                          \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 46 |\u001b[39m   \u001b[36mawait\u001b[39m card\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 47 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m500\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 48 |\u001b[39m\u001b[0m"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts",
+                        "column": 42,
+                        "line": 45
+                      },
+                      "message": "Error: 应能看到组件卡片 COMP-0088\n\n\u001b[2mexpect(\u001b[22m\u001b[31mlocator\u001b[39m\u001b[2m).\u001b[22mtoBeVisible\u001b[2m(\u001b[22m\u001b[2m)\u001b[22m failed\n\nLocator: locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\nExpected: visible\nTimeout: 10000ms\nError: element(s) not found\n\nCall log:\n\u001b[2m  - 应能看到组件卡片 COMP-0088 with timeout 10000ms\u001b[22m\n\u001b[2m  - waiting for locator('.cmm-card').filter({ hasText: 'COMP-0088' }).first()\u001b[22m\n\n\n\u001b[0m \u001b[90m 43 |\u001b[39m\n \u001b[90m 44 |\u001b[39m   \u001b[36mconst\u001b[39m card \u001b[33m=\u001b[39m page\u001b[33m.\u001b[39mlocator(\u001b[32m'.cmm-card'\u001b[39m)\u001b[33m.\u001b[39mfilter({ hasText\u001b[33m:\u001b[39m code })\u001b[33m.\u001b[39mfirst()\u001b[33m;\u001b[39m\n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 45 |\u001b[39m   \u001b[36mawait\u001b[39m expect(card\u001b[33m,\u001b[39m \u001b[32m`应能看到组件卡片 ${code}`\u001b[39m)\u001b[33m.\u001b[39mtoBeVisible({ timeout\u001b[33m:\u001b[39m \u001b[35m10\u001b[39m_000 })\u001b[33m;\u001b[39m\n \u001b[90m    |\u001b[39m                                          \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 46 |\u001b[39m   \u001b[36mawait\u001b[39m card\u001b[33m.\u001b[39mclick()\u001b[33m;\u001b[39m\n \u001b[90m 47 |\u001b[39m   \u001b[36mawait\u001b[39m page\u001b[33m.\u001b[39mwaitForTimeout(\u001b[35m500\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m 48 |\u001b[39m\u001b[0m\n\u001b[2m    at openFormulaDrawer (/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:45:42)\u001b[22m\n\u001b[2m    at /home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts:131:18\u001b[22m"
+                    },
+                    {
+                      "message": "\u001b[31mTest timeout of 30000ms exceeded.\u001b[39m"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-09-17T12:08:12.896Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/test-results/tabjoin-formula-drawer-两栏布-6820a-度自适应（AC-1-AC-3-AC-16-AC-18）/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/home/joii/project/cpq/.claude/worktrees/repair-260916-subtotal-suffix/cpq-frontend/e2e/tabjoin-formula-drawer.spec.ts",
+                    "column": 42,
+                    "line": 45
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "0f9f64b2cd7681f76993-ca1738a4854081330b38",
+          "file": "tabjoin-formula-drawer.spec.ts",
+          "line": 127,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-09-17T12:07:22.150Z",
+    "duration": 96802.82800000001,
+    "expected": 0,
+    "skipped": 0,
+    "unexpected": 2,
+    "flaky": 0
+  }
+}

@@ -22,7 +22,9 @@ ctl=$(git -C "$WT" diff --name-only 88e53e65 ae6dae0f -- cpq-backend/src/main/re
 v=$(q "select max(version::int) from flyway_schema_history where version ~ '^[0-9]+\$'"); echo "一次性库 flyway 最高版本=$v"
 [ "$v" = 445 ] && pass "一次性库仍停在 V445（无本任务迁移落库）" || fail "一次性库 flyway 最高版本=$v（应 445）"
 echo "== ② 8 列文字 =="
-COLS="select json_build_object('code',c.code,'col',e) from component c, jsonb_array_elements(c.excel_columns) e where jsonb_typeof(c.excel_columns)='array' and e->>'source_type'='TAB_JOIN_FORMULA' order by c.code,e->>'col_key'"
+COLS="select json_build_object('code',c.code,'col',e) from component c, jsonb_array_elements(c.excel_columns) e where jsonb_typeof(c.excel_columns)='array' and e->>'source_type'='TAB_JOIN_FORMULA' and c.code in ('COMP-0011','COMP-2269','COMP-2509') order by c.code,e->>'col_key'"
+# 限定为 4.3 所列 3 个存量组件：T-C5 在一次性库导入的 ex1 副本（RP0916C-* 目录）也含连表公式列，不属于「存量 8 列」
+q "select count(*) from component c, jsonb_array_elements(c.excel_columns) e where jsonb_typeof(c.excel_columns)='array' and e->>'source_type'='TAB_JOIN_FORMULA' and c.directory_id in (select id from component_directory where name like 'RP0916C-%')" | sed 's/^/[说明] S-C 自造目录内的连表公式列数=/'
 q "$COLS" > "$O/tabjoin-cols-$phase.jsonl"
 psql -h $DBHOST -U postgres -d cpq_db_0724 -At -c "$COLS" > "$O/tabjoin-cols-devdb-$phase-readonly.jsonl"
 python3 - "$O/tabjoin-cols-$phase.jsonl" "$O/tabjoin-cols-before.jsonl" "$S/out-C0/tabjoin-cols-before.jsonl" "$O/tabjoin-cols-devdb-$phase-readonly.jsonl" <<'PY'

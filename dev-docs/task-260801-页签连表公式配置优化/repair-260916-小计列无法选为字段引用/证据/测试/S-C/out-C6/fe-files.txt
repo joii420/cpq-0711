@@ -1,0 +1,7 @@
+本任务前端测试文件: src/pages/component/formulaSerialize.repair260916.test.ts
+src/pages/component/formulaSerialize.test.ts
+src/pages/quotation/buildExcelSnapshot.test.ts
+src/pages/quotation/subtotalColRefEndToEnd.test.ts
+src/pages/quotation/tabJoinExcelEval.fixture.test.ts
+src/pages/template/tabjoin/formulaEditorPanel.repair260916.test.ts
+src/pages/template/tabjoin/tabFieldMatrix.repair260916.test.ts

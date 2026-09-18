@@ -28,13 +28,13 @@ static)
   cd "$WT/cpq-frontend"
   npx tsc -b > "$O/tsc.txt" 2>&1; rc=$?; tail -5 "$O/tsc.txt"
   [ $rc -eq 0 ] && [ "$(grep -c 'error TS' "$O/tsc.txt")" = 0 ] && pass "tsc -b 0 错误" || fail "tsc -b rc=$rc 错误数=$(grep -c 'error TS' "$O/tsc.txt")"
-  FE=$(cd "$WT" && { git diff --name-only master -- 'cpq-frontend/src/**/*.test.ts' 'cpq-frontend/src/**/*.test.tsx'; git ls-files --others --exclude-standard -- 'cpq-frontend/src/**/*.test.ts' 'cpq-frontend/src/**/*.test.tsx'; } | sort -u | sed 's#^cpq-frontend/##')
+  FE=$(cd "$WT" && { git diff --name-only $(git merge-base master HEAD) -- 'cpq-frontend/src/**/*.test.ts' 'cpq-frontend/src/**/*.test.tsx'; git ls-files --others --exclude-standard -- 'cpq-frontend/src/**/*.test.ts' 'cpq-frontend/src/**/*.test.tsx'; } | sort -u | sed 's#^cpq-frontend/##')
   echo "本任务前端测试文件: $FE" | tee "$O/fe-files.txt"
   [ -n "$FE" ] || fail "未识别到本任务前端测试文件（空跑保护）"
   npx vitest run $FE --reporter=verbose > "$O/vitest.txt" 2>&1; rc=$?; tail -8 "$O/vitest.txt"
   [ $rc -eq 0 ] && pass "vitest 本任务文件通过" || fail "vitest rc=$rc"
   grep -Eq 'Tests +[1-9][0-9]* passed' "$O/vitest.txt" || fail "vitest 无通过用例"
-  BE=$(cd "$WT" && { git diff --name-only master -- 'cpq-backend/src/test/java/**'; git ls-files --others --exclude-standard -- 'cpq-backend/src/test/java/**'; } | grep -E 'Test\.java$' | sort -u | xargs -r -n1 basename | sed 's/\.java$//' | paste -sd, -)
+  BE=$(cd "$WT" && { git diff --name-only $(git merge-base master HEAD) -- 'cpq-backend/src/test/java/**'; git ls-files --others --exclude-standard -- 'cpq-backend/src/test/java/**'; } | grep -E 'Test\.java$' | sort -u | xargs -r -n1 basename | sed 's/\.java$//' | paste -sd, -)
   BE=${BE_TEST_CLASS:-$BE}
   case ",$BE," in *TabJoinExcelSharedFixtureTest*) :;; *) BE="$BE,com.cpq.quotation.service.tabjoin.TabJoinExcelSharedFixtureTest";; esac
   echo "本任务后端测试类: $BE" | tee "$O/be-classes.txt"

@@ -1,0 +1,140 @@
+{
+  "formulaId": "fa47d510-24e3-4a8d-9995-932c65736d98",
+  "differences": [],
+  "first": {
+    "id": "fa47d510-24e3-4a8d-9995-932c65736d98",
+    "name": "公式4",
+    "expression": [
+      {
+        "agg": "NONE",
+        "type": "cross_tab_ref",
+        "match": [
+          {
+            "a": "销售料号",
+            "b": "销售料号"
+          },
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "source": "a500eafe-b0f3-4525-ada7-9f5e67b34d6c",
+        "target": "加工费",
+        "sourceLabel": "RP0916加工费"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "label": "RP0916加工费·加工费",
+        "value": "加工费",
+        "tab_name": "COMP-2651",
+        "component_code": "COMP-2651"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "label": "RP0916加工费",
+        "value": "__amount_total__",
+        "tab_name": "__amount_total__",
+        "is_tab_total": true,
+        "component_code": "COMP-2651"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "agg": "SUM",
+        "type": "cross_tab_ref",
+        "match": [
+          {
+            "a": "销售料号",
+            "b": "销售料号"
+          },
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "source": "a500eafe-b0f3-4525-ada7-9f5e67b34d6c",
+        "target": "加工费",
+        "sourceLabel": "RP0916加工费"
+      }
+    ],
+    "result_type": "NUMBER"
+  },
+  "second": {
+    "id": "fa47d510-24e3-4a8d-9995-932c65736d98",
+    "name": "公式4",
+    "expression": [
+      {
+        "agg": "NONE",
+        "type": "cross_tab_ref",
+        "match": [
+          {
+            "a": "销售料号",
+            "b": "销售料号"
+          },
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "source": "a500eafe-b0f3-4525-ada7-9f5e67b34d6c",
+        "target": "加工费",
+        "sourceLabel": "RP0916加工费"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "label": "RP0916加工费·加工费",
+        "value": "加工费",
+        "tab_name": "COMP-2651",
+        "component_code": "COMP-2651"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "type": "component_subtotal",
+        "label": "RP0916加工费",
+        "value": "__amount_total__",
+        "tab_name": "__amount_total__",
+        "is_tab_total": true,
+        "component_code": "COMP-2651"
+      },
+      {
+        "type": "operator",
+        "value": "+"
+      },
+      {
+        "agg": "SUM",
+        "type": "cross_tab_ref",
+        "match": [
+          {
+            "a": "销售料号",
+            "b": "销售料号"
+          },
+          {
+            "a": "料号",
+            "b": "料号"
+          }
+        ],
+        "source": "a500eafe-b0f3-4525-ada7-9f5e67b34d6c",
+        "target": "加工费",
+        "sourceLabel": "RP0916加工费"
+      }
+    ],
+    "result_type": "NUMBER"
+  }
+}

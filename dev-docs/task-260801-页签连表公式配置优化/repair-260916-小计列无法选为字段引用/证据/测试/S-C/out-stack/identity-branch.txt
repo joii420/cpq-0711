@@ -1,0 +1,4 @@
+cpq_db_rp0916d|6
+[stack] 库内 flyway 最高版本=445
+[stack] 2026-09-17T11:45Z 代理确认：5293/8293 报价单 total=199 = cpq_db_rp0916d count 199；8081=202=cpq_db_0724（为此在 8081 做过一次 admin API 登录）
+[stack] 2026-09-17T12:14:36Z 分支栈停止：stack.sh stop 因记录的是 setsid 前的 PID（setsid 已 fork）而未生效；按监听进程所在进程组 kill -- -543207（java，11:43:12Z 启动，cwd=本 worktree/cpq-backend）-544175（vite，11:43:39Z，cwd=本 worktree/cpq-frontend）；stack.sh 已改为记录监听进程的进程组

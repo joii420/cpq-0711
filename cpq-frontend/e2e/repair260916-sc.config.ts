@@ -7,7 +7,7 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: '.',
-  testMatch: /repair260916-excel-migration\.spec\.ts/,
+  testMatch: /repair260916-(excel-migration|sc-probe)\.spec\.ts/,
   timeout: 300_000,
   expect: { timeout: 20_000 },
   fullyParallel: false,

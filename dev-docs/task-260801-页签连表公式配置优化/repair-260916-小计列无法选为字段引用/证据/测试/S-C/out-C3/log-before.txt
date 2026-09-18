@@ -1,0 +1,25 @@
+阶段=before 采样时刻=2026-09-17T11:42:42Z HEAD=1119e5d2 分叉点=2ccdc5d9
+== ① 本分支无迁移文件 ==
+已提交差异: 空
+工作区未提交改动: 空
+未跟踪文件: 空
+✅ PASS: ① git diff --name-only master...HEAD -- migration 为空
+✅ PASS: ① 工作区无未提交/未跟踪迁移文件
+   阳性对照 88e53e65..ae6dae0f → cpq-backend/src/main/resources/db/migration/V445__task260916_element_price_scale9.sql（命令可输出）
+一次性库 flyway 最高版本=445
+✅ PASS: 一次性库仍停在 V445（无本任务迁移落库）
+== ② 8 列文字 ==
+✅ 一次性库连表公式列数 = 8（实际 8，非空保护）
+✅ 一次性库 8 列文字 = 问题说明 4.3 原文（逐字）
+   COMP-0011 col_1 [物料.材料成本]
+   COMP-0011 col_2 [物料.回收成本]
+   COMP-0011 col_3 [产品小计(总计)]
+   COMP-2269 col_1 [材质元素.元素小计]
+   COMP-2269 col_2 [小计(总计)]
+   COMP-2509 col_1 [材质元素(总计)]
+   COMP-2509 col_2 [BOM(总计)]
+   COMP-2509 col_3 [XJ(总计)]
+✅ 一次性库 8 列整列对象 = out-C0 基线（cpq_db_rp0916c 迁移前采样，与开发库同源）
+开发库 cpq_db_0724（只读参照）: 与 4.3 原文一致
+✅ PASS: ② 8 列文字不变
+RESULT FAILS=0

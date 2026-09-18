@@ -1,0 +1,76 @@
+{
+  "request": [
+    {
+      "col_key": "col_1",
+      "title": "col_1",
+      "hidden": false,
+      "source_type": "TAB_JOIN_FORMULA",
+      "expression": "[物料.材料成本(小计)]",
+      "tabs": [
+        {
+          "alias": "物料",
+          "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+          "rowKeyFields": [
+            "销售料号",
+            "料号"
+          ]
+        }
+      ]
+    },
+    {
+      "col_key": "col_2",
+      "title": "col_2",
+      "hidden": false,
+      "source_type": "TAB_JOIN_FORMULA",
+      "expression": "[物料.材料成本] + [其他费用.费用]",
+      "tabs": [
+        {
+          "alias": "物料",
+          "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+          "rowKeyFields": [
+            "销售料号",
+            "料号"
+          ]
+        },
+        {
+          "alias": "其他费用",
+          "tabKey": "af497796-fd09-4975-b9e6-d4bb0cb59be7",
+          "rowKeyFields": [
+            "销售料号",
+            "类别"
+          ]
+        }
+      ]
+    }
+  ],
+  "response": {
+    "status": 400,
+    "body": {
+      "code": 400,
+      "message": "页签连表公式列 col_2 的明细字段跨了不同行键类(只能同行键页签的明细一起运算): 销售料号+料号 ≠ 销售料号+类别"
+    }
+  },
+  "getAfter": {
+    "code": 200,
+    "message": "success",
+    "data": [
+      {
+        "tabs": [
+          {
+            "alias": "物料",
+            "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2",
+            "rowKeyFields": [
+              "销售料号",
+              "料号"
+            ]
+          }
+        ],
+        "title": "col_1",
+        "hidden": false,
+        "col_key": "col_1",
+        "expression": "[物料.材料成本(小计)]",
+        "source_type": "TAB_JOIN_FORMULA"
+      }
+    ]
+  }
+}

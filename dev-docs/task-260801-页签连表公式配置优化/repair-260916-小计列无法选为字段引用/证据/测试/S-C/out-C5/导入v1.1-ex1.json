@@ -1,0 +1,31 @@
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "id": "cd1895a9-a556-415b-9037-31f29871d881",
+    "directoryId": "fd5d85e0-2157-4aa8-a7d7-f6cd4a8e8b58",
+    "name": "ex1",
+    "code": "COMP-2628",
+    "columnCount": 0,
+    "fields": [],
+    "formulas": [],
+    "componentType": "EXCEL",
+    "dataDriverPath": null,
+    "rowKeyFields": null,
+    "treeConfig": null,
+    "bomRecursiveExpand": false,
+    "tabType": null,
+    "dataSourceLabel": null,
+    "partNoField": null,
+    "partNameField": null,
+    "sortField": null,
+    "elementCodeField": null,
+    "elementPriceField": null,
+    "elementCurrencyField": null,
+    "status": "ACTIVE",
+    "excelColumns": "[{\"tabs\": [{\"alias\": \"物料\", \"tabKey\": \"0c584463-b631-4079-8ca8-f60d58930f93\", \"rowKeyFields\": [\"销售料号\", \"料号\"]}], \"title\": \"材料成本\", \"hidden\": false, \"col_key\": \"col_1\", \"expression\": \"[物料.材料成本]\", \"source_type\": \"TAB_JOIN_FORMULA\"}, {\"tabs\": [{\"alias\": \"物料\", \"tabKey\": \"0c584463-b631-4079-8ca8-f60d58930f93\", \"rowKeyFields\": [\"销售料号\", \"料号\"]}], \"title\": \"回收价格\", \"hidden\": false, \"col_key\": \"col_2\", \"expression\": \"[物料.回收成本]\", \"source_type\": \"TAB_JOIN_FORMULA\"}, {\"tabs\": [{\"alias\": \"产品小计\", \"tabKey\": \"12c1689f-a9f9-4f5a-acc8-8972e91f7221\", \"rowKeyFields\": []}], \"title\": \"产品单价\", \"hidden\": false, \"col_key\": \"col_3\", \"expression\": \"[产品小计(总计)]\", \"source_type\": \"TAB_JOIN_FORMULA\"}]",
+    "hasUnboundFormula": false,
+    "createdAt": "2026-09-17T11:53:58.980477Z",
+    "updatedAt": "2026-09-17T11:53:58.994713Z"
+  }
+}

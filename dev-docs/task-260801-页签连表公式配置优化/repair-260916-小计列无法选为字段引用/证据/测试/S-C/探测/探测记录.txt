@@ -1,0 +1,62 @@
+[2026-09-17T11:44:39.837Z] login: 200
+[2026-09-17T11:44:48.836Z] edit.url: http://localhost:5293/quotations/40fe7ae7-c6e1-403a-aa30-17989ec758e9/edit
+[2026-09-17T11:44:48.857Z] edit.segmented: []
+[2026-09-17T11:44:48.860Z] edit.steps: ["1\n选择客户","2\n添加产品","3\n优惠策略","4\n交易条款","5\n提交审批"]
+[2026-09-17T11:44:48.862Z] edit.tabs: []
+[2026-09-17T11:44:48.865Z] edit.buttons: ["价格版本","保存草稿","返回列表","上一步","下一步"]
+[2026-09-17T11:44:49.337Z] login: 200
+[2026-09-17T11:44:54.259Z] comp.url: http://localhost:5293/components
+[2026-09-17T11:44:54.276Z] comp.dirCount: 6
+[2026-09-17T11:44:54.281Z] comp.dirVisible: true
+[2026-09-17T11:44:54.285Z] comp.dirHeadHTML: <span class="cmm-dir-caret">▶</span><div class="cmm-dir-title"><span class="cmm-dir-name">📁 施耐德成环检测</span><span class="cmm-dir-counts"><span class="cmm-pill">页签8</span><span class="cmm-pill excel">XLS1</span><span class="cmm-pill sub">小计1</span></span></div><span class="cmm-dir-acts"><button type="button" class="ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only"><span class="ant-btn-icon"><span role="img" aria-label="edit" class="anticon anticon-edit"><svg viewBox="64 64 896 896" focusable="false" data-icon="edit" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M257.7 752c2 0 4-.2 6-.5L431.9 722c2-.4 3.9-1.3 5.3-2.8l423.9-423.9a9.96 9.96 0 000-14.1L694.9 114.9c-1.9-1.9-4.4-2.9-7.1-2.9s-5.2 1-7.1 2.9L256.8 538.8c-1.5 1.5-2.4 3.3-2.8 5.3l-29.5 168.2a33.5 33.5 0 009.4 29.8c6.6 6.4 14.9 9.9 23.8 9.9zm67.4-174.4L687.8 215l73.3 73.3-362.7 362.6-88.9 15.7 15.6-89zM880 836H144c-17.7 0-32 14.3-32 32v36c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-36c0-17.7-14.3-32-32-32z"></path></svg></span></span></button><button type="button" class="ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only"><span class="ant-btn-icon"><span role="img" aria-label="export" class="anticon anticon-export"><svg fill-rule="evenodd" viewBox="64 64 896 896" focusable="false" data-icon="export" width="1em" height="1
+[2026-09-17T11:44:54.891Z] comp.visibleImportTexts: []
+[2026-09-17T11:44:54.893Z] comp.fileInputs: 0
+[2026-09-17T11:44:55.495Z] comp.menuItems: ["工作台","客户管理","产品管理","报价中心","定价管理","配置中心","主数据维护","系统管理"]
+[2026-09-17T11:45:21.026Z] login: 200
+[2026-09-17T11:45:29.692Z] edit.url: http://localhost:5293/quotations/40fe7ae7-c6e1-403a-aa30-17989ec758e9/edit
+[2026-09-17T11:45:29.711Z] edit.segmented: []
+[2026-09-17T11:45:29.714Z] edit.steps: ["1\n选择客户","2\n添加产品","3\n优惠策略","4\n交易条款","5\n提交审批"]
+[2026-09-17T11:45:29.716Z] edit.tabs: []
+[2026-09-17T11:45:29.719Z] edit.buttons: ["价格版本","保存草稿","返回列表","上一步","下一步"]
+[2026-09-17T11:45:37.829Z] edit2.segmented: []
+[2026-09-17T11:45:37.831Z] edit2.buttons: ["价格版本","保存草稿","返回列表","上一步","下一步"]
+[2026-09-17T11:45:38.278Z] login: 200
+[2026-09-17T11:45:43.156Z] comp.url: http://localhost:5293/components
+[2026-09-17T11:45:43.173Z] comp.dirCount: 6
+[2026-09-17T11:45:43.176Z] comp.dirVisible: true
+[2026-09-17T11:45:43.180Z] comp.dirHeadHTML: <span class="cmm-dir-caret">▶</span><div class="cmm-dir-title"><span class="cmm-dir-name">📁 施耐德成环检测</span><span class="cmm-dir-counts"><span class="cmm-pill">页签8</span><span class="cmm-pill excel">XLS1</span><span class="cmm-pill sub">小计1</span></span></div><span class="cmm-dir-acts"><button type="button" class="ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only"><span class="ant-btn-icon"><span role="img" aria-label="edit" class="anticon anticon-edit"><svg viewBox="64 64 896 896" focusable="false" data-icon="edit" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M257.7 752c2 0 4-.2 6-.5L431.9 722c2-.4 3.9-1.3 5.3-2.8l423.9-423.9a9.96 9.96 0 000-14.1L694.9 114.9c-1.9-1.9-4.4-2.9-7.1-2.9s-5.2 1-7.1 2.9L256.8 538.8c-1.5 1.5-2.4 3.3-2.8 5.3l-29.5 168.2a33.5 33.5 0 009.4 29.8c6.6 6.4 14.9 9.9 23.8 9.9zm67.4-174.4L687.8 215l73.3 73.3-362.7 362.6-88.9 15.7 15.6-89zM880 836H144c-17.7 0-32 14.3-32 32v36c0 4.4 3.6 8 8 8h784c4.4 0 8-3.6 8-8v-36c0-17.7-14.3-32-32-32z"></path></svg></span></span></button><button type="button" class="ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-text ant-btn-color-default ant-btn-variant-text ant-btn-sm ant-btn-icon-only"><span class="ant-btn-icon"><span role="img" aria-label="export" class="anticon anticon-export"><svg fill-rule="evenodd" viewBox="64 64 896 896" focusable="false" data-icon="export" width="1em" height="1
+[2026-09-17T11:45:43.788Z] comp.actsAria: ["edit","export","import","tool","delete"]
+[2026-09-17T11:45:43.793Z] comp.actsTitle: [null,null,null,null,null]
+[2026-09-17T11:45:45.409Z] comp.afterImportClick.fileInputs: 1
+[2026-09-17T11:45:45.412Z] comp.afterImportClick.panels: ["导入组件到目录:施耐德成环检测\n\n点击或拖拽导出的 bundle JSON 到此处\n\n仅支持组件目录导出的 .json\n\n冲突策略:\n重命名(冲突 code 加后缀,推荐)\n预览\n关 闭\n确认导入"]
+[2026-09-17T11:45:45.478Z] comp.visibleImportTexts: ["导入组件到目录:施耐德成环检测","确认导入"]
+[2026-09-17T11:45:45.480Z] comp.fileInputs: 1
+[2026-09-17T11:50:58.374Z] login: 200
+[2026-09-17T11:51:07.272Z] edit.url: http://localhost:5293/quotations/40fe7ae7-c6e1-403a-aa30-17989ec758e9/edit
+[2026-09-17T11:51:07.291Z] edit.segmented: []
+[2026-09-17T11:51:07.293Z] edit.steps: ["1\n选择客户","2\n添加产品","3\n优惠策略","4\n交易条款","5\n提交审批"]
+[2026-09-17T11:51:07.296Z] edit.tabs: []
+[2026-09-17T11:51:07.299Z] edit.buttons: ["价格版本","保存草稿","返回列表","上一步","下一步"]
+[2026-09-17T11:51:07.371Z] edit.nextDisabled: false
+[2026-09-17T11:51:17.544Z] edit2.stepCurrent: ["2\n添加产品"]
+[2026-09-17T11:51:17.547Z] edit2.segmented: ["📝 报价单","📊 核价单","📈 比对视图","📋 产品卡片","📑 Excel 视图"]
+[2026-09-17T11:51:17.550Z] edit2.buttons: ["价格版本","保存草稿","返回列表","刷新基础数据","添加产品","删除","产品","物料","材料成本","来料固定加工费","来料其他费用","其他费用","组装加工费","来料回收","✕","+ 添加行","上一步","下一步"]
+[2026-09-17T11:51:23.705Z] edit2.tableHeads: ["# 料号 [col_1]材料成本 [col_2]回收价格 [col_3]产品单价 "]
+[2026-09-17T12:04:39.057Z] p2.round0.url: http://localhost:5293/components
+[2026-09-17T12:04:39.081Z] p2.round0.dirNames: ["📁 取值配置器测试","📁 核价组件","📁 正泰组件库2","📁 施耐德成环检测","📁 取值配置器测试2","📁 正泰组件库-1","📁 RP0916C-导入v10","📁 RP0916C-导入v11","📁 RP0916C-再导入v12"]
+[2026-09-17T12:04:39.085Z] p2.round0.inputs: [["🔍 搜索组件名 / 编码",""],["","on"]]
+[2026-09-17T12:04:40.561Z] p2.afterClose.url: http://localhost:5293/components
+[2026-09-17T12:04:40.566Z] p2.afterClose.modalsVisible: 0
+[2026-09-17T12:04:45.393Z] p2.round1.url: http://localhost:5293/components
+[2026-09-17T12:04:45.404Z] p2.round1.dirNames: ["📁 取值配置器测试","📁 核价组件","📁 正泰组件库2","📁 施耐德成环检测","📁 取值配置器测试2","📁 正泰组件库-1","📁 RP0916C-导入v10","📁 RP0916C-导入v11","📁 RP0916C-再导入v12"]
+[2026-09-17T12:04:45.406Z] p2.round1.inputs: [["🔍 搜索组件名 / 编码",""],["","on"]]
+[2026-09-17T12:05:16.405Z] p2.round0.url: http://localhost:5293/components
+[2026-09-17T12:05:16.425Z] p2.round0.dirNames: ["📁 取值配置器测试","📁 核价组件","📁 正泰组件库2","📁 施耐德成环检测","📁 取值配置器测试2","📁 正泰组件库-1","📁 RP0916C-导入v10","📁 RP0916C-导入v11","📁 RP0916C-再导入v12"]
+[2026-09-17T12:05:16.428Z] p2.round0.inputs: [["🔍 搜索组件名 / 编码",""],["","on"]]
+[2026-09-17T12:05:20.103Z] p2.panelButtons: ["","预览","关 闭","确认导入"]
+[2026-09-17T12:05:20.108Z] p2.closeCount: 1
+[2026-09-17T12:05:21.007Z] p2.afterClose.url: http://localhost:5293/components
+[2026-09-17T12:05:21.012Z] p2.afterClose.modalsVisible: 0
+[2026-09-17T12:05:25.792Z] p2.round1.url: http://localhost:5293/components
+[2026-09-17T12:05:25.803Z] p2.round1.dirNames: ["📁 取值配置器测试","📁 核价组件","📁 正泰组件库2","📁 施耐德成环检测","📁 取值配置器测试2","📁 正泰组件库-1","📁 RP0916C-导入v10","📁 RP0916C-导入v11","📁 RP0916C-再导入v12"]
+[2026-09-17T12:05:25.805Z] p2.round1.inputs: [["🔍 搜索组件名 / 编码",""],["","on"]]

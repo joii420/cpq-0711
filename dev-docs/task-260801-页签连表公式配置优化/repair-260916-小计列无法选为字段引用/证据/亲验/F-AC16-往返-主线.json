@@ -1,0 +1,45 @@
+{
+  "dir": "3e0116de-3112-4db8-ba5d-3df989594653",
+  "comps": 10,
+  "ex1_found": 1,
+  "ex1_columns_after_import": [
+    {
+      "col_key": "col_1",
+      "expression": "[物料.材料成本]"
+    },
+    {
+      "col_key": "col_2",
+      "expression": "[物料.回收成本]"
+    },
+    {
+      "col_key": "col_3",
+      "expression": "[产品小计(总计)]"
+    }
+  ],
+  "export": {
+    "bundleVersion": null,
+    "components": 0,
+    "code": null
+  },
+  "dir_reimport": "62cb127f-e71a-4578-86e1-158c1278eb3e",
+  "reimport_code": 200,
+  "reimport_created": 10,
+  "ex1_columns_after_reimport": [
+    {
+      "col_key": "col_1",
+      "expression": "[物料.材料成本]"
+    },
+    {
+      "col_key": "col_2",
+      "expression": "[物料.回收成本]"
+    },
+    {
+      "col_key": "col_3",
+      "expression": "[产品小计(总计)]"
+    }
+  ],
+  "dir_v10": "c54259cf-ef3e-4390-883b-eead7940974d",
+  "v10_code": 400,
+  "v10_message": "组件「物料」(COMP-2694) 导入失败：公式「零件材料成本」使用了父子取值（tree_ref/tree_attr），该功能仅支持 tabType=\"BOM\" 的树页签组件，当前组件 tabType=(未配置)。该组件的页签类型是在「取数配置器」里配的（树身份记在配置器信息里，不在 tabType 列），而这个导入包是旧格式（bundleVersion 1.0，不含配置器信息），导入端无从得知它是树页签。请在源库升级到含本次修复的版本后重新导出，再导入本包。",
+  "v10_dir_components": 0
+}

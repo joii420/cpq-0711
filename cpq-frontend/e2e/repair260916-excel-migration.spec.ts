@@ -99,9 +99,10 @@ test('AC-15③ · 0881 编辑页 Excel 视图三列显示值（本分支栈）',
   await page.waitForTimeout(4000);
   let seg = page.locator('.ant-segmented-item').filter({ hasText: /Excel\s*视图/ }).first();
   if (!(await seg.isVisible().catch(() => false))) {
-    // 编辑页若为分步向导，Excel 视图在产品步骤里：尝试点一次含「产品」的步骤
-    const step = page.locator('.ant-steps-item').filter({ hasText: /产品/ }).first();
-    if (await step.isVisible().catch(() => false)) { await step.click(); await page.waitForTimeout(4000); }
+    // 探测（探测/探测记录.txt 11:51Z）：编辑页是 5 步向导，打开停在「选择客户」；点「下一步」进入「添加产品」后才有 Excel 视图分段
+    await page.getByRole('button', { name: /下一步/ }).first().click();
+    await expect(page.locator('.ant-steps-item-process'), '应进入「添加产品」步骤').toContainText('添加产品', { timeout: 30_000 });
+    await page.waitForTimeout(6000);
     seg = page.locator('.ant-segmented-item').filter({ hasText: /Excel\s*视图/ }).first();
   }
   await page.screenshot({ path: path.join(OUT, 'AC-15③-编辑页-切换前.png'), fullPage: true });
@@ -138,7 +139,8 @@ test('AC-15③ · 0881 编辑页 Excel 视图三列显示值（本分支栈）',
   const dataRows = data.filter((d) => JSON.stringify(d.map((x) => x.replace(/\s+/g, ''))) !== JSON.stringify(headers));
   expect(dataRows.length, '③ 恰 1 行数据（非空保护）').toBe(1);
   for (const [label, want] of Object.entries(EXPECT)) {
-    const ci = headers.findIndex((h) => h === label);
+    // 表头实测形如「[col_1]材料成本」（探测记录 edit2.tableHeads）
+    const ci = headers.findIndex((h) => h === label || h.endsWith(`]${label}`));
     expect(ci, `表头「${label}」`).toBeGreaterThanOrEqual(0);
     const off = dataRows[0].length - headers.length;   // tbody 多出选择列等时右对齐，并打印供人工复核
     const cell = dataRows[0][ci + (off > 0 ? off : 0)];
@@ -165,19 +167,28 @@ test('AC-16⑤ · 导入预览「旧格式」提示：v1.0 有（版本 1.0）�
   for (const ver of ['v1.0', 'v1.1']) {
     await page.goto('/components');
     await page.waitForLoadState('networkidle');
+    await page.waitForTimeout(3000);   // 与探测 p2 同步：列表加载后再定位（第 1 轮在第二个包处 20s 内找不到目录，原因未查明）
     const dir = page.locator('.cmm-dir').filter({ hasText: dirName }).first();
+    if (!(await dir.isVisible().catch(() => false))) {
+      console.log(`[AC-16⑤ ${LABEL}] ${ver} 首次未见目录，诊断：`, JSON.stringify(await page.locator('.cmm-dir .cmm-dir-name').allInnerTexts()), page.url());
+      await page.screenshot({ path: path.join(OUT, `AC-16⑤-${LABEL}-${ver}-目录未见诊断.png`), fullPage: true });
+      await page.reload(); await page.waitForLoadState('networkidle'); await page.waitForTimeout(3000);
+    }
     await expect(dir, `应能看到目录 ${dirName}（T-C5 run 建）`).toBeVisible({ timeout: 20_000 });
-    const head = dir.locator('.cmm-dir-head').first();
-    await head.click({ button: 'right' }).catch(() => {});
-    await page.waitForTimeout(500);
-    let entry = page.getByText(/^导入/).first();
-    if (!(await entry.isVisible().catch(() => false))) { await head.hover(); entry = page.getByRole('button', { name: /导\s*入/ }).first(); }
-    await expect(entry, '应能找到「导入」入口（选择器未实测，失败先落探测记录报主线）').toBeVisible({ timeout: 10_000 });
+    // 探测（探测记录 11:45Z）：目录行操作按钮 aria-label = edit/export/import/tool/delete；点 import 出「导入组件到目录:…」弹层，须选文件后点「预览」
+    const entry = dir.locator('.cmm-dir-head').first().locator('.cmm-dir-acts button').filter({ has: page.locator('.anticon-import') }).first();
+    await expect(entry, '目录行应有导入按钮').toBeVisible({ timeout: 10_000 });
     await entry.click();
-    await page.locator('input[type=file]').first().setInputFiles(PKGS[ver]);
-    const panel = page.locator('.ant-modal, .ant-drawer').filter({ hasText: /导入/ }).last();
-    await expect(panel, '导入预览弹层可见').toBeVisible({ timeout: 20_000 });
-    await page.waitForTimeout(4000);   // 等预览请求返回并渲染
+    const panel = page.locator('.ant-modal, .ant-drawer').filter({ hasText: /导入组件到目录/ }).last();
+    await expect(panel, '导入弹层可见').toBeVisible({ timeout: 20_000 });
+    await expect(panel, '弹层标题指向前缀目录').toContainText(dirName);
+    await panel.locator('input[type=file]').first().setInputFiles(PKGS[ver]);
+    await page.waitForTimeout(800);
+    const pv = page.waitForResponse((r) => r.url().includes('/import') && !r.url().includes('/commit') && r.request().method() === 'POST', { timeout: 30_000 });
+    await panel.getByRole('button', { name: /预\s*览/ }).first().click();
+    const pvRes = await pv;
+    console.log(`[AC-16⑤ ${LABEL}] ${ver} 预览请求 status=${pvRes.status()}`);
+    await page.waitForTimeout(2500);   // 等预览渲染
     const text = (await panel.innerText().catch(() => '')) || '';
     await panel.screenshot({ path: path.join(OUT, `AC-16⑤-${LABEL}-${ver}-导入预览.png`) }).catch(() => {});
     expect(text.length, `${ver} 预览弹层文字非空`).toBeGreaterThan(0);
@@ -186,8 +197,8 @@ test('AC-16⑤ · 导入预览「旧格式」提示：v1.0 有（版本 1.0）�
     const m = text.replace(/\n/g, ' ').match(HINT);
     result[ver] = { hint: /旧格式/.test(text), version: m ? m[1] : null, line: text.split('\n').filter((l) => /旧格式/.test(l)).join(' / ') };
     console.log(`[AC-16⑤ ${LABEL}] ${ver}`, JSON.stringify(result[ver]));
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(800);
+    await panel.getByRole('button', { name: /关\s*闭/ }).first().click({ timeout: 5000 }).catch(async (e) => { console.log('关闭按钮失败，改按 Escape', String(e).slice(0, 120)); await page.keyboard.press('Escape'); });
+    await expect(page.locator('.ant-modal:visible'), '导入弹层已关闭').toHaveCount(0, { timeout: 10_000 });
   }
   fs.writeFileSync(path.join(o5, `ab-ui-${LABEL}.json`), JSON.stringify(result, null, 2));
   expect.soft(result['v1.0'].version, `AC-16⑤ v1.0 应出现提示且版本号为 1.0（实际: ${result['v1.0'].line || '无'}）`).toBe('1.0');

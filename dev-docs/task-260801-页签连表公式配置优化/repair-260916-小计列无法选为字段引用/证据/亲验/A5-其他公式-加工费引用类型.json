@@ -1,0 +1,20 @@
+[
+  {
+    "name": "回收成本",
+    "kinds": [
+      "component_subtotal"
+    ]
+  },
+  {
+    "name": "铆钉额外费用",
+    "kinds": [
+      "component_subtotal"
+    ]
+  },
+  {
+    "name": "零件材料成本",
+    "kinds": [
+      "component_subtotal"
+    ]
+  }
+]

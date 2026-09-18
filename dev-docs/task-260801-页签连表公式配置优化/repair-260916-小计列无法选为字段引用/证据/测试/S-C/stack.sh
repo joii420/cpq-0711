@@ -30,6 +30,7 @@ start-backend)
     wait_code "$BACKEND/api/cpq/components" 401 150 || { echo "后端 300s 内未返回 401"; tail -40 "$LOGD/backend-$who.log"; exit 4; }
     lp=$(listener_pid $BE_PORT); cwd=$(readlink /proc/$lp/cwd)
     echo "[stack] 8293 listener pid=$lp cwd=$cwd"
+    ps -o pgid= -p "$lp" | tr -d ' ' > "$RUN/backend.pid"; echo "[stack] 记录 backend 进程组=$(cat $RUN/backend.pid)"
     [ "$cwd" = "$R/cpq-backend" ] || { echo "8293 进程 cwd 不是 $R/cpq-backend，停止"; "$0" stop; exit 5; }
     # 验明正身：本实例（ApplicationName）的连接必须全部落在一次性库
     q "select datname,count(*) from pg_stat_activity where application_name='$APP' group by 1" | tee "$LOGD/identity-$who.txt"
@@ -48,6 +49,7 @@ start-vite)
   ( cd "$R/cpq-frontend" && VITE_PORT=$FE_PORT VITE_API_TARGET=$BACKEND setsid nohup npx vite --port $FE_PORT --strictPort --host 127.0.0.1 > "$LOGD/vite-$who.log" 2>&1 & echo $! > "$RUN/vite.pid" )
   wait_code "http://localhost:$FE_PORT/" 200 60 || { echo "vite 未起"; tail -20 "$LOGD/vite-$who.log"; exit 4; }
   lp=$(listener_pid $FE_PORT); cwd=$(readlink /proc/$lp/cwd); echo "[stack] 5293 pid=$lp cwd=$cwd"
+  ps -o pgid= -p "$lp" | tr -d ' ' > "$RUN/vite.pid"; echo "[stack] 记录 vite 进程组=$(cat $RUN/vite.pid)"
   [ "$cwd" = "$R/cpq-frontend" ] || { echo "5293 cwd 不符，停止"; "$0" stop; exit 5; }
   # 代理确认：经 5293 访问业务端点应得 401（打到 8293）
   c=$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' "http://localhost:$FE_PORT/api/cpq/components"); echo "[stack] 5293/api → $c（应 401）"
@@ -55,7 +57,7 @@ start-vite)
 stop)
   for f in vite backend; do
     [ -f "$RUN/$f.pid" ] || continue; p=$(cat "$RUN/$f.pid")
-    kill -- -"$p" 2>/dev/null && echo "[stack] $(now) 已停 $f pgid=$p"; rm -f "$RUN/$f.pid"
+    if kill -- -"$p"; then echo "[stack] $(now) 已停 $f pgid=$p"; rm -f "$RUN/$f.pid"; else echo "⚠️ 停 $f pgid=$p 失败，保留 pid 文件"; fi
   done
   sleep 3; for pt in $BE_PORT $FE_PORT; do port_busy $pt && echo "⚠️ 端口 $pt 仍被占用 pid=$(listener_pid $pt)（不是本脚本记录的进程，不处理，报主线）"; done; true ;;
 status) for pt in $BE_PORT $FE_PORT; do echo "$pt: $(listener_pid $pt) $(readlink /proc/$(listener_pid $pt)/cwd 2>/dev/null)"; done ;;

@@ -1,0 +1,33 @@
+{
+  "status": 200,
+  "text": "{\"code\":200,\"message\":\"success\",\"data\":{\"id\":\"f3e7ccf2-26b0-415b-b445-5be83045cc89\",\"templateSeriesId\":\"ffccd47d-102f-4bb8-998d-28987efcdb32\",\"name\":\"RP0916C-模板校验\",\"version\":null,\"category\":null,\"customerId\":null,\"customerName\":null,\"categoryId\":null,\"categoryName\":null,\"description\":\"repair-260916 S-C AC-14f 临时模板\",\"usageNote\":null,\"productAttributes\":[],\"subtotalFormula\":[],\"componentsSnapshot\":null,\"excelViewConfig\":null,\"status\":\"DRAFT\",\"templateKind\":\"QUOTATION\",\"createdBy\":null,\"publishedAt\":null,\"createdAt\":\"2026-09-17T04:52:13.33129322-07:00\",\"updatedAt\":\"2026-09-17T04:52:13.33129322-07:00\",\"components\":[],\"warnings\":[]}}",
+  "json": {
+    "code": 200,
+    "message": "success",
+    "data": {
+      "id": "f3e7ccf2-26b0-415b-b445-5be83045cc89",
+      "templateSeriesId": "ffccd47d-102f-4bb8-998d-28987efcdb32",
+      "name": "RP0916C-模板校验",
+      "version": null,
+      "category": null,
+      "customerId": null,
+      "customerName": null,
+      "categoryId": null,
+      "categoryName": null,
+      "description": "repair-260916 S-C AC-14f 临时模板",
+      "usageNote": null,
+      "productAttributes": [],
+      "subtotalFormula": [],
+      "componentsSnapshot": null,
+      "excelViewConfig": null,
+      "status": "DRAFT",
+      "templateKind": "QUOTATION",
+      "createdBy": null,
+      "publishedAt": null,
+      "createdAt": "2026-09-17T04:52:13.33129322-07:00",
+      "updatedAt": "2026-09-17T04:52:13.33129322-07:00",
+      "components": [],
+      "warnings": []
+    }
+  }
+}
