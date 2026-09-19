@@ -14,6 +14,8 @@
 - 响应结构不变：`{columns:[…], rows:[{col_key:value, …, "_lineItemId": "…"}]}`。
 - 报价侧：`source_type` 为 `TAB_JOIN_FORMULA` / `CARD_FORMULA` 的列值按该行正式账求值；该行正式账不可用 → 这两类列值为 `null`（其余列类型不变）。
 - 不写库（与改前一致）。
+- （`D-7`）行所用模板的 `components_snapshot` 为空（DRAFT / 已发布未冻结）时照样按正式账求值、**不做单位换算**；模板不存在或快照损坏 → 该行按「不可用」处理。
+- （`D-7`）**错误语义变化**：改前报价侧遇「已发布但未冻结」且含连表公式列的模板会因旧路径抛 `TemplateNotFrozenException` 返回 **409**；改后返回 200（列定义照常，值按上一条）。核价侧不变。
 
 ### `POST /api/cpq/quotations/{id}/excel-view/dry-run`
 

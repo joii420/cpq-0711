@@ -1,0 +1,13 @@
+# 还原实验：main 三个文件临时换回 HEAD(ca950dfc) 版本、移走 CardValuesUsableTest（它依赖新方法，编译不过），跑新增/改动的测试；跑完已原样还原（md5 与备份一致）
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 4.716 s <<< FAILURE! -- in com.cpq.quotation.card.ExcelDryRunIT
+[perf] repair-260918 getExcelView N=1 sql=7 | N=5 sql=23 ; dryRun N=1 sql=7 | N=5 sql=23
+[ERROR] Tests run: 6, Failures: 6, Errors: 0, Skipped: 0, Time elapsed: 10.08 s <<< FAILURE! -- in com.cpq.quotation.card.QuoteExcelCardValuesSourceIT
+[ERROR]   ExcelDryRunIT.dryRun_card_formula_resolves_subtotal:181 A should equal 7 (subtotal from quote_card_values, NOT componentData's 3), got: 3.000000000000 ==> expected: <0> but was: <1>
+[ERROR]   QuoteExcelCardValuesSourceIT.dryRunTabFormula_sourcePriority_andFixedErrorText:324->assertDec:240 line card values: expected 1.978941064 got 0E-12 ==> expected: <0> but was: <1>
+[ERROR]   QuoteExcelCardValuesSourceIT.dryRun_readsCardValues_andBlanksUnusableLines:307->assertCardOkRow:246->assertDec:240 dryRun line 1 c_mat (row_data would give 0.000869091): expected 1.978941064 got 0.000869091000 ==> expected: <0> but was: <1>
+[ERROR]   QuoteExcelCardValuesSourceIT.ensureExcelValues_skipsUnusableLines_andWritesCardValuesForUsable:364 NULL card values → quote_excel_values stays NULL (not {"rows":[]}, not row_data) ==> expected: <null> but was: <{"rows": [{"c_asm": "99", "c_mat": "0.000869091", "c_rec": "0.3", "c_card": "39.5", "c_fixed": "F", "c_total": "39.5", "c_mat_sub": "0.000869091"}]}>
+[ERROR]   QuoteExcelCardValuesSourceIT.getExcelView_readsCardValues_notRowData:281->assertCardOkRow:246->assertDec:240 getExcelView c_mat (row_data would give 0.000869091): expected 1.978941064 got 0.000869091000 ==> expected: <0> but was: <1>
+[ERROR]   QuoteExcelCardValuesSourceIT.getExcelView_unusableLinesBlank_otherLinesUnaffected:293->assertCardOkRow:246->assertDec:240 line 1 (usable) c_mat (row_data would give 0.000869091): expected 1.978941064 got 0.000869091000 ==> expected: <0> but was: <1>
+[ERROR]   QuoteExcelCardValuesSourceIT.sqlCount_isIndependentOfLineCount:433 getExcelView SQL count must not grow with the number of lines ==> expected: <7> but was: <23>
+[ERROR] Tests run: 7, Failures: 7, Errors: 0, Skipped: 0
+[INFO] BUILD FAILURE

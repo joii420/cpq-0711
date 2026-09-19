@@ -1,0 +1,6 @@
+start=2026-09-18 22:21:49
+BASE=http://localhost:8328
+MASTER=http://localhost:8081
+DB=cpq_db_0724
+cases=['T2.1', 'T2.2', 'T2.3', 'T2.4']
+script=/home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/证据/测试脚本/S2/run_s2.py

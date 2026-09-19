@@ -1,0 +1,8 @@
+# AC-7 master 对照 · master jar @ ca950dfc · 8091 · log.sql=true · 2026-09-18 22:27:38 PDT
+# 0607=ae190116(1 行) 0564=a99bfc8d(4 行)，同模板 4a2ce521 v1.0
+rep1 0607 HTTP=200 SQL=6
+rep1 0564 HTTP=200 SQL=12
+rep2 0607 HTTP=200 SQL=6
+rep2 0564 HTTP=200 SQL=12
+rep3 0607 HTTP=200 SQL=6
+rep3 0564 HTTP=200 SQL=12

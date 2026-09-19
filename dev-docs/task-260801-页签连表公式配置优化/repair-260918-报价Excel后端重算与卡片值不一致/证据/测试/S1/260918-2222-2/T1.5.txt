@@ -1,0 +1,14 @@
+===== T1.5 开始 2026-09-18T22:22:38-07:00 =====
+  行数：0607=1（应 1）0564=4（应 4）
+  [PASS] 前置：两单行数 1 / 4
+  本分支 0607 第1次: HTTP 200 SQL 条数=6 线程分布={'?': 6} 样例=['\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ']
+  本分支 0564 第1次: HTTP 200 SQL 条数=6 线程分布={'?': 6} 样例=['\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ']
+  本分支 0607 第2次: HTTP 200 SQL 条数=6 线程分布={'?': 6} 样例=['\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ']
+  本分支 0564 第2次: HTTP 200 SQL 条数=6 线程分布={'?': 6} 样例=['\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ']
+  本分支 0607 第3次: HTTP 200 SQL 条数=6 线程分布={'?': 6} 样例=['\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ']
+  本分支 0564 第3次: HTTP 200 SQL 条数=6 线程分布={'?': 6} 样例=['\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ', '\x1b[35m[Hibernate]\x1b[0m ']
+  本分支 计数表：0607=[6, 6, 6]  0564=[6, 6, 6]
+  [PASS] 判据非空：每次截取到 ≥1 条 SQL（否则日志未捕获，判据作废）
+  [PASS] 本分支：1 行单与 4 行单每次 SQL 条数相同
+  master：未提供 SQL 日志（--sqllog-b），master 条数 未验证
+===== T1.5 结论：PASS =====

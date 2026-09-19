@@ -1,0 +1,39 @@
+===== T1.4 开始 2026-09-18T21:47:48-07:00 =====
+  [PASS] 前置：0881 行正式账可用（ok）
+  [PASS] COMP-0011 excel_columns 取自库（3 列：['col_1', 'col_2', 'col_3']）
+  判定值（请求前取）= ['1.978941064', '0.317766357', '1.804589425']
+  ① A HTTP 200 @ 2026-09-18T21:47:49-07:00 / B HTTP 200 @ 2026-09-18T21:47:51-07:00
+  [PASS] ① A/B 同一分钟内
+  [PASS] ① A 响应含 0881 行
+    ① col_1: A='0.003407173' 判定='1.978941064' B='0.003407173'
+  [FAIL] ① col_1 A 逐位等于判定值
+    ① col_2: A='0' 判定='0.317766357' B='0'
+  [FAIL] ① col_2 A 逐位等于判定值
+    ① col_3: A='39.547708538' 判定='1.804589425' B='39.547708538'
+  [FAIL] ① col_3 A 逐位等于判定值
+    ① A errors 字段 = '<无此字段>'
+  [PASS] ① A errors 为空数组或无该字段（见回报：AC 原文对 ① 的 errors 口径待主线澄清）
+  [PASS] ① B(master) 响应含 0881 行
+  [PASS] ① master 对照 = 立项实测 ('0.003407173', '0', '39.547708538')（实际 ('0.003407173', '0', '39.547708538')）
+    ② col_1: A HTTP 200 value='0' errors=[] | B HTTP 200 value='0' errors=[] | 判定='1.978941064' | 相差 0.1s
+  [FAIL] ② col_1 A value 逐位等于判定值
+  [PASS] ② col_1 A errors 为空数组
+  [PASS] ② col_1 master 对照 = 立项实测 0（实际 '0'）
+    ② col_2: A HTTP 200 value='0' errors=[] | B HTTP 200 value='0' errors=[] | 判定='0.317766357' | 相差 0.1s
+  [FAIL] ② col_2 A value 逐位等于判定值
+  [PASS] ② col_2 A errors 为空数组
+  [PASS] ② col_2 master 对照 = 立项实测 0（实际 '0'）
+    ② col_3: A HTTP 200 value='0' errors=[] | B HTTP 200 value='0' errors=[] | 判定='1.804589425' | 相差 0.1s
+  [FAIL] ② col_3 A value 逐位等于判定值
+  [PASS] ② col_3 A errors 为空数组
+  [PASS] ② col_3 master 对照 = 立项实测 0（实际 '0'）
+    ③ col_1: A HTTP 200 value='0' errors=[] | B HTTP 200 value='0' errors=[] | 判定='1.978941064' | 相差 0.1s
+  [FAIL] ③ col_1 A value 逐位等于判定值
+  [PASS] ③ col_1 A errors 为空数组
+    ③ col_2: A HTTP 200 value='0' errors=[] | B HTTP 200 value='0' errors=[] | 判定='0.317766357' | 相差 0.1s
+  [FAIL] ③ col_2 A value 逐位等于判定值
+  [PASS] ③ col_2 A errors 为空数组
+    ③ col_3: A HTTP 200 value='0' errors=[] | B HTTP 200 value='0' errors=[] | 判定='1.804589425' | 相差 0.2s
+  [FAIL] ③ col_3 A value 逐位等于判定值
+  [PASS] ③ col_3 A errors 为空数组
+===== T1.4 结论：FAIL（9 项） =====
