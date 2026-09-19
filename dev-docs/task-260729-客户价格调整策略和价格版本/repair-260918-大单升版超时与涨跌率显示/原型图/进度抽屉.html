@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型 · 更新执行进度抽屉（repair-260918）</title>
+<style>
+  :root { --blue:#1677ff; --green:#389e0d; --red:#cf1322; --orange:#d46b08; --gold:#d4b106; --muted:rgba(0,0,0,.45); --border:#f0f0f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:#f5f5f5; font:14px/1.5715 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  .page { max-width: 880px; margin: 24px auto 48px; padding: 0 16px; }
+  .state-title { margin: 32px 0 8px; font-size: 13px; color: var(--muted); }
+  .state-title b { color: rgba(0,0,0,.88); font-size: 15px; }
+  .note { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
+  .note mark { background:#fff7e6; color:#ad4e00; padding:0 3px; border-radius:3px; }
+  .drawer { width: 800px; max-width: 100%; background:#fff; border-radius: 8px 0 0 8px; box-shadow: 0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12); }
+  .drawer-header { display:flex; align-items:center; gap:12px; padding:16px 24px; border-bottom:1px solid var(--border); font-weight:600; font-size:16px; }
+  .drawer-header .close { color: var(--muted); font-weight: 400; }
+  .drawer-body { padding: 24px; }
+  .counts { display:flex; flex-wrap:wrap; gap: 24px; margin-bottom: 16px; }
+  .counts b { font-weight: 600; }
+  .new { outline: 2px dashed #ffa940; outline-offset: 3px; border-radius: 3px; }
+  .progress { display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+  .bar { flex:1; height:8px; background:rgba(0,0,0,.06); border-radius:100px; overflow:hidden; position:relative; }
+  .bar i { display:block; height:100%; background:var(--blue); border-radius:100px; }
+  .bar.active i { background: linear-gradient(90deg,var(--blue) 0%,#69b1ff 50%,var(--blue) 100%); background-size:200% 100%; animation: flow 1.6s linear infinite; }
+  .bar.success i { background: #52c41a; }
+  @keyframes flow { from { background-position:200% 0 } to { background-position:0 0 } }
+  .pct { width:40px; text-align:right; font-size:13px; }
+  .meta { margin-bottom:16px; font-size:12.5px; color:var(--muted); }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th { text-align:left; background:#fafafa; font-weight:600; padding:8px; border-bottom:1px solid var(--border); }
+  td { padding:8px; border-bottom:1px solid var(--border); vertical-align: top; }
+  td.num, th.num { text-align:right; }
+  .mono { font-family: SFMono-Regular,Consolas,monospace; font-size: 13px; }
+  .tag { display:inline-block; padding:0 7px; font-size:12px; line-height:20px; border-radius:4px; border:1px solid #d9d9d9; background:#fafafa; white-space:nowrap; }
+  .tag.default { color:rgba(0,0,0,.88); }
+  .tag.processing { color:var(--blue); background:#e6f4ff; border-color:#91caff; }
+  .tag.green { color:var(--green); background:#f6ffed; border-color:#b7eb8f; }
+  .tag.red { color:var(--red); background:#fff1f0; border-color:#ffa39e; }
+  .btn { display:inline-block; padding:0 7px; height:24px; line-height:22px; font-size:14px; border:1px solid #d9d9d9; border-radius:4px; background:#fff; color:rgba(0,0,0,.88); }
+  .btn[aria-disabled="true"] { color: rgba(0,0,0,.25); background: rgba(0,0,0,.04); cursor: not-allowed; }
+  .pager { display:flex; justify-content:flex-end; align-items:center; gap:8px; margin-top:16px; font-size:14px; }
+  .pager .cur { border:1px solid var(--blue); color:var(--blue); border-radius:4px; width:24px; text-align:center; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h2 style="margin:0 0 4px">更新执行进度抽屉 · 原型</h2>
+  <p class="note">返修 <code>repair-260918</code> · 对应 <code>F-2</code> / <code>AC-9①</code> / <code>AC-16</code>。唯一的布局变化：计数行在「冲突」与「等待」之间新增 <mark>执行中 N</mark>（虚线框标出）。其余元素与现网一致，照原样保留。数据取自开发环境 <code>CUST-0004 / V26091802 / QT-20260911-0842</code>。</p>
+
+  <!-- ============ 状态 1：执行中 ============ -->
+  <div class="state-title" id="running"><b>状态 1 · 执行中</b>　（批次 RUNNING；1 条明细已提交为「执行中」；进度条流动）</div>
+  <p class="note">计数口径：等待 = 总数 − 成功 − 失败 − 冲突 − 已失效 − 已跳过 − <b>执行中</b> = 7 − 3 − 0 − 0 − 0 − 0 − 1 = 3；进度 = 已终态 / 总数 = 3/7 ≈ 43%。</p>
+  <div class="drawer">
+    <div class="drawer-header"><span class="close">✕</span>更新执行进度 · V26091802</div>
+    <div class="drawer-body">
+      <div class="counts">
+        <span>总数 <b>7</b></span>
+        <span style="color:var(--green)">成功 <b>3</b></span>
+        <span style="color:var(--red)">失败 <b>0</b></span>
+        <span style="color:var(--orange)">冲突 <b>0</b></span>
+        <span class="new" style="color:var(--blue)">执行中 <b>1</b></span>
+        <span style="color:var(--muted)">等待 <b>3</b></span>
+      </div>
+      <div class="progress"><div class="bar active"><i style="width:43%"></i></div><span class="pct">43%</span></div>
+      <div class="meta">触发人 d1e1147c-a639-4156-aeac-9f938a65ad05 · 2026-09-18 19:40</div>
+      <table>
+        <thead><tr><th style="width:150px">报价单</th><th style="width:130px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
+        <tbody>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00007</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00217</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00259</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00368</td><td><span class="tag processing">执行中</span></td><td>—</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00485</td><td><span class="tag default">等待</span></td><td>—</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00598</td><td><span class="tag default">等待</span></td><td>—</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF0909-B00150</td><td><span class="tag default">等待</span></td><td>—</td><td class="num">0</td><td></td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 7 条 <span>‹</span><span class="cur">1</span><span>›</span></div>
+    </div>
+  </div>
+
+  <!-- ============ 状态 2：全部成功 ============ -->
+  <div class="state-title" id="done"><b>状态 2 · 全部成功</b>　（批次 SUCCESS；执行中 0 仍显示；轮询已停）</div>
+  <div class="drawer">
+    <div class="drawer-header"><span class="close">✕</span>更新执行进度 · V26091802</div>
+    <div class="drawer-body">
+      <div class="counts">
+        <span>总数 <b>7</b></span>
+        <span style="color:var(--green)">成功 <b>7</b></span>
+        <span style="color:var(--red)">失败 <b>0</b></span>
+        <span style="color:var(--orange)">冲突 <b>0</b></span>
+        <span class="new" style="color:var(--blue)">执行中 <b>0</b></span>
+        <span style="color:var(--muted)">等待 <b>0</b></span>
+      </div>
+      <div class="progress"><div class="bar success"><i style="width:100%"></i></div><span class="pct">✓</span></div>
+      <div class="meta">触发人 d1e1147c-a639-4156-aeac-9f938a65ad05 · 2026-09-18 19:40 · 完成于 2026-09-18 19:42</div>
+      <table>
+        <thead><tr><th style="width:150px">报价单</th><th style="width:130px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
+        <tbody>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00007</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00217</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
+          <tr><td colspan="6" style="color:var(--muted);text-align:center">…其余 5 行同为「成功」…</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 7 条 <span>‹</span><span class="cur">1</span><span>›</span></div>
+    </div>
+  </div>
+
+  <!-- ============ 状态 3：含失败（可读原因 + 禁用态 + 最长文案） ============ -->
+  <div class="state-title" id="failed"><b>状态 3 · 含失败</b>　（批次 PARTIAL；两种新错误码的可读文案；已失效行的「重试」禁用）</div>
+  <p class="note">错误信息列原样显示后端 <code>errorMessage</code>，前端不改；这里画出来是为了确认最长文案的折行效果。</p>
+  <div class="drawer">
+    <div class="drawer-header"><span class="close">✕</span>更新执行进度 · V26091802</div>
+    <div class="drawer-body">
+      <div class="counts">
+        <span>总数 <b>7</b></span>
+        <span style="color:var(--green)">成功 <b>4</b></span>
+        <span style="color:var(--red)">失败 <b>2</b></span>
+        <span style="color:var(--orange)">冲突 <b>0</b></span>
+        <span class="new" style="color:var(--blue)">执行中 <b>0</b></span>
+        <span style="color:var(--muted)">等待 <b>0</b></span>
+        <span style="color:var(--muted)">已失效 <b>1</b></span>
+      </div>
+      <div class="progress"><div class="bar"><i style="width:100%"></i></div><span class="pct">100%</span></div>
+      <div class="meta">触发人 d1e1147c-a639-4156-aeac-9f938a65ad05 · 2026-09-18 19:40 · 完成于 2026-09-18 19:43</div>
+      <table>
+        <thead><tr><th style="width:150px">报价单</th><th style="width:130px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
+        <tbody>
+          <tr><td>QT-20260909-0629</td><td class="mono">PERFHOT-B00221</td><td><span class="tag red">失败</span></td><td>执行超时（超过 60 秒）被中止，本行未更新，可重试</td><td class="num">0</td><td><span class="btn">重试</span></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERFHOT-B00239</td><td><span class="tag red">失败</span></td><td>价格已更新，但版本记录写入失败，请重试</td><td class="num">0</td><td><span class="btn">重试</span></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERFHOT-B00291</td><td><span class="tag default">已失效</span></td><td>—</td><td class="num">0</td><td><span class="btn" aria-disabled="true" title="所属版本已被新版取代，请在新版待办池重新处理">重试</span></td></tr>
+          <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00007</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
+          <tr><td colspan="6" style="color:var(--muted);text-align:center">…其余 3 行同为「成功」…</td></tr>
+        </tbody>
+      </table>
+      <div class="pager">共 7 条 <span>‹</span><span class="cur">1</span><span>›</span></div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型导航 · repair-260918</title>
+<style>
+  body { margin:0; background:#f5f5f5; font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color:rgba(0,0,0,.88); }
+  .page { max-width: 760px; margin: 32px auto; padding: 0 16px; }
+  .card { background:#fff; border-radius:8px; padding:20px 24px; margin-bottom:16px; box-shadow:0 1px 2px rgba(0,0,0,.06); }
+  h1 { font-size:20px; margin:0 0 4px; }
+  h2 { font-size:15px; margin:0 0 8px; }
+  a { color:#1677ff; text-decoration:none; }
+  table { border-collapse:collapse; width:100%; font-size:13.5px; }
+  th, td { border-bottom:1px solid #f0f0f0; padding:6px 8px; text-align:left; }
+  th { background:#fafafa; }
+  .r { color:#cf1322; } .g { color:#389e0d; }
+  .muted { color:rgba(0,0,0,.45); font-size:12.5px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>原型导航 · 大单升版超时与涨跌率显示</h1>
+  <p class="muted"><code>dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/原型图/</code></p>
+
+  <div class="card" style="border-left:4px solid #1677ff">
+    <h2>📌 当前基准 · 更新执行进度抽屉（2026-09-18 起）</h2>
+    <p style="margin:0">本目录的 <code>进度抽屉.html</code> 是「更新执行进度」抽屉此刻的视觉标准。上一份 —— 父任务 <code>../价格调整策略-原型图.html</code> 的<b>屏 6</b> —— 已改标 🕰️ 历史快照。它与现网实现的偏差：</p>
+    <ul class="muted" style="margin:6px 0 0">
+      <li>标题：屏 6 为「更新报价 · 客户 版本号」→ 现网为「更新执行进度 · 版本号」</li>
+      <li>进度：屏 6 为「进度 5 / 8 · 已用 51 秒 · 预计剩余 31 秒」→ 现网为百分比进度条，无耗时与预计剩余</li>
+      <li>计数：屏 6 有「进行中」→ 现网实现漏掉（只有「等待」）→ <b>本任务补回，定名「执行中」</b>（与明细状态标签「执行中」同名）</li>
+      <li>明细列：屏 6 为「报价单号 / 本次更新料号 / 结果 / 原总额 / 新总额 / 耗时 / 说明」→ 现网为「报价单 / 料号 / 状态 / 错误信息 / 重试次数 / 操作」（本任务不改列）</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>1. 更新执行进度抽屉（F-2 · 唯一的布局改动）</h2>
+    <ul>
+      <li><a href="进度抽屉.html#running">状态 1 · 执行中</a>（新增「执行中 N」计数）</li>
+      <li><a href="进度抽屉.html#done">状态 2 · 全部成功</a></li>
+      <li><a href="进度抽屉.html#failed">状态 3 · 含失败</a>（可读失败原因 / 已失效行重试禁用 / 最长文案）</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>2. 涨跌列显示口径（F-1 · 只改数字格式，不改布局，故不单独出页面原型）</h2>
+    <p class="muted">适用三处：版本明细抽屉「涨跌」列、元素矩阵版本格小字、料号审核抽屉「一、为什么变」的「涨跌」列。</p>
+    <table>
+      <thead><tr><th>后端 changeRate</th><th>现网显示</th><th>改后显示</th><th>对应 AC</th></tr></thead>
+      <tbody>
+        <tr><td><code>0.000035</code>（银 28892.5 → 28893.5）</td><td class="r">+0%</td><td class="r">+0.0035%</td><td>AC-1 / AC-2</td></tr>
+        <tr><td><code>0.000000034611</code></td><td class="r">+0%</td><td class="r">+&lt;0.0001%</td><td>AC-4</td></tr>
+        <tr><td><code>-0.000000034611</code></td><td class="g">-0%</td><td class="g">-&lt;0.0001%</td><td>AC-4</td></tr>
+        <tr><td><code>-0.0125</code></td><td class="g">-1.3%</td><td class="g">-1.25%</td><td>AC-4</td></tr>
+        <tr><td><code>0</code></td><td>0%</td><td>0%（无色无符号）</td><td>AC-4</td></tr>
+        <tr><td><code>null</code></td><td>—</td><td>—</td><td>AC-4</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+</body>
+</html>
