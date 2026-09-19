@@ -1,0 +1,1 @@
+[2026-09-18T22:33:54.013222775] 期望 vs 实际 第一处差异：quote=null costing=null rows=null；边界行：卡片值为空行=null 无页签行={} component_id 为空行的键=[null, 15da8efc-9044-4c23-9336-06cf72c09599]

@@ -112,6 +112,7 @@ public class PriceAdjustReviewService {
         dto.targetVersionNo = tgt != null ? tgt.versionNo : null;
 
         dto.budgetStatus = r.budgetStatus;
+        dto.budgetError = r.budgetError; // repair-260918 B-16：行对象已加载，无新增查询
         dto.reviewStatus = r.status;
         if (r.basisQuotationId != null) {
             Quotation q = Quotation.findById(r.basisQuotationId);
@@ -468,7 +469,12 @@ public class PriceAdjustReviewService {
     public ApproveResult approve(ApproveRejectRequest req, UUID actorId) {
         ApproveResult result = doApprove(req, actorId);
         UUID jobId = result.jobId;
-        managedExecutor.runAsync(() -> jobExecutionService.executeJob(jobId));
+        // repair-260918 B-10：异步派发的异常补记 ERROR 日志（原先被 CompletableFuture 静默吞掉）。
+        managedExecutor.runAsync(() -> jobExecutionService.executeJob(jobId))
+            .exceptionally(t -> {
+                LOG.errorf(t, "[price-adjust] approve jobId=%s 异步执行异常", jobId);
+                return null;
+            });
         return result;
     }
 

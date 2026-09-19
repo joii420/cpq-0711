@@ -104,11 +104,15 @@ const JobProgressDrawer: React.FC<JobProgressDrawerProps> = ({ open, jobId, onCl
     }
   };
 
-  // job 级只有 total/success/failed/conflict/stale/skipped，"等待" 数派生（fronttask §5.1 要求展示但 api.md 未给字段）
+  // job 级只有 total/success/failed/conflict/stale/skipped/running，"等待" 数派生（fronttask §5.1 要求展示但 api.md 未给字段）
   // repair-0807：skipped 也是终态，必须一并扣除，否则已跳过的单会被误算成"仍在等待"，
   // 拖低 donePercent 且让已完成的批次看起来还没跑完。
-  const waiting = job ? Math.max(0, job.total - job.success - job.failed - job.conflict - job.stale - job.skipped) : 0;
-  const donePercent = job && job.total > 0 ? Math.round(((job.total - waiting) / job.total) * 100) : 0;
+  // repair-260918 F-2：running = 已提交为 RUNNING 的明细数（后端新字段；旧后端缺省按 0）。
+  // 「等待」再扣掉执行中；进度只算已终态（成功/失败/冲突/已失效/已跳过），执行中不计入。
+  const running = job?.running ?? 0;
+  const terminal = job ? job.success + job.failed + job.conflict + job.stale + (job.skipped ?? 0) : 0;
+  const waiting = job ? Math.max(0, job.total - terminal - running) : 0;
+  const donePercent = job && job.total > 0 ? Math.round((Math.min(terminal, job.total) / job.total) * 100) : 0;
 
   const columns = [
     { title: '报价单', dataIndex: 'quotationNo', width: 150 },
@@ -163,6 +167,8 @@ const JobProgressDrawer: React.FC<JobProgressDrawerProps> = ({ open, jobId, onCl
             <span style={{ color: '#389e0d' }}>成功 <b>{job.success}</b></span>
             <span style={{ color: '#cf1322' }}>失败 <b>{job.failed}</b></span>
             <span style={{ color: '#d46b08' }}>冲突 <b>{job.conflict}</b></span>
+            {/* repair-260918 F-2：N=0 时仍显示（原型状态 2/3） */}
+            <span style={{ color: '#1677ff' }}>执行中 <b>{running}</b></span>
             <span style={{ color: 'rgba(0,0,0,.45)' }}>等待 <b>{waiting}</b></span>
             {job.stale > 0 && <span style={{ color: 'rgba(0,0,0,.45)' }}>已失效 <b>{job.stale}</b></span>}
             {/* repair-0807 FR-4：skippedCount 缺失（字段名与后端未对齐）时不显示，不显示 undefined */}

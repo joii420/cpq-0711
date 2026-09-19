@@ -20,12 +20,13 @@
 | B-12 | AC-23 | **预算续跑**：<br>① `onVersionGenerated` 开头**一次批量**取出「本版本已有审核行的料号」与「`material_price_version_ref` 已指向本版本的料号」，循环跳过它们。<br>② `PriceAdjustStartupRecovery` 新增公开方法 **`void resumeBudgets(java.util.Collection<UUID> versionIds)`**：对传入的待处理版本异步续跑预算（同一版本同时只允许一个循环在跑，重复触发直接跳过并记日志）。`runOnStartup` 用它续跑「范围内仍有既无审核行、指针也未指向本版本的料号」的待处理版本（判定批量完成，条数与版本数无关）。 |
 | B-13 | AC-24 | **批量重试包含失败明细**：`retryJob` 重新执行本批 `FAILED` + `CONFLICT` 明细（`STALE` 不动），与接口注释 §3.4 一致；执行走 B-4 分组路径、B-5 执行中可见。 |
 | B-14 | AC-25 | **启动收尾开关**：配置项 `cpq.price-adjust.startup-recovery.enabled`，`application.properties` 默认 `true`；**`application-test.properties` 设 `false`**（测试进程连共享测试库）。B-11 / B-12 的启动动作只在开关开启时执行；`recoverJobs` / `resumeBudgets` 被直接调用时不看开关。 |
+| B-16 | AC-17, AC-26 | **审核列表返回预算失败原因**（D-8）：`ReviewListItemDTO` 新增 `public String budgetError`（可空），`PriceAdjustReviewService.toListItem` 里赋 `r.budgetError`（行对象已加载，🚫 不许新增查询）。审核详情 DTO 不加。 |
 | B-15 | AC-9, AC-10, AC-13 | **观测点**：每次 `upgrade()` 结束打 `[perf] upgrade li=%s quotation=%s lines=%d dryRun=%b sql=%d ms=%d`（`sql` = 本次升版执行的 SQL 条数，实现方式自定，如 Hibernate `StatementInspector` 按线程计数）；每次快照写入打 `[perf] revision-write quotation=%s kind=INITIAL\|CURRENT ms=%d`。 |
 
 ## 覆盖核对（闸门 A 自检）
 
-- **正向**：AC-3/5 ← B-9；AC-6 ← B-2/B-3；AC-7 ← B-2；AC-8 ← B-3/B-4；AC-9 ← B-1/B-3/B-4/B-5/B-15；AC-10 ← B-1/B-3/B-4/B-15；AC-11 ← B-3/B-4；AC-12 ← B-1/B-4；AC-13 ← B-1/B-3/B-15；AC-14 ← B-4；AC-15 ← B-6；AC-16 ← B-5；AC-17 ← B-2/B-7；AC-18 ← B-8；AC-19 ← B-1/B-3；AC-20 ← B-1/B-4；AC-21 ← B-11；AC-22 ← B-10；AC-23 ← B-2/B-12；AC-24 ← B-5/B-13；AC-25 ← B-14。AC-1/2/4 由前端认领（`fronttask.md`）。
-- **反向**：B-1~B-15 均指回至少一条 AC。
+- **正向**：AC-3/5 ← B-9；AC-6 ← B-2/B-3；AC-7 ← B-2；AC-8 ← B-3/B-4；AC-9 ← B-1/B-3/B-4/B-5/B-15；AC-10 ← B-1/B-3/B-4/B-15；AC-11 ← B-3/B-4；AC-12 ← B-1/B-4；AC-13 ← B-1/B-3/B-15；AC-14 ← B-4；AC-15 ← B-6；AC-16 ← B-5；AC-17 ← B-2/B-7；AC-18 ← B-8；AC-19 ← B-1/B-3；AC-20 ← B-1/B-4；AC-21 ← B-11；AC-22 ← B-10；AC-23 ← B-2/B-12；AC-24 ← B-5/B-13；AC-25 ← B-14；AC-26 ← B-16（+ 前端 F-3）；AC-17 另由 B-16 提供接口可见性。AC-1/2/4 由前端认领（`fronttask.md`）。
+- **反向**：B-1~B-16 均指回至少一条 AC。
 
 ## 自检要求（交付回报必须逐条给出）
 

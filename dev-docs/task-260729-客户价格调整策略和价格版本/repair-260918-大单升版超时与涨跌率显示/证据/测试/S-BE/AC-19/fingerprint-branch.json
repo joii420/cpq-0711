@@ -1,0 +1,468 @@
+{
+  "lines" : {
+    "1" : {
+      "material" : "RP0918A-RUN-S19-0001",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 1
+      }
+    },
+    "2" : {
+      "material" : "RP0918A-RUN-S19-0002",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 2
+      }
+    },
+    "3" : {
+      "material" : "RP0918A-RUN-S19-0003",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 3
+      }
+    },
+    "4" : {
+      "material" : "RP0918A-RUN-S19-0004",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 4
+      }
+    },
+    "5" : {
+      "material" : "RP0918A-RUN-S19-0005",
+      "subtotal" : "28894.734567890000",
+      "quote_card_values" : {
+        "tabs" : [ {
+          "tabName" : "元素成本",
+          "baseRows" : [ {
+            "driverRow" : {
+              "memo" : "",
+              "price" : "28893.5",
+              "element" : "Ag",
+              "currency" : "CNY",
+              "fixedAmount" : "1.234567890123",
+              "__priceLocked" : true,
+              "__priceVersion" : "RP8ARUN-TGT"
+            },
+            "basicDataValues" : { }
+          } ],
+          "editRows" : [ ],
+          "subtotal" : "28894.734567890123",
+          "componentId" : "COMP_ELEM",
+          "resolvedRows" : [ {
+            "price" : "28893.5",
+            "element" : "Ag",
+            "fixedAmount" : "1.234567890123",
+            "__priceLocked" : true,
+            "__priceVersion" : "RP8ARUN-TGT"
+          } ],
+          "componentType" : "NORMAL",
+          "formulaResults" : [ {
+            "rowKey" : "0",
+            "values" : { }
+          } ],
+          "subtotalByColumn" : {
+            "price" : "28893.5",
+            "fixedAmount" : "1.234567890123"
+          }
+        }, {
+          "tabName" : "合计",
+          "baseRows" : [ ],
+          "editRows" : [ ],
+          "subtotal" : "28894.73456789",
+          "componentId" : "COMP_SUB",
+          "resolvedRows" : [ ],
+          "componentType" : "SUBTOTAL",
+          "formulaResults" : [ ]
+        } ]
+      }
+    },
+    "6" : {
+      "material" : "RP0918A-RUN-S19-0006",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 6
+      }
+    },
+    "7" : {
+      "material" : "RP0918A-RUN-S19-0007",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 7
+      }
+    },
+    "8" : {
+      "material" : "RP0918A-RUN-S19-0008",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 8
+      }
+    },
+    "9" : {
+      "material" : "RP0918A-RUN-S19-0009",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 9
+      }
+    },
+    "10" : {
+      "material" : "RP0918A-RUN-S19-0010",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 10
+      }
+    },
+    "11" : {
+      "material" : "RP0918A-RUN-S19-0011",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 11
+      }
+    },
+    "12" : {
+      "material" : "RP0918A-RUN-S19-0012",
+      "subtotal" : "28893.734567890000",
+      "quote_card_values" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 12
+      }
+    }
+  },
+  "total_amount" : "346725.814814680000",
+  "current_revision" : {
+    "quote_card_values" : {
+      "LINE#10" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 10
+      },
+      "LINE#8" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 8
+      },
+      "LINE#2" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 2
+      },
+      "LINE#1" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 1
+      },
+      "LINE#4" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 4
+      },
+      "LINE#9" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 9
+      },
+      "LINE#6" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 6
+      },
+      "LINE#12" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 12
+      },
+      "LINE#3" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 3
+      },
+      "LINE#5" : {
+        "tabs" : [ {
+          "tabName" : "元素成本",
+          "baseRows" : [ {
+            "driverRow" : {
+              "memo" : "",
+              "price" : "28893.5",
+              "element" : "Ag",
+              "currency" : "CNY",
+              "fixedAmount" : "1.234567890123",
+              "__priceLocked" : true,
+              "__priceVersion" : "RP8ARUN-TGT"
+            },
+            "basicDataValues" : { }
+          } ],
+          "editRows" : [ ],
+          "subtotal" : "28894.734567890123",
+          "componentId" : "COMP_ELEM",
+          "resolvedRows" : [ {
+            "price" : "28893.5",
+            "element" : "Ag",
+            "fixedAmount" : "1.234567890123",
+            "__priceLocked" : true,
+            "__priceVersion" : "RP8ARUN-TGT"
+          } ],
+          "componentType" : "NORMAL",
+          "formulaResults" : [ {
+            "rowKey" : "0",
+            "values" : { }
+          } ],
+          "subtotalByColumn" : {
+            "price" : "28893.5",
+            "fixedAmount" : "1.234567890123"
+          }
+        }, {
+          "tabName" : "合计",
+          "baseRows" : [ ],
+          "editRows" : [ ],
+          "subtotal" : "28894.73456789",
+          "componentId" : "COMP_SUB",
+          "resolvedRows" : [ ],
+          "componentType" : "SUBTOTAL",
+          "formulaResults" : [ ]
+        } ]
+      },
+      "LINE#11" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 11
+      },
+      "LINE#7" : {
+        "pad" : "",
+        "marker" : "RP0918A",
+        "ordinal" : 7
+      }
+    },
+    "costing_card_values" : {
+      "LINE#10" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 10
+      },
+      "LINE#8" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 8
+      },
+      "LINE#2" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 2
+      },
+      "LINE#1" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 1
+      },
+      "LINE#4" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 4
+      },
+      "LINE#9" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 9
+      },
+      "LINE#6" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 6
+      },
+      "LINE#12" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 12
+      },
+      "LINE#3" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 3
+      },
+      "LINE#5" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 5
+      },
+      "LINE#11" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 11
+      },
+      "LINE#7" : {
+        "pad" : "",
+        "marker" : "RP0918A-costing",
+        "ordinal" : 7
+      }
+    },
+    "snapshot_rows" : {
+      "LINE#10" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#8" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#2" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#1" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#4" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#9" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#6" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#12" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#3" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#5" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28893.5",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123",
+            "__priceLocked" : true,
+            "__priceVersion" : "RP8ARUN-TGT"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#11" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      },
+      "LINE#7" : {
+        "COMP_ELEM" : [ {
+          "driverRow" : {
+            "memo" : "",
+            "price" : "28892.500000000000",
+            "element" : "Ag",
+            "currency" : "CNY",
+            "fixedAmount" : "1.234567890123"
+          },
+          "basicDataValues" : { }
+        } ]
+      }
+    },
+    "upgraded_material_nos" : [ "RP0918A-RUN-S19-0005" ]
+  }
+}

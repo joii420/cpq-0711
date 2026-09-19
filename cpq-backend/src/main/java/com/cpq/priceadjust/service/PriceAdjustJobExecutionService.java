@@ -56,6 +56,7 @@ public class PriceAdjustJobExecutionService {
     @Inject BomTreeRenderService bomTreeRenderService;
     @Inject DriverBatchSafetyAuditor safetyAuditor;
     @Inject CardSnapshotService cardSnapshotService;
+    @Inject CurrentPeriodRevisionWriter revisionWriter;
 
     /**
      * task-0806 · FR-1（方案 B）+ FR-4/FR-5/FR-6/FR-7：逐项循环<b>之前</b>按
@@ -63,20 +64,164 @@ public class PriceAdjustJobExecutionService {
      * 分发给各 {@link #executeItem}；预渲染本身只读、不参与 item 事务（需求文档 §4 事务边界）。
      */
     public void executeJob(UUID jobId) {
-        List<MaterialPriceUpdateJobItem> items = loadWaitingItems(jobId);
-        LOG.infof("[price-adjust-job] executeJob jobId=%s items=%d", jobId, items.size());
-        Map<UUID, CardSnapshotService.PrecomputedTreeRows> precomputedByLineItem = precomputeBatch(jobId, items);
-        for (MaterialPriceUpdateJobItem item : items) {
+        runJob(jobId, false);
+    }
+
+    /**
+     * repair-260918 · 批次执行主体（「通过」与「批量重试」共用）。
+     *
+     * <p><b>B-4④ 分组路径（方案丁）</b>：待执行明细按 {@code quotationId} 分组（保持首次出现顺序），组内逐条执行
+     * （每条仍是独立 {@code REQUIRES_NEW} + {@code @ActivateRequestContext}，{@code precomputed} 照旧透传），
+     * 升版时本期快照延后（{@link CurrentRevisionDeferral}）；组内全部完成后若有 SUCCESS，在
+     * {@link #writeGroupRevisionInNewTx} 独立事务里写一次本期版本记录、一次并入本组全部成功料号。
+     * 写失败 ⇒ 本组 SUCCESS 明细改 FAILED / {@code REVISION_WRITE_FAILED}（B-4⑤）。
+     *
+     * <p><b>B-5</b>：每条明细执行前先用独立短事务置 RUNNING 并提交 —— 进度抽屉看得到「执行中」。
+     *
+     * <p><b>B-10 兜底</b>：整体 {@code try/finally}，任何 {@code Throwable}（含 {@code Error}）都不许让批次停在
+     * RUNNING：{@code finally} 里把本次负责的明细中仍为 WAITING / RUNNING 的按 B-6 口径标 FAILED，再汇总批次。
+     *
+     * @param includeFailed {@code true} = 批量重试（B-13：重跑 FAILED + CONFLICT，STALE 不动）
+     */
+    void runJob(UUID jobId, boolean includeFailed) {
+        List<UUID> ownedItemIds = null;
+        UUID versionId = null;
+        GroupState current = null;
+        Throwable failure = null;
+        try {
+            List<MaterialPriceUpdateJobItem> items = includeFailed ? loadRetryItems(jobId) : loadWaitingItems(jobId);
+            ownedItemIds = new ArrayList<>(items.size());
+            for (MaterialPriceUpdateJobItem it : items) ownedItemIds.add(it.id);
+            LOG.infof("[price-adjust-job] executeJob jobId=%s items=%d retry=%b", jobId, items.size(), includeFailed);
+            versionId = loadJobVersionId(jobId);
+            Map<UUID, CardSnapshotService.PrecomputedTreeRows> precomputedByLineItem = precomputeBatch(jobId, items);
+
+            // 纯内存分组（保持首次出现顺序），无查库。
+            Map<UUID, List<MaterialPriceUpdateJobItem>> byQuotation = new LinkedHashMap<>();
+            for (MaterialPriceUpdateJobItem it : items) {
+                byQuotation.computeIfAbsent(it.quotationId, k -> new ArrayList<>()).add(it);
+            }
+
+            for (Map.Entry<UUID, List<MaterialPriceUpdateJobItem>> g : byQuotation.entrySet()) {
+                current = new GroupState(g.getKey());
+                // 每条明细一次 markItemRunning + 一次 executeItem（各自独立事务）—— 这是「逐条独立提交、
+                // 一单失败不回滚全批」的既定执行单位（task-0729 B5），不是查询 N+1；组内读库条数与整单行数无关。
+                for (MaterialPriceUpdateJobItem item : g.getValue()) {
+                    markItemRunning(item.id);
+                    CardSnapshotService.PrecomputedTreeRows precomputed =
+                        item.lineItemId != null ? precomputedByLineItem.get(item.lineItemId) : null;
+                    String status;
+                    try {
+                        status = CurrentRevisionDeferral.callDeferred(() -> executeItem(item.id, precomputed));
+                    } catch (Exception e) {
+                        LOG.errorf(e, "[price-adjust-job] jobId=%s item=%s 执行异常", jobId, item.id);
+                        String[] f = PriceAdjustFailureTranslator.forJobItem(e);
+                        markItemFailed(item.id, f[0], f[1]);
+                        status = MaterialPriceUpdateJobItem.FAILED;
+                    }
+                    if (MaterialPriceUpdateJobItem.SUCCESS.equals(status)) {
+                        current.successItemIds.add(item.id);
+                        current.materialNos.add(item.materialNo);
+                    }
+                }
+                completeGroup(jobId, versionId, current);
+                current = null;
+            }
+        } catch (Throwable t) {
+            failure = t;
+            LOG.errorf(t, "[price-adjust-job] jobId=%s 执行入口异常（%s），收尾后批次不会停在 RUNNING",
+                jobId, PriceAdjustFailureTranslator.rootCauseText(t));
+            throw t;
+        } finally {
+            closeOut(jobId, ownedItemIds, versionId, current, failure);
+        }
+    }
+
+    /** 一张报价单在本次执行里的成功明细（纯内存）。 */
+    private static final class GroupState {
+        final UUID quotationId;
+        final List<UUID> successItemIds = new ArrayList<>();
+        final List<String> materialNos = new ArrayList<>();
+        boolean revisionHandled;
+
+        GroupState(UUID quotationId) {
+            this.quotationId = quotationId;
+        }
+    }
+
+    /** B-4④⑤：本组有 SUCCESS ⇒ 独立事务写一次本期版本记录；写失败 ⇒ 本组 SUCCESS 明细改 REVISION_WRITE_FAILED。 */
+    private void completeGroup(UUID jobId, UUID versionId, GroupState gs) {
+        gs.revisionHandled = true;
+        if (gs.successItemIds.isEmpty() || versionId == null) return;
+        try {
+            writeGroupRevisionInNewTx(gs.quotationId, versionId, gs.materialNos);
+        } catch (Exception e) {
+            LOG.errorf(e, "[price-adjust-job] jobId=%s quotation=%s 写本期版本记录失败，本组 %d 条成功明细改 %s",
+                jobId, gs.quotationId, gs.successItemIds.size(), PriceAdjustFailureTranslator.REVISION_WRITE_FAILED);
+            markRevisionWriteFailed(gs.successItemIds);
+        }
+    }
+
+    /**
+     * B-4④：分组路径写本期快照的独立事务。writer 是 REQUIRED → 加入本方法新开的事务；这张单的各行此前已各自提交，
+     * 本事务读到的是全部升版后的状态。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void writeGroupRevisionInNewTx(UUID quotationId, UUID versionId, List<String> materialNos) {
+        revisionWriter.write(quotationId, versionId, materialNos);
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void markRevisionWriteFailed(List<UUID> itemIds) {
+        MaterialPriceUpdateJobItem.markRevisionWriteFailed(itemIds,
+            PriceAdjustFailureTranslator.REVISION_WRITE_FAILED, PriceAdjustFailureTranslator.MSG_REVISION_WRITE_FAILED);
+    }
+
+    /** B-5：明细执行前置 RUNNING，独立短事务提交。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    void markItemRunning(UUID itemId) {
+        MaterialPriceUpdateJobItem.markRunning(itemId);
+    }
+
+    /**
+     * B-10：执行入口收尾。每一步各自兜住异常 —— 收尾自身失败只记日志（批次若仍停在 RUNNING，由下次启动的
+     * {@link PriceAdjustStartupRecovery} 收尾）。
+     */
+    private void closeOut(UUID jobId, List<UUID> ownedItemIds, UUID versionId, GroupState pending, Throwable failure) {
+        if (pending != null && !pending.revisionHandled) {
             try {
-                CardSnapshotService.PrecomputedTreeRows precomputed =
-                    item.lineItemId != null ? precomputedByLineItem.get(item.lineItemId) : null;
-                executeItem(item.id, precomputed);
-            } catch (Exception e) {
-                LOG.errorf(e, "[price-adjust-job] jobId=%s item=%s 未预期异常", jobId, item.id);
-                markItemFailed(item.id, "UNEXPECTED_ERROR", e.getMessage());
+                completeGroup(jobId, versionId, pending);
+            } catch (Throwable t) {
+                LOG.errorf(t, "[price-adjust-job] jobId=%s 收尾时补写本期版本记录失败", jobId);
             }
         }
-        finalizeJob(jobId);
+        try {
+            String[] f = failure != null
+                ? PriceAdjustFailureTranslator.forJobItem(failure)
+                : new String[]{PriceAdjustFailureTranslator.UNEXPECTED_ERROR, "执行未完成（批次提前结束），本行未更新，可重试"};
+            int n = failUnfinishedItems(jobId, ownedItemIds, f[0], f[1]);
+            if (n > 0) {
+                LOG.errorf("[price-adjust-job] jobId=%s 收尾：%d 条未完成明细置 FAILED（%s: %s）", jobId, n, f[0], f[1]);
+            }
+        } catch (Throwable t) {
+            LOG.errorf(t, "[price-adjust-job] jobId=%s 收尾时标记未完成明细失败", jobId);
+        }
+        try {
+            finalizeJob(jobId);
+        } catch (Throwable t) {
+            LOG.errorf(t, "[price-adjust-job] jobId=%s 收尾时汇总批次失败", jobId);
+        }
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    int failUnfinishedItems(UUID jobId, List<UUID> ownedItemIds, String errorCode, String errorMessage) {
+        return MaterialPriceUpdateJobItem.failUnfinished(List.of(jobId), ownedItemIds, errorCode, errorMessage);
+    }
+
+    @Transactional
+    UUID loadJobVersionId(UUID jobId) {
+        MaterialPriceUpdateJob job = MaterialPriceUpdateJob.findById(jobId);
+        return job != null ? job.versionId : null;
     }
 
     /**
@@ -294,10 +439,11 @@ public class PriceAdjustJobExecutionService {
      */
     @ActivateRequestContext
     @Transactional(Transactional.TxType.REQUIRES_NEW)
-    void executeItem(UUID itemId, CardSnapshotService.PrecomputedTreeRows precomputed) {
+    String executeItem(UUID itemId, CardSnapshotService.PrecomputedTreeRows precomputed) {
+        // repair-260918：返回本条执行后的状态（分组路径据此收集本组 SUCCESS 料号，不再回查库）。
         MaterialPriceUpdateJobItem item = MaterialPriceUpdateJobItem.findById(itemId);
-        if (item == null) return;
-        if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) return; // 终态不处理
+        if (item == null) return null;
+        if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) return item.status; // 终态不处理
 
         item.status = MaterialPriceUpdateJobItem.RUNNING;
         item.updatedAt = OffsetDateTime.now();
@@ -309,14 +455,14 @@ public class PriceAdjustJobExecutionService {
             item.errorCode = "JOB_NOT_FOUND";
             item.errorMessage = "job 或 versionId 缺失";
             item.persist();
-            return;
+            return item.status;
         }
         if (item.lineItemId == null) {
             item.status = MaterialPriceUpdateJobItem.FAILED;
             item.errorCode = "LINE_ITEM_MISSING";
             item.errorMessage = "line item 缺失";
             item.persist();
-            return;
+            return item.status;
         }
 
         UpgradeResult ur = materialVersionUpgradeService.upgrade(item.lineItemId, job.versionId, false, precomputed);
@@ -361,6 +507,7 @@ public class PriceAdjustJobExecutionService {
         }
         item.updatedAt = OffsetDateTime.now();
         item.persist();
+        return item.status;
     }
 
     @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -401,9 +548,21 @@ public class PriceAdjustJobExecutionService {
     // §3.4/§3.5 重试
     // -------------------------------------------------------------------------
 
+    /**
+     * §3.4 批量重试。repair-260918 B-13：重新执行本批 FAILED + CONFLICT 明细（STALE 不动），与接口注释一致
+     * （原先只捞 WAITING / CONFLICT，失败明细从不被重跑）；执行走 B-4 分组路径、B-5 执行中可见、B-10 兜底。
+     */
     public void retryJob(UUID jobId) {
         markJobRunning(jobId);
-        executeJob(jobId);
+        runJob(jobId, true);
+    }
+
+    /** B-13：批量重试的执行范围 = WAITING（理论上收尾后不再有）+ FAILED + CONFLICT；STALE / SKIPPED / SUCCESS 不动。 */
+    @Transactional
+    List<MaterialPriceUpdateJobItem> loadRetryItems(UUID jobId) {
+        return MaterialPriceUpdateJobItem.list(
+            "jobId = ?1 and status in (?2, ?3, ?4)", jobId,
+            MaterialPriceUpdateJobItem.WAITING, MaterialPriceUpdateJobItem.FAILED, MaterialPriceUpdateJobItem.CONFLICT);
     }
 
     @Transactional
@@ -423,8 +582,24 @@ public class PriceAdjustJobExecutionService {
         if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) {
             throw new com.cpq.common.exception.BusinessException(409, "所属版本已被取代，STALE 项不可重试");
         }
-        executeItem(itemId);
-        finalizeJob(item.jobId);
+        // repair-260918：单条重试 = 完整路径（本期快照在 upgrade() 自己的事务里写，不延后）。
+        // B-5 执行前置 RUNNING；B-6 异常时按可读口径落库（原先异常时明细停在旧状态、批次不重算）；
+        // finally 照常 finalizeJob 重新汇总批次。
+        try {
+            markItemRunning(itemId);
+            executeItem(itemId);
+        } catch (Throwable t) {
+            LOG.errorf(t, "[price-adjust-job] retryJobItem item=%s 执行异常", itemId);
+            String[] f = PriceAdjustFailureTranslator.forJobItem(t);
+            try {
+                markItemFailed(itemId, f[0], f[1]);
+            } catch (Throwable x) {
+                LOG.errorf(x, "[price-adjust-job] retryJobItem item=%s 落库失败状态时再次异常", itemId);
+            }
+            if (t instanceof Error) throw (Error) t;
+        } finally {
+            finalizeJob(item.jobId);
+        }
     }
 
     @Transactional

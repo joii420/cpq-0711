@@ -14,6 +14,11 @@ public class ReviewListItemDTO {
     public String currentVersionNo;
     public String targetVersionNo;
     public String budgetStatus;
+    /**
+     * repair-260918 B-16（D-8）：预算失败原因（{@code material_price_review.budget_error}），可空。
+     * 超时文案为「预算试算超时（超过 60 秒）」；预算正常时为 null。详情 DTO 不含此字段。
+     */
+    public String budgetError;
     public String reviewStatus;
     public String basisQuotationNo;
     public LocalDate basisQuotationDate;

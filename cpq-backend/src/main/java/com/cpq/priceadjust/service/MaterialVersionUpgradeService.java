@@ -146,6 +146,9 @@ public class MaterialVersionUpgradeService {
     CardSnapshotService cardSnapshotService;
     @Inject
     LineDiscountService lineDiscountService;
+    /** repair-260918 B-1/B-4：整单快照（初版 / 本期 R）唯一写入口，REQUIRED —— 加入本方法事务。 */
+    @Inject
+    CurrentPeriodRevisionWriter revisionWriter;
     /**
      * task-260907 第二段 · B-8（S-3 / D-29）：同步 {@code ds_quote_*_record.element_price}。
      * <p>🔑 挂在下面 S3a/S3b 写 {@code snapshot_rows}/{@code row_data} 的<b>同一个写点、同一事务</b> ——
@@ -206,6 +209,29 @@ public class MaterialVersionUpgradeService {
     public UpgradeResult upgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun,
                                   CardSnapshotService.PrecomputedTreeRows precomputed,
                                   Map<String, ElementPrice> versionPricesOverride) {
+        // repair-260918 B-15：每次升版结束打一行观测点（sql = 本线程本次升版经 Hibernate 发出的 SQL 条数）。
+        // AC-13：同模板 12 行单与 ≥1000 行单的 sql 必须相等 —— 本方法内不得再有随整单行数增长的查询。
+        long t0 = System.nanoTime();
+        long sql0 = com.cpq.common.perf.SqlStatementCounter.current();
+        PerfProbe probe = new PerfProbe();
+        try {
+            return doUpgrade(lineItemId, targetVersionId, dryRun, precomputed, versionPricesOverride, probe);
+        } finally {
+            LOG.infof("[perf] upgrade li=%s quotation=%s lines=%d dryRun=%b sql=%d ms=%d",
+                lineItemId, probe.quotationId, probe.lines, dryRun,
+                com.cpq.common.perf.SqlStatementCounter.current() - sql0, (System.nanoTime() - t0) / 1_000_000);
+        }
+    }
+
+    /** repair-260918 B-15：观测点上下文（整单行数取自 S8 的同一条汇总查询，不为日志额外查库）。 */
+    private static final class PerfProbe {
+        UUID quotationId;
+        long lines = -1;
+    }
+
+    private UpgradeResult doUpgrade(UUID lineItemId, UUID targetVersionId, boolean dryRun,
+                                    CardSnapshotService.PrecomputedTreeRows precomputed,
+                                    Map<String, ElementPrice> versionPricesOverride, PerfProbe probe) {
         if (lineItemId == null || targetVersionId == null) {
             return UpgradeResult.failed("BAD_REQUEST", "lineItemId/targetVersionId 不能为空");
         }
@@ -218,6 +244,7 @@ public class MaterialVersionUpgradeService {
         if (q == null) {
             return UpgradeResult.failed("QUOTATION_NOT_FOUND", "报价单不存在: " + li.quotationId);
         }
+        probe.quotationId = q.id;
         // 活单范围校验：升版只更新活单里的行；非活单（SENT/ACCEPTED/EXPIRED/CANCELLED）直接跳过不算失败
         // ——D5：这些单本就不在更新范围内，是设计内的"不处理"，不是错误。
         if (!ACTIVE_STATUSES.contains(q.status)) {
@@ -315,7 +342,14 @@ public class MaterialVersionUpgradeService {
         //      "首次升版时物化+定型"这一半：若占位行已存在但未定型 → 用【此刻，S3 尚未动任何数据】
         //      的整单原貌物化 + sealed=true；若占位行完全不存在（存量单，早于本功能上线，从未走过
         //      saveDraft 钩子）→ 直接创建并当场定型，同样的懒建兜底（coordinator 已确认此限制）。
-        materializeAndSealInitialRevision(q);
+        //
+        // 🔄 repair-260918 B-1/B-2：① 整单快照改由 CurrentPeriodRevisionWriter 一条 INSERT…SELECT…ON CONFLICT
+        //    在库内拼装（原实现逐行查 quotation_line_component_data，1200 行单 = 1200 次查询）；
+        //    ② dryRun 不拍快照 —— 试算整体回滚，快照本来就会被丢弃，两个试算使用方只读行小计与卡片值。
+        //    非 dryRun 时初版定型仍在本行事务内做（分组路径下由组内第一行完成，其余行命中 sealed 直接跳过）。
+        if (!dryRun) {
+            revisionWriter.sealInitialIfNeeded(q.id);
+        }
 
         // repair-0807 FR-1：一次查出目标版本 versionNo，透传给 S3a/S3b（禁止在循环里查
         // ElementPriceVersion——N+1）。查不到时退化为 versionId.toString()（与 PriceReconciler
@@ -383,12 +417,23 @@ public class MaterialVersionUpgradeService {
         //      （PART 选配子件不单独计入整单），与 QuotationService.submit() 的既有聚合口径一致，
         //      不新写第二套算法。🔒 只读其它行的既有 lineTotalAmount，不对它们调 recompute()
         //      ——硬约束1"只对被升版行执行重算"，其它行的值必须是它们自己上次算出来的，不是本次现算的。
-        List<QuotationLineItem> allLines = QuotationLineItem.list("quotationId", q.id);
-        BigDecimal lineSum = BigDecimal.ZERO;
-        for (QuotationLineItem other : allLines) {
-            if ("PART".equals(other.compositeType)) continue;
-            if (other.lineTotalAmount != null) lineSum = lineSum.add(other.lineTotalAmount);
-        }
+        //
+        // 🔄 repair-260918 B-3：整单实体全量载入 + 内存累加 → flush 后一条汇总查询（1845 行单原写法实测 3.2 s）。
+        //    口径逐项不变：排除 PART（IS DISTINCT FROM 'PART' ⇔ 原「compositeType 为 null 或 ≠ PART」）、
+        //    lineTotalAmount 为 null 不计（SUM 忽略 NULL）、舍入仍走 roundQuotationTotal。
+        //    flush 保证本事务刚改的 li.lineTotalAmount 被计入（原写法经实体身份映射读到内存新值，
+        //    line_total_amount 列 scale 12 = roundForCalculation 位数，落库不丢位，两者相等）。
+        //    同一条语句顺带取整单行数，仅供 B-15 观测点使用，不为日志单独查库。
+        em.flush();
+        Object[] sumRow = (Object[]) em.createNativeQuery(
+                "SELECT COALESCE(SUM(line_total_amount) FILTER (WHERE composite_type IS DISTINCT FROM 'PART'), 0), " +
+                "       COUNT(*) " +
+                "  FROM quotation_line_item WHERE quotation_id = :qid")
+            .setParameter("qid", q.id)
+            .getSingleResult();
+        BigDecimal lineSum = sumRow[0] instanceof BigDecimal
+            ? (BigDecimal) sumRow[0] : new BigDecimal(sumRow[0].toString());
+        probe.lines = ((Number) sumRow[1]).longValue();
         q.totalAmount = com.cpq.common.PrecisionPolicy.roundQuotationTotal(lineSum);
         // taxAmount：全工程未发现任何"从行汇总推导税额"的既有公式（taxRate/taxAmount 全库零业务
         // 逻辑引用，纯手填字段），本次不新造算法，税额原样不动——如实说明，非遗漏。
@@ -422,7 +467,16 @@ public class MaterialVersionUpgradeService {
         //      （based_version_id 天然去重键，UNIQUE(quotation_id, based_version_id)）；
         //      🔒 E11-5：每次并入都必须用当前（升版后）状态整单覆写双侧快照，不能只改
         //      时间戳+追加料号列表——否则切回该 R 预览会看到"先通过的新价、后通过的旧价"。
-        updateCurrentPeriodRevision(q, targetVersionId, li.productPartNoSnapshot);
+        //
+        // 🔄 repair-260918 B-2/B-4：
+        //    · dryRun 不写（试算整体回滚，写了也会丢）；
+        //    · 分组路径（executeJob，CurrentRevisionDeferral 开启）延后：这张单的行全部提交后由
+        //      PriceAdjustJobExecutionService 在独立事务里写一次、一次并入本组全部成功料号；
+        //    · 其余（单条重试 / 管理端点）= 现状行为：在本事务内写 —— writer 是 REQUIRED，看得见本事务
+        //      刚升版的数据与刚插入的初版记录，快照不会读到旧价、编号不会撞。
+        if (!dryRun && !CurrentRevisionDeferral.isDeferred()) {
+            revisionWriter.write(q.id, targetVersionId, java.util.Collections.singletonList(li.productPartNoSnapshot));
+        }
 
         result.status = UpgradeResult.Status.SUCCESS;
         result.message = String.format(
@@ -944,155 +998,10 @@ public class MaterialVersionUpgradeService {
     // B0-R：R 版本快照（coordinator 补派，backtask S0~S8 遗漏；载体见验收 #17/#53/#55/#56/#63）
     // =========================================================================
 
-    private static final class WholeQuotationSnapshot {
-        String quoteCardValuesJson;
-        String costingCardValuesJson;
-        String snapshotRowsJson;
-    }
-
-    /**
-     * 首次升版时把初版 R 定型（§11.10.6）：
-     * <ul>
-     *   <li>占位行已存在（saveDraft 钩子建单时创建的 sealed=false 行）→ 原地物化【此刻】
-     *       （升版前，S3 尚未动任何数据）的整单原貌 + 置 sealed=true；</li>
-     *   <li>占位行不存在（存量单：早于本功能上线，从未走过新的 saveDraft 钩子）→ 直接创建
-     *       并当场定型，同样懒建兜底（coordinator 已确认此限制，非静默扩大范围）。</li>
-     * </ul>
-     * 已定型（sealed=true）则 no-op——只有"首次"升版才定型初版。
-     */
-    void materializeAndSealInitialRevision(Quotation q) {
-        QuotationPriceRevision initial = QuotationPriceRevision.findInitial(q.id);
-        if (initial != null && Boolean.TRUE.equals(initial.sealed)) {
-            return; // 已定型，不是首次升版，不动初版（本期 R 由 updateCurrentPeriodRevision 单独处理）
-        }
-        WholeQuotationSnapshot snap = buildWholeQuotationSnapshot(q.id);
-        boolean isNew = initial == null;
-        if (isNew) {
-            initial = new QuotationPriceRevision();
-            initial.quotationId = q.id;
-            initial.revisionNo = nextRevisionNo(q.id);
-            initial.basedVersionId = null;
-            initial.firstEffectiveAt = q.createdAt != null ? q.createdAt : java.time.OffsetDateTime.now();
-        }
-        initial.sealed = true;
-        initial.quoteCardValues = snap.quoteCardValuesJson;
-        initial.costingCardValues = snap.costingCardValuesJson;
-        initial.snapshotRows = snap.snapshotRowsJson;
-        initial.quoteTotalAmount = q.totalAmount;
-        initial.lastUpdatedAt = java.time.OffsetDateTime.now();
-        initial.persist();
-        LOG.infof("[b0-upgrade][R] quotation=%s 初版 revisionNo=%s 定型（%s，升版前整单原貌已封存）",
-            q.quotationNumber, initial.revisionNo, isNew ? "存量单懒建兜底" : "占位行物化");
-    }
-
-    /**
-     * 本期 R = 升版【后】状态（F4）。{@code UNIQUE(quotation_id, based_version_id)} 天然充当
-     * "同一 V 版内多次料号升版合并进同一条"的去重键——find-or-create 命中既有行时，🔒 E11-5
-     * 要求整单双侧快照必须【覆写】为当前状态，不能只追加 upgradedMaterialNos/改时间戳。
-     */
-    private void updateCurrentPeriodRevision(Quotation q, UUID targetVersionId, String upgradedMaterialNo) {
-        WholeQuotationSnapshot snap = buildWholeQuotationSnapshot(q.id);
-        QuotationPriceRevision rev = QuotationPriceRevision.findByVersion(q.id, targetVersionId);
-        boolean isNew = rev == null;
-        if (isNew) {
-            rev = new QuotationPriceRevision();
-            rev.quotationId = q.id;
-            rev.revisionNo = nextRevisionNo(q.id);
-            rev.basedVersionId = targetVersionId;
-            rev.firstEffectiveAt = java.time.OffsetDateTime.now();
-        }
-        rev.sealed = true;
-        rev.quoteCardValues = snap.quoteCardValuesJson;       // 覆写，不是合并（E11-5）
-        rev.costingCardValues = snap.costingCardValuesJson;   // 覆写
-        rev.snapshotRows = snap.snapshotRowsJson;             // 覆写
-        rev.quoteTotalAmount = q.totalAmount;
-        rev.lastUpdatedAt = java.time.OffsetDateTime.now();
-        rev.upgradedMaterialNos = mergeMaterialNo(rev.upgradedMaterialNos, upgradedMaterialNo);
-        rev.persist();
-        LOG.infof("[b0-upgrade][R] quotation=%s %s revisionNo=%s targetVersion=%s material=%s",
-            q.quotationNumber, isNew ? "新建本期" : "并入既有本期", rev.revisionNo, targetVersionId, upgradedMaterialNo);
-    }
-
-    /**
-     * 整单双侧快照（§11.7.0）：全部产品行 × 全部页签 × 全部行，不是稀疏存储、不只存被升版的料号——
-     * 切版预览要能渲染完整原貌。结构见 {@link QuotationPriceRevision} 类注释。
-     */
-    private WholeQuotationSnapshot buildWholeQuotationSnapshot(UUID quotationId) {
-        List<QuotationLineItem> lines = QuotationLineItem.list("quotationId", quotationId);
-        ObjectNode quoteMap = MAPPER.createObjectNode();
-        ObjectNode costingMap = MAPPER.createObjectNode();
-        ObjectNode rowsMap = MAPPER.createObjectNode();
-
-        for (QuotationLineItem l : lines) {
-            String key = l.id.toString();
-            putJsonOrNull(quoteMap, key, l.quoteCardValues);
-            putJsonOrNull(costingMap, key, l.costingCardValues);
-
-            ObjectNode compMap = MAPPER.createObjectNode();
-            @SuppressWarnings("unchecked")
-            List<Object[]> cdRows = em.createNativeQuery(
-                    "SELECT component_id, snapshot_rows FROM quotation_line_component_data WHERE line_item_id = :lid")
-                .setParameter("lid", l.id).getResultList();
-            for (Object[] row : cdRows) {
-                String cid = row[0] != null ? row[0].toString() : "null";
-                putJsonOrNull(compMap, cid, (String) row[1]);
-            }
-            rowsMap.set(key, compMap);
-        }
-
-        WholeQuotationSnapshot snap = new WholeQuotationSnapshot();
-        snap.quoteCardValuesJson = writeJson(quoteMap);
-        snap.costingCardValuesJson = writeJson(costingMap);
-        snap.snapshotRowsJson = writeJson(rowsMap);
-        return snap;
-    }
-
-    private void putJsonOrNull(ObjectNode target, String key, String json) {
-        if (json == null || json.isBlank()) {
-            target.putNull(key);
-            return;
-        }
-        try {
-            target.set(key, MAPPER.readTree(json));
-        } catch (Exception e) {
-            target.putNull(key);
-        }
-    }
-
-    /** 版本号 = R + YYMMDD + 两位当日流水，按单 + 日期独立计数。 */
-    private String nextRevisionNo(UUID quotationId) {
-        String prefix = "R" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("yyMMdd"));
-        @SuppressWarnings("unchecked")
-        List<String> existing = em.createNativeQuery(
-                "SELECT revision_no FROM quotation_price_revision WHERE quotation_id = :qid AND revision_no LIKE :prefix")
-            .setParameter("qid", quotationId).setParameter("prefix", prefix + "%").getResultList();
-        int maxSeq = 0;
-        for (String rn : existing) {
-            if (rn != null && rn.length() == prefix.length() + 2) {
-                try {
-                    int seq = Integer.parseInt(rn.substring(prefix.length()));
-                    if (seq > maxSeq) maxSeq = seq;
-                } catch (NumberFormatException ignore) { /* 忽略非两位数字尾缀的历史脏数据 */ }
-            }
-        }
-        return prefix + String.format("%02d", maxSeq + 1);
-    }
-
-    private String mergeMaterialNo(String existingJson, String materialNo) {
-        try {
-            JsonNode parsed = existingJson != null && !existingJson.isBlank()
-                ? MAPPER.readTree(existingJson) : MAPPER.createArrayNode();
-            ArrayNode arr = parsed.isArray() ? (ArrayNode) parsed : MAPPER.createArrayNode();
-            boolean found = false;
-            for (JsonNode n : arr) {
-                if (n.asText("").equals(materialNo)) { found = true; break; }
-            }
-            if (!found && materialNo != null && !materialNo.isBlank()) arr.add(materialNo);
-            return writeJson(arr);
-        } catch (Exception e) {
-            return materialNo != null ? "[\"" + materialNo + "\"]" : "[]";
-        }
-    }
+    // repair-260918 B-1：整单快照（初版定型 / 本期 R）的拼装与写入已移至 {@link CurrentPeriodRevisionWriter}
+    // （一条 INSERT … SELECT … ON CONFLICT，数据不出库）。原 buildWholeQuotationSnapshot 逐行查
+    // quotation_line_component_data（N+1，1200 行单 = 1200 次查询）连同 materializeAndSealInitialRevision /
+    // updateCurrentPeriodRevision / nextRevisionNo / mergeMaterialNo 一并删除，拼装口径见 writer 类注释。
 
     /**
      * repair-0807 FR-1：目标版本的 {@code version_no} 徽标字面，与 {@link PriceReconciler}

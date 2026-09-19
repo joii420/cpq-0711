@@ -76,6 +76,46 @@ export function formatDisplayDecimal(
   return trimFixed(toDecimal(value).toDecimalPlaces(boundedScale, ROUNDING).toFixed(boundedScale));
 }
 
+/** Max decimals of a change rate once expressed as a percentage (repair-260918 D-3). */
+export const CHANGE_RATE_PERCENT_SCALE = 4;
+/** Price up = red, price down = green (Chinese market convention, parent task fronttask §1.3). */
+export const CHANGE_RATE_UP_COLOR = '#cf1322';
+export const CHANGE_RATE_DOWN_COLOR = '#389e0d';
+
+export interface ChangeRateDisplay {
+  text: string;
+  color?: string;
+}
+
+/**
+ * repair-260918 F-1: the single formatter for element price change rates
+ * (version detail drawer, element matrix, review drawer).
+ *
+ * Input is the backend fraction (`'0.000035'` means 0.0035%).
+ * - empty / not a plain decimal string -> `—`, no color
+ * - exactly zero -> `0%`, no sign, no color
+ * - otherwise `rate × 100` rounded HALF_UP to at most 4 decimals, trailing zeros trimmed;
+ *   a non-zero rate that rounds to 0 is shown as `+<0.0001%` / `-<0.0001%` so a small
+ *   move never looks like "unchanged"
+ * - positive -> `+` prefix + red; negative -> `-` prefix + green
+ *
+ * All arithmetic goes through decimal.js; JS numbers are never used.
+ */
+export function formatChangeRate(value: DecimalString | null | undefined): ChangeRateDisplay {
+  if (value == null || !isDecimalString(value)) return { text: '—' };
+  const rate = toDecimal(value);
+  if (rate.isZero()) return { text: '0%' };
+  const positive = rate.isPositive();
+  const sign = positive ? '+' : '-';
+  const color = positive ? CHANGE_RATE_UP_COLOR : CHANGE_RATE_DOWN_COLOR;
+  const pct = rate.abs().times('100').toDecimalPlaces(CHANGE_RATE_PERCENT_SCALE, ROUNDING);
+  if (pct.isZero()) {
+    // smallest displayable step at this scale: 0.0001
+    return { text: `${sign}<${new Decimal(10).pow(-CHANGE_RATE_PERCENT_SCALE).toFixed()}%`, color };
+  }
+  return { text: `${sign}${trimFixed(pct.toFixed(CHANGE_RATE_PERCENT_SCALE))}%`, color };
+}
+
 /**
  * task-260916 M-1: shared AntD `InputNumber` formatter for element price / factor / premium inputs.
  * - While the user is typing: echo the raw input unchanged (e.g. '1.20' stays '1.20').

@@ -8,7 +8,7 @@
 | 片 | 写入面 | 环境 | 造数前缀 / 隔离 | 时间盒 | 认领的 AC |
 |---|---|---|---|---|---|
 | **S-BE** | **私有写**：自建测试客户、价格策略、价格版本、报价单副本、更新任务 / 明细、审核行；🚫 不碰库里既有客户 / 版本 / 报价单 / 批次的数据（只读） | worktree 的 `cpq-backend/` 下 `./mvnw test`（`@QuarkusTest`，默认连 `cpq_db_test`；测试 profile 的 `cpq.price-adjust.startup-recovery.enabled=false`） | 客户编码 / 名称、报价单备注、策略名一律带前缀 **`RP0918A`**；只断言自己造的数据；`finally` 按自建 id 清理（🚫 不许按条件批量删）；调 `recoverJobs` / `resumeBudgets` **只许传自建的 id** | **150 分钟**（超时即停，交回未完成清单） | AC-3, AC-5, AC-6, AC-7, AC-8, AC-9, AC-10, AC-11, AC-12, AC-13, AC-14, AC-15, AC-17, AC-18, AC-19, AC-20, AC-21, AC-22, AC-23, AC-24, AC-25 |
-| **S-UI** | **零业务写入**：只读开发库既有数据 + 用 Playwright `page.route` 改写接口响应 | worktree 的 `cpq-frontend/` 起**临时端口** vite（如 5294，`/api` 代理到共享 8081，只读）；🚫 不占 5174 | 无造数；⚠️ `e2e/global-setup.ts` 会写 `cpq_db_0724` 的 `user` 表（既有基建，决策台账已登记）⇒ 开跑前必须 `pgrep -f "node.*[p]laywright test"` 确认没有别的 Playwright 在跑 | **30 分钟**（超时即停，交回卡在哪一步 + 失败原文 + 判断是用例问题还是实现问题，由主线亲验接手） | AC-1, AC-2, AC-4, AC-16 |
+| **S-UI** | **零业务写入**：只读开发库既有数据 + 用 Playwright `page.route` 改写接口响应 | worktree 的 `cpq-frontend/` 起**临时端口** vite（如 5294，`/api` 代理到共享 8081，只读）；🚫 不占 5174 | 无造数；⚠️ `e2e/global-setup.ts` 会写 `cpq_db_0724` 的 `user` 表（既有基建，决策台账已登记）⇒ 开跑前必须 `pgrep -f "node.*[p]laywright test"` 确认没有别的 Playwright 在跑 | **30 分钟**（超时即停，交回卡在哪一步 + 失败原文 + 判断是用例问题还是实现问题，由主线亲验接手）；AC-26 追加 10 分钟 | AC-1, AC-2, AC-4, AC-16, AC-26 |
 
 - 两片**写入面不相交**：S-BE 只写 `cpq_db_test` 的自建数据；S-UI 不写业务数据（开发库只读）⇒ 可并行。无 `S-全局` 片。
 - 🚫 S-BE 不许与后端实现代理**同时**在同一个 worktree 里跑 maven（`testing.md §4.2.5`）。开跑前确认没有别的 maven / `quarkus:dev` 在写该 worktree 的 `target/`。
@@ -37,7 +37,7 @@
 | AC-14 | T-BE-14 | 集成（mock 注入） | S-BE | 明细状态 / `errorCode` / `errorMessage` 原文；重试后状态、行小计、本期记录 |
 | AC-15 | T-BE-15 | 集成（mock 注入） | S-BE | 三种注入下明细 `errorCode` / `errorMessage` 原文，单条重试路径的批次计数前后 |
 | AC-16 | T-UI-16 | E2E（`page.route` 注入执行中 → 完成） | S-UI | 执行中截图（「执行中 1」「等待」数值）+ 完成后 30 秒内 Network 请求计数 |
-| AC-17 | T-BE-17 | 集成（mock 注入） | S-BE | 待办池接口里该料号的 `budgetStatus` / `budgetError` 原文；重算后状态 |
+| AC-17 | T-BE-17 | 集成（mock 注入） | S-BE | 库列 `budget_error` 与审核列表接口 `budgetError` 字段原文（D-8 起接口必有该字段）、`budgetStatus`；重算后状态 |
 | AC-18 | T-BE-18 | 集成（序列 · mock 注入慢试算） | S-BE | V1 循环退出后 V1 名下 `status=PENDING` 审核数（须为 0）、停止日志原文、V2 预算进度 |
 | AC-19 | T-BE-19 | 集成（小单改动前后对比） | S-BE | 四项数值 / 快照三列比较输出 |
 | AC-20 | T-BE-20 | 接口（序列 · 单条重试首次升版） | S-BE | 该单 `quotation_price_revision` 全部行（`revision_no` / `based_version_id` / `sealed`）+ 两份快照中该行的比较输出 |
@@ -45,9 +45,10 @@
 | AC-22 | T-BE-22 | 集成（mock 抛 `Error`） | S-BE | 批次状态、明细状态、ERROR 日志行原文 |
 | AC-23 | T-BE-23 | 集成（预置前 k 个已处理后调 `resumeBudgets`） | S-BE | 前 k 个审核行 `updated_at` 前后对比；续跑后「既无审核行、指针也未指向本版本」的料号数 |
 | AC-24 | T-BE-24 | 接口（序列） | S-BE | 批量重试前后各明细状态与重试次数，执行中抓到的一次 `running` |
+| AC-26 | T-UI-26 | E2E（`page.route` 注入审核列表：一条 `FAILED` + `budgetError`、一条 `FAILED` + null） | S-UI | 悬停提示文本断言输出 + 截图；null 那条无提示、「重算」可见 |
 | AC-25 | T-BE-25 | 集成（开关关闭时调 `runOnStartup`） | S-BE | 调用前后自建 `RUNNING` 批次与明细状态、自建版本审核行数（须完全不变） |
 
-每条 AC 恰好属于一片，无重无漏（S-BE 21 条 + S-UI 4 条 = 25 条）。
+每条 AC 恰好属于一片，无重无漏（S-BE 21 条 + S-UI 5 条 = 26 条；AC-26 为 2026-09-18 开发中裁决 D-8 新增）。
 
 > ⚠️ AC-6 / 8 / 9 / 10 / 11 / 20 / 21 / 23 的**原文含开发环境真实单据 / 真实操作**。测试片在 `cpq_db_test` 用**私有数据**验证同样的可观测断言；**真实环境那一遍由主线亲验完成**（不可分片、不可派，见 §6）。
 
@@ -76,6 +77,7 @@
 - AC-1 / AC-2 读开发库真实数据：客户 `CUST-0004`、版本 `V26091802`、元素银。断言**文本**（`+0.0035%`）与**颜色**（`rgb(207, 19, 34)`）。
 - AC-4：对三个页面的接口响应用 `page.route` 把银的 `changeRate` 分别改成 `0.000000034611` / `-0.000000034611` / `0` / `-0.0125` / `null`，逐一断言文本与颜色（负值绿 `rgb(56, 158, 13)`；`0%` 与 `—` 无红绿色）。
 - AC-16：用 `page.route` 让 `GET /api/cpq/price-adjust/jobs/{id}` 先返回 `status=RUNNING, total=3, success=1, running=1`（期望「执行中 1」「等待 1」），再返回 `status=SUCCESS, success=3, running=0`；之后 30 秒内对该路径的请求次数必须为 0。布局以 `原型图/进度抽屉.html` 为准。
+- AC-26（D-8 新增）：在「价格调整审核」页（`/pricing/reviews`）用 `page.route` 改写审核列表响应，放两条 `budgetStatus=FAILED` 的行：一条 `budgetError="预算试算超时（超过 60 秒）"`、一条 `budgetError=null`；悬停第一条的红色「预算失败」标签 ⇒ 提示文本逐字相等；悬停第二条 ⇒ 无提示；两条的「重算」链接都可见（🚫 不点）。
 - 🚫 选择器卡住不许无限重试 —— 到时间盒就交回（`subagents.md §2 f`）。
 
 ## 4. 冷启动
@@ -97,4 +99,5 @@ S-BE 只在 `cpq_db_test` 里写自建数据并在 `finally` 清理，不建一�
 5. AC-9 + AC-11 + AC-16（批量通过 7 个料号，过程中截进度抽屉；前后 md5）。
 6. AC-10（批量通过 3 个 `PERFHOT-*`）。
 7. AC-23（合并重启后 10 分钟内 `V26091802` 已处理料号数的增量；日志无「预算试算超时」）。
-8. **AC-21** 需要在批次执行中重启 8081 —— 属 §3.2「重置共享 dev server 状态」，**届时单独向用户申请批准**（报影响面：当时在跑的请求与批次），未获批则只以 S-BE 的测试结果为准并在闸门 B 如实说明。
+8. AC-26：开发库若出现真实「预算失败」料号（如补跑中超时），在真实页面悬停核对；否则以 S-UI 结果为准，闸门 B 如实说明。
+9. **AC-21** 需要在批次执行中重启 8081 —— 属 §3.2「重置共享 dev server 状态」，**届时单独向用户申请批准**（报影响面：当时在跑的请求与批次），未获批则只以 S-BE 的测试结果为准并在闸门 B 如实说明。

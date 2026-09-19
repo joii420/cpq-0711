@@ -1,0 +1,31 @@
+{
+  "found": true,
+  "why": "ok",
+  "headers": [
+    "",
+    "元素符号",
+    "元素名称",
+    "V26091802 待处理",
+    "V26091801 已被取代"
+  ],
+  "rowTexts": [
+    "Ag 银 28893.5 +0.0035% 28892.5 —",
+    "TEST-EL-AG 测试银 — —",
+    "TEST-LMA-AG 测试银4 — —",
+    "TEST-PM-AG 测试银3 — —",
+    "TEST-PT-AG 测试银2 — —",
+    "TEST-ST-AG 测试银3 — —"
+  ],
+  "cellText": "28893.5 +0.0035%",
+  "rateHits": [
+    {
+      "text": "+0.0035%",
+      "color": "rgb(207, 19, 34)",
+      "tag": "DIV"
+    }
+  ],
+  "refColor": "rgba(0, 0, 0, 0.88)",
+  "refSource": "同行第 2 格「Ag」<TD>",
+  "priceColor": "rgba(0, 0, 0, 0.88)",
+  "priceSource": "同格单价「28893.5」<DIV>"
+}

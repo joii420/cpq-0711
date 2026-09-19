@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: com.cpq.priceadjust.impl260918.Repair260918InjectionSelfTest
+-------------------------------------------------------------------------------
+Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 16.16 s -- in com.cpq.priceadjust.impl260918.Repair260918InjectionSelfTest

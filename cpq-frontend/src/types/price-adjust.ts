@@ -278,6 +278,11 @@ export interface ReviewRowDTO {
   currentVersionNo: string | null;
   targetVersionNo: string;
   budgetStatus: BudgetStatus;
+  /**
+   * repair-260918 D-8 (api.md §4): budget failure reason (backend ReviewListItemDTO.budgetError).
+   * Null when the budget is fine; older backends omit it.
+   */
+  budgetError?: string | null;
   reviewStatus: ReviewStatus;
   basisQuotationNo: string | null;
   basisQuotationDate: string | null;
@@ -467,6 +472,11 @@ export interface UpdateJobDTO {
    * 因 §3 边界约定"字段缺失时汇总区不显示该项"，不会崩，但需与后端对齐后修正此处。
    */
   skipped: number;
+  /**
+   * repair-260918 (api.md §1): number of items currently in status RUNNING.
+   * Older backends do not send it — consumers must read it as `job.running ?? 0`.
+   */
+  running: number;
   finishedAt?: string | null;
   notified?: boolean;
 }

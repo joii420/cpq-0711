@@ -1,0 +1,12 @@
+{
+  "tagColor": "rgb(207, 19, 34)",
+  "tooltipA": [
+    "预算试算超时（超过 60 秒）"
+  ],
+  "tooltipB": [],
+  "listHits": [
+    "http://localhost:5294/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING real=200 wrapped=false",
+    "http://localhost:5294/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING real=200 wrapped=false"
+  ],
+  "blocked": []
+}

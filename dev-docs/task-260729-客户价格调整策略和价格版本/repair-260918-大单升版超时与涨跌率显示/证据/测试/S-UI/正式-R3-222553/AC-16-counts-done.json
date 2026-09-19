@@ -1,0 +1,35 @@
+{
+  "text": "总数 3 成功 3 失败 0 冲突 0 执行中 0 等待 0",
+  "parts": [
+    {
+      "text": "总数 3",
+      "color": "rgba(0, 0, 0, 0.88)",
+      "wrapperColor": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "text": "成功 3",
+      "color": "rgb(56, 158, 13)",
+      "wrapperColor": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "text": "失败 0",
+      "color": "rgb(207, 19, 34)",
+      "wrapperColor": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "text": "冲突 0",
+      "color": "rgb(212, 107, 8)",
+      "wrapperColor": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "text": "执行中 0",
+      "color": "rgb(22, 119, 255)",
+      "wrapperColor": "rgba(0, 0, 0, 0.88)"
+    },
+    {
+      "text": "等待 0",
+      "color": "rgba(0, 0, 0, 0.45)",
+      "wrapperColor": "rgba(0, 0, 0, 0.88)"
+    }
+  ]
+}

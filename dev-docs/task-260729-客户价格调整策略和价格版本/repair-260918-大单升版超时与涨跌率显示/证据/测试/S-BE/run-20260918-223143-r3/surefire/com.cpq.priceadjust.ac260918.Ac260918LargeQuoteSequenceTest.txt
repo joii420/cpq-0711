@@ -1,0 +1,13 @@
+-------------------------------------------------------------------------------
+Test set: com.cpq.priceadjust.ac260918.Ac260918LargeQuoteSequenceTest
+-------------------------------------------------------------------------------
+Tests run: 6, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 61.26 s <<< FAILURE! -- in com.cpq.priceadjust.ac260918.Ac260918LargeQuoteSequenceTest
+com.cpq.priceadjust.ac260918.Ac260918LargeQuoteSequenceTest.t09_t11_t12_sevenLinesOnSameLargeQuote -- Time elapsed: 14.60 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: AC-9①（执行中可见 / 明细逐条从执行中变成功）违例：[#1 success=0（逐条变成功，应为 1）, #1 等待=6（应为 5）, #1 等待数 6 ≠ WAITING 明细数 5, #2 success=0（逐条变成功，应为 2）, #2 等待=6（应为 4）, #2 等待数 6 ≠ WAITING 明细数 4, #3 success=0（逐条变成功，应为 3）, #3 等待=6（应为 3）, #3 等待数 6 ≠ WAITING 明细数 3, #4 success=0（逐条变成功，应为 4）, #4 等待=6（应为 2）, #4 等待数 6 ≠ WAITING 明细数 2, #5 success=0（逐条变成功，应为 5）, #5 等待=6（应为 1）, #5 等待数 6 ≠ WAITING 明细数 1, #6 success=0（逐条变成功，应为 6）, #6 等待=6（应为 0）, #6 等待数 6 ≠ WAITING 明细数 0] ==> expected: <true> but was: <false>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertTrue.failNotTrue(AssertTrue.java:69)
+	at org.junit.jupiter.api.AssertTrue.assertTrue(AssertTrue.java:41)
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:228)
+	at com.cpq.priceadjust.ac260918.Ac260918LargeQuoteSequenceTest.t09_t11_t12_sevenLinesOnSameLargeQuote(Ac260918LargeQuoteSequenceTest.java:556)
+

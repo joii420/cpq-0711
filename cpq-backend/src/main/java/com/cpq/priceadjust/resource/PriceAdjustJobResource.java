@@ -19,6 +19,7 @@ import org.eclipse.microprofile.context.ManagedExecutor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -31,6 +32,8 @@ import java.util.UUID;
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 public class PriceAdjustJobResource {
+
+    private static final org.jboss.logging.Logger LOG = org.jboss.logging.Logger.getLogger(PriceAdjustJobResource.class);
 
     @Inject PriceAdjustJobExecutionService jobExecutionService;
     @Inject ManagedExecutor managedExecutor;
@@ -71,8 +74,12 @@ public class PriceAdjustJobResource {
                 .page(Page.of(Math.max(page - 1, 0), size)).list();
         }
 
+        // repair-260918 B-5：各批次明细按状态实时汇总，一条 GROUP BY job_id, status 批量取（🚫 逐批次查）。
+        List<UUID> jobIds = new ArrayList<>(rows.size());
+        for (MaterialPriceUpdateJob j : rows) jobIds.add(j.id);
+        Map<UUID, Map<String, Integer>> countsByJob = MaterialPriceUpdateJobItem.countByStatusForJobs(jobIds);
         List<JobDTO> content = new ArrayList<>();
-        for (MaterialPriceUpdateJob j : rows) content.add(toDto(j));
+        for (MaterialPriceUpdateJob j : rows) content.add(toDto(j, countsByJob.getOrDefault(j.id, Map.of())));
         return new PageResult<>(content, page, size, total);
     }
 
@@ -82,7 +89,9 @@ public class PriceAdjustJobResource {
     public JobDTO getJob(@PathParam("jobId") UUID jobId) {
         MaterialPriceUpdateJob j = MaterialPriceUpdateJob.findById(jobId);
         if (j == null) throw new BusinessException(404, "job 不存在: " + jobId);
-        return toDto(j);
+        // repair-260918 B-5：明细按状态实时汇总（1 条常数 SQL：GROUP BY status）。
+        Map<String, Integer> counts = MaterialPriceUpdateJobItem.countByStatusForJobs(List.of(jobId)).getOrDefault(jobId, Map.of());
+        return toDto(j, counts);
     }
 
     @GET
@@ -113,7 +122,12 @@ public class PriceAdjustJobResource {
     public Response retryJob(@PathParam("jobId") UUID jobId) {
         MaterialPriceUpdateJob j = MaterialPriceUpdateJob.findById(jobId);
         if (j == null) throw new BusinessException(404, "job 不存在: " + jobId);
-        managedExecutor.runAsync(() -> jobExecutionService.retryJob(jobId));
+        // repair-260918 B-10：异步派发的异常补记 ERROR 日志（原先被 CompletableFuture 静默吞掉）。
+        managedExecutor.runAsync(() -> jobExecutionService.retryJob(jobId))
+            .exceptionally(t -> {
+                LOG.errorf(t, "[price-adjust-job] retryJob jobId=%s 异步执行异常", jobId);
+                return null;
+            });
         return Response.status(202).build();
     }
 
@@ -127,12 +141,22 @@ public class PriceAdjustJobResource {
         if (MaterialPriceUpdateJobItem.STALE.equals(item.status)) {
             throw new BusinessException(409, "所属版本已被取代，STALE 项不可重试");
         }
-        managedExecutor.runAsync(() -> jobExecutionService.retryJobItem(itemId));
+        managedExecutor.runAsync(() -> jobExecutionService.retryJobItem(itemId))
+            .exceptionally(t -> {
+                LOG.errorf(t, "[price-adjust-job] retryJobItem item=%s 异步执行异常", itemId);
+                return null;
+            });
         return Response.status(202).build();
     }
 
-    private JobDTO toDto(MaterialPriceUpdateJob j) {
+    /**
+     * repair-260918 B-5（AC-9 / AC-16）：{@code running} 恒取明细实时数。批次 RUNNING 时 total / success / failed /
+     * conflict / stale / skipped 也按明细实时汇总（逐条提交的 SUCCESS 立即可见，进度抽屉不再停在「成功 0」）；
+     * 批次已结束时沿用 finalizeJob 写入的计数（与明细一致，口径 = {@link MaterialPriceUpdateJob#recountFrom}）。
+     */
+    private JobDTO toDto(MaterialPriceUpdateJob j, Map<String, Integer> itemCounts) {
         JobDTO dto = new JobDTO();
+        dto.running = itemCounts.getOrDefault(MaterialPriceUpdateJobItem.RUNNING, 0);
         dto.jobId = j.id;
         dto.customerNo = j.customerNo;
         dto.versionNo = j.versionNo;
@@ -145,6 +169,16 @@ public class PriceAdjustJobResource {
         dto.conflict = j.conflictCount;
         dto.stale = j.staleCount;
         dto.skipped = j.skippedCount;
+        if (MaterialPriceUpdateJob.RUNNING.equals(j.status)) {
+            int total = 0;
+            for (int c : itemCounts.values()) total += c;
+            dto.total = total;
+            dto.success = itemCounts.getOrDefault(MaterialPriceUpdateJobItem.SUCCESS, 0);
+            dto.failed = itemCounts.getOrDefault(MaterialPriceUpdateJobItem.FAILED, 0);
+            dto.conflict = itemCounts.getOrDefault(MaterialPriceUpdateJobItem.CONFLICT, 0);
+            dto.stale = itemCounts.getOrDefault(MaterialPriceUpdateJobItem.STALE, 0);
+            dto.skipped = itemCounts.getOrDefault(MaterialPriceUpdateJobItem.SKIPPED, 0);
+        }
         dto.finishedAt = j.finishedAt;
         dto.notified = Boolean.TRUE.equals(j.notified);
         return dto;

@@ -18,6 +18,11 @@ public class JobDTO {
     public int stale;
     /** repair-0807 FR-4：SKIPPED 终态计数（wire 字段名 `skipped`，与兄弟字段无 Count 后缀风格一致）。 */
     public int skipped;
+    /**
+     * repair-260918 B-5：该批次当前 {@code status = 'RUNNING'} 的明细数。明细开始执行前即以独立事务提交为
+     * RUNNING，所以执行期间可见（进度抽屉「执行中 N」）。
+     */
+    public int running;
     public OffsetDateTime finishedAt;
     public boolean notified;
 }

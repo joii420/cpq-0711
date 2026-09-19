@@ -52,27 +52,165 @@ public class PriceAdjustBudgetService {
     @Inject ComparisonViewService comparisonViewService;
     @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
 
+    /**
+     * repair-260918 B-12②：同一版本同时只允许一个预算循环在跑（版本生成触发 / 启动续跑 / 手动续跑共用本入口）。
+     * 单实例部署前提（D-7），进程内集合即可。
+     */
+    private final Set<UUID> runningVersions = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     @ActivateRequestContext
     public void onVersionGenerated(UUID versionId) {
+        if (versionId == null) return;
+        if (!runningVersions.add(versionId)) {
+            LOG.infof("[price-adjust-budget] versionId=%s 已有预算循环在跑，本次触发跳过", versionId);
+            return;
+        }
+        try {
+            runBudgetLoop(versionId);
+        } finally {
+            runningVersions.remove(versionId);
+        }
+    }
+
+    /** 该版本的预算循环是否正在本进程里跑（供启动续跑判重 / 测试观察）。 */
+    public boolean isBudgetLoopRunning(UUID versionId) {
+        return versionId != null && runningVersions.contains(versionId);
+    }
+
+    private void runBudgetLoop(UUID versionId) {
         ScopeContext ctx = loadScopeContext(versionId);
         if (ctx == null) {
             LOG.warnf("[price-adjust-budget] versionId=%s 找不到版本或策略，跳过", versionId);
             return;
         }
-        LOG.infof("[price-adjust-budget] onVersionGenerated versionId=%s customer=%s materials=%d",
-            versionId, ctx.customerNo, ctx.materials.size());
-        int poolCount = 0, advancedCount = 0, failCount = 0;
-        for (String materialNo : ctx.materials) {
+        LOG.infof("[price-adjust-budget] onVersionGenerated versionId=%s customer=%s materials=%d alreadyProcessed=%d",
+            versionId, ctx.customerNo, ctx.materials.size(), ctx.alreadyProcessed.size());
+        int poolCount = 0, advancedCount = 0, failCount = 0, skippedCount = 0;
+        int stoppedRemaining = -1;
+        for (int i = 0; i < ctx.materials.size(); i++) {
+            String materialNo = ctx.materials.get(i);
+            // B-12①：续跑幂等 —— 本版本已有审核行 / 指针已指向本版本的料号不重复试算（开头一次批量取出，纯内存判定）。
+            if (ctx.alreadyProcessed.contains(materialNo)) {
+                skippedCount++;
+                continue;
+            }
             try {
                 boolean entered = processMaterial(versionId, ctx.customerNo, ctx.costDiffThreshold, materialNo);
                 if (entered) poolCount++; else advancedCount++;
             } catch (Exception e) {
+                if (VersionNotPendingException.isCauseOf(e)) {
+                    stoppedRemaining = ctx.materials.size() - i;
+                    break;
+                }
                 failCount++;
-                LOG.errorf(e, "[price-adjust-budget] versionId=%s material=%s 处理失败", versionId, materialNo);
+                LOG.errorf(e, "[price-adjust-budget] versionId=%s material=%s 处理失败（%s）",
+                    versionId, materialNo, PriceAdjustFailureTranslator.forBudget(e));
+                // B-7：料号不再静默漏出待办池 —— 另开事务 find-or-create 审核行，budget_status=FAILED。
+                boolean versionStillPending;
+                try {
+                    versionStillPending = recordBudgetFailure(versionId, ctx.customerNo, materialNo, e);
+                } catch (Exception x) {
+                    LOG.errorf(x, "[price-adjust-budget] versionId=%s material=%s 记录预算失败时再次异常（不影响后续料号）",
+                        versionId, materialNo);
+                    versionStillPending = true;
+                }
+                if (!versionStillPending) {
+                    stoppedRemaining = ctx.materials.size() - i;
+                    break;
+                }
             }
         }
-        LOG.infof("[price-adjust-budget] versionId=%s done: 进池=%d 直接推进指针=%d 异常=%d",
-            versionId, poolCount, advancedCount, failCount);
+        if (stoppedRemaining >= 0) {
+            // B-8①：带锁复核发现版本已作废 → 不写并停止循环。
+            LOG.infof("[price-adjust-budget] versionId=%s 版本已作废，停止剩余 %d 个料号", versionId, stoppedRemaining);
+            // B-8③ 兜底：对旧版再执行一次作废待处理审核（幂等）。
+            try {
+                int voided = voidPendingOfSupersededVersion(versionId);
+                if (voided > 0) {
+                    LOG.infof("[price-adjust-budget] versionId=%s 兜底作废残留待处理审核 %d 条", versionId, voided);
+                }
+            } catch (Exception e) {
+                LOG.errorf(e, "[price-adjust-budget] versionId=%s 兜底作废待处理审核失败", versionId);
+            }
+        }
+        LOG.infof("[price-adjust-budget] versionId=%s done: 进池=%d 直接推进指针=%d 异常=%d 续跑跳过=%d%s",
+            versionId, poolCount, advancedCount, failCount, skippedCount,
+            stoppedRemaining >= 0 ? " 作废停止=" + stoppedRemaining : "");
+    }
+
+    /**
+     * repair-260918 B-7：某料号预算抛异常（含事务超时）时，另开事务 find-or-create 审核行并标「预算失败」，
+     * 让料号出现在待办池（前端已有「预算失败」标签与「重算」入口）。写之前做 B-8① 的带锁复核。
+     *
+     * @return {@code false} = 版本已不是 PENDING（未写，调用方应停止循环）；{@code true} = 已记录
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    boolean recordBudgetFailure(UUID versionId, String customerNo, String materialNo, Throwable cause) {
+        if (!lockVersionAndCheckPending(versionId)) return false;
+        MaterialPriceReview review = MaterialPriceReview.findByVersionAndMaterial(versionId, materialNo);
+        if (review == null) {
+            review = new MaterialPriceReview();
+            review.versionId = versionId;
+            review.customerNo = customerNo;
+            review.materialNo = materialNo;
+            review.status = MaterialPriceReview.STATUS_PENDING;
+            MaterialPriceVersionRef ref = MaterialPriceVersionRef.findRef(customerNo, materialNo);
+            review.previousVersionId = ref != null && !versionId.equals(ref.versionId) ? ref.versionId : null;
+        }
+        try {
+            BasisLine basis = findBasisLine(customerNo, materialNo);
+            if (basis != null) {
+                review.basisQuotationId = basis.quotationId;
+                review.templateSeriesId = basis.templateSeriesId;
+            }
+        } catch (Exception e) {
+            LOG.warnf("[price-adjust-budget] versionId=%s material=%s 记录预算失败时解析依据单失败（忽略）: %s",
+                versionId, materialNo, e.getMessage());
+        }
+        review.budgetStatus = MaterialPriceReview.BUDGET_FAILED;
+        review.budgetError = PriceAdjustFailureTranslator.forBudget(cause);
+        review.updatedAt = java.time.OffsetDateTime.now();
+        review.persist();
+        return true;
+    }
+
+    /**
+     * repair-260918 B-8①：{@code SELECT status … FOR SHARE} 复核版本仍是 PENDING —— 共享锁持有到当前事务提交，
+     * 与 {@code PriceAdjustVersionGenerationService#generateVersion} 作废旧版时的行更新互斥。
+     */
+    boolean lockVersionAndCheckPending(UUID versionId) {
+        @SuppressWarnings("unchecked")
+        List<Object> rows = em.createNativeQuery(
+                "SELECT status FROM element_price_version WHERE id = :v FOR SHARE")
+            .setParameter("v", versionId)
+            .getResultList();
+        return !rows.isEmpty() && ElementPriceVersion.STATUS_PENDING.equals(rows.get(0));
+    }
+
+    /** B-8③：循环因作废退出时，对旧版再作废一次待处理审核（幂等）。 */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    int voidPendingOfSupersededVersion(UUID versionId) {
+        ElementPriceVersion v = ElementPriceVersion.findById(versionId);
+        if (v == null || ElementPriceVersion.STATUS_PENDING.equals(v.status)) return 0;
+        return MaterialPriceReview.voidPendingByVersion(versionId);
+    }
+
+    /**
+     * repair-260918 B-8①：带锁复核发现版本已不是 PENDING 时，{@link #processMaterial} 抛出本异常（事务随之回滚，
+     * 什么都不写）。预算循环据此停止；其他入口（单条重算 / 比对列变更 / 策略变更）收到同样不写。
+     */
+    public static class VersionNotPendingException extends RuntimeException {
+        public VersionNotPendingException(UUID versionId) {
+            super("版本已作废（不再是 PENDING），不写预算: " + versionId);
+        }
+
+        static boolean isCauseOf(Throwable t) {
+            java.util.Set<Throwable> seen = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+            for (Throwable c = t; c != null && seen.add(c); c = c.getCause()) {
+                if (c instanceof VersionNotPendingException) return true;
+            }
+            return false;
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -83,6 +221,8 @@ public class PriceAdjustBudgetService {
         String customerNo;
         BigDecimal costDiffThreshold;
         List<String> materials;
+        /** B-12①：本版本已有审核行的料号 ∪ 指针已指向本版本的料号（开头一次批量取出）。 */
+        Set<String> alreadyProcessed;
     }
 
     @Transactional
@@ -96,6 +236,21 @@ public class PriceAdjustBudgetService {
         ctx.customerNo = version.customerNo;
         ctx.costDiffThreshold = strategy.costDiffThreshold;
         ctx.materials = resolveScopeMaterials(strategy);
+        // B-12①：续跑幂等 —— 两条批量查询，条数与料号数无关。
+        ctx.alreadyProcessed = new java.util.HashSet<>();
+        @SuppressWarnings("unchecked")
+        List<String> reviewed = em.createNativeQuery(
+                "SELECT material_no FROM material_price_review WHERE version_id = :v")
+            .setParameter("v", versionId)
+            .getResultList();
+        ctx.alreadyProcessed.addAll(reviewed);
+        @SuppressWarnings("unchecked")
+        List<String> pointed = em.createNativeQuery(
+                "SELECT material_no FROM material_price_version_ref WHERE customer_no = :c AND version_id = :v")
+            .setParameter("c", version.customerNo)
+            .setParameter("v", versionId)
+            .getResultList();
+        ctx.alreadyProcessed.addAll(pointed);
         return ctx;
     }
 
@@ -154,6 +309,12 @@ public class PriceAdjustBudgetService {
 
         boolean hasRejectedHistory = MaterialPriceReview.hasEverRejected(customerNo, materialNo);
         BasisLine basis = findBasisLine(customerNo, materialNo);
+
+        // repair-260918 B-8①：本料号事务里第一次写库（版本指针 / 审核行）之前带锁复核版本仍是 PENDING。
+        // 共享锁持有到本事务提交，与作废一方的行更新互斥；已作废 ⇒ 不写，抛出信号（事务回滚，调用方停止）。
+        if (!lockVersionAndCheckPending(versionId)) {
+            throw new VersionNotPendingException(versionId);
+        }
 
         // D5：无活单料号 —— 不进待办池，指针照常推进（除非 D5 反例外：存在过 REJECTED 记录）
         if (basis == null && !hasRejectedHistory) {
@@ -214,7 +375,9 @@ public class PriceAdjustBudgetService {
             computeBudget(review, basis, versionId, costDiffThreshold);
         } catch (Exception e) {
             review.budgetStatus = MaterialPriceReview.BUDGET_FAILED;
-            review.budgetError = e.getMessage();
+            // repair-260918 B-6/B-7：可读口径（超时 ⇒「预算试算超时（超过 60 秒）」；其余 ⇒「根因类名: 信息」），
+            // 不再落 CDI 外壳文案 "Error invoking subclass method"。
+            review.budgetError = PriceAdjustFailureTranslator.forBudget(e);
             review.persist();
             LOG.errorf(e, "[price-adjust-budget] review=%s material=%s 预算计算失败", review.id, materialNo);
         }

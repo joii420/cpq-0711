@@ -1,6 +1,6 @@
 # api · repair-260918 大单升版超时与涨跌率显示（v2 · 2026-09-18）
 
-> 本次**无新增 / 删除端点、无路径与参数变更**，只有响应字段的**加法**、三个错误码取值的**加法**，以及两处重试行为修正。
+> 本次**无新增 / 删除端点、无路径与参数变更**，只有响应字段的**加法**（`JobDTO.running`、审核列表项 `budgetError`）、三个错误码取值的**加法**，以及两处重试行为修正。
 > 合并前按 `docs/rules/task-docs.md §2.5` 回写 `dev-docs/main-api.md` 的对应端点小节。
 
 ## 1. `GET /api/cpq/price-adjust/jobs/{jobId}` —— 响应新增 `running`
@@ -42,7 +42,15 @@
 
 ## 4. 审核待办池 `GET /api/cpq/price-adjust/reviews` —— 取值范围不变，出现场景增加
 
-`budgetStatus = FAILED` 早已是合法取值。本次起，**预算试算抛异常（含超时）的料号也会以 `FAILED` 出现在池中**（原先这类料号不出现），`budgetError` 超时文案为 `预算试算超时（超过 60 秒）`。
+`budgetStatus = FAILED` 早已是合法取值。本次起，**预算试算抛异常（含超时）的料号也会以 `FAILED` 出现在池中**（原先这类料号不出现）。
+
+**列表项新增字段（D-8，2026-09-18 开发中裁决）**：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `budgetError` 🆕 | string \| null | 预算失败原因（`material_price_review.budget_error`）。超时文案为 `预算试算超时（超过 60 秒）`；预算正常时为 null。⚠️ v2 文档曾暗示该字段已存在，实际原先不返回 |
+
+`GET /api/cpq/price-adjust/reviews/{reviewId}`（详情）**不加**此字段。
 
 ## 5. 涨跌率 `changeRate` —— 精度变化（类型不变）
 

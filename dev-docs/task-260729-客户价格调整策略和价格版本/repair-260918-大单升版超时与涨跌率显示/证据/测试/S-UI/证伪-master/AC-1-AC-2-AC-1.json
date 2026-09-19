@@ -1,0 +1,28 @@
+{
+  "first": {
+    "found": true,
+    "why": "ok",
+    "headers": [
+      "元素",
+      "本期价",
+      "上期价",
+      "涨跌",
+      "标记"
+    ],
+    "rowTexts": [
+      "Ag 银 28893.5 28892.5 +0%"
+    ],
+    "cellText": "+0%",
+    "rateHits": [
+      {
+        "text": "+0%",
+        "color": "rgb(207, 19, 34)",
+        "tag": "SPAN"
+      }
+    ],
+    "refColor": "rgba(0, 0, 0, 0.88)",
+    "refSource": "同行第 1 格「Ag 银」<TD>",
+    "priceColor": "",
+    "priceSource": ""
+  }
+}

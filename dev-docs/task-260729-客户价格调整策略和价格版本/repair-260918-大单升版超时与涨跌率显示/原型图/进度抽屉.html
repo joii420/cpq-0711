@@ -46,6 +46,7 @@
 <body>
 <div class="page">
   <h2 style="margin:0 0 4px">更新执行进度抽屉 · 原型</h2>
+  <p class="note" style="color:#ad4e00">2026-09-18 主线修正（原型缺陷，就地修）：状态 2 进度条原画成绿色 ✓、「料号」列宽原画成 130px —— 与本页「其余元素与现网一致」的说明矛盾；已改回现网样式（蓝色 100%、列宽 120px）。</p>
   <p class="note">返修 <code>repair-260918</code> · 对应 <code>F-2</code> / <code>AC-9①</code> / <code>AC-16</code>。唯一的布局变化：计数行在「冲突」与「等待」之间新增 <mark>执行中 N</mark>（虚线框标出）。其余元素与现网一致，照原样保留。数据取自开发环境 <code>CUST-0004 / V26091802 / QT-20260911-0842</code>。</p>
 
   <!-- ============ 状态 1：执行中 ============ -->
@@ -65,7 +66,7 @@
       <div class="progress"><div class="bar active"><i style="width:43%"></i></div><span class="pct">43%</span></div>
       <div class="meta">触发人 d1e1147c-a639-4156-aeac-9f938a65ad05 · 2026-09-18 19:40</div>
       <table>
-        <thead><tr><th style="width:150px">报价单</th><th style="width:130px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
+        <thead><tr><th style="width:150px">报价单</th><th style="width:120px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
         <tbody>
           <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00007</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
           <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00217</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
@@ -93,10 +94,10 @@
         <span class="new" style="color:var(--blue)">执行中 <b>0</b></span>
         <span style="color:var(--muted)">等待 <b>0</b></span>
       </div>
-      <div class="progress"><div class="bar success"><i style="width:100%"></i></div><span class="pct">✓</span></div>
+      <div class="progress"><div class="bar"><i style="width:100%"></i></div><span class="pct">100%</span></div>
       <div class="meta">触发人 d1e1147c-a639-4156-aeac-9f938a65ad05 · 2026-09-18 19:40 · 完成于 2026-09-18 19:42</div>
       <table>
-        <thead><tr><th style="width:150px">报价单</th><th style="width:130px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
+        <thead><tr><th style="width:150px">报价单</th><th style="width:120px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
         <tbody>
           <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00007</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
           <tr><td>QT-20260911-0842</td><td class="mono">PERF600-B00217</td><td><span class="tag green">成功</span></td><td>升版成功：版本明细 1 条（含无价），价格承载组件 1 个…</td><td class="num">0</td><td></td></tr>
@@ -125,7 +126,7 @@
       <div class="progress"><div class="bar"><i style="width:100%"></i></div><span class="pct">100%</span></div>
       <div class="meta">触发人 d1e1147c-a639-4156-aeac-9f938a65ad05 · 2026-09-18 19:40 · 完成于 2026-09-18 19:43</div>
       <table>
-        <thead><tr><th style="width:150px">报价单</th><th style="width:130px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
+        <thead><tr><th style="width:150px">报价单</th><th style="width:120px">料号</th><th style="width:90px">状态</th><th>错误信息</th><th class="num" style="width:80px">重试次数</th><th style="width:90px">操作</th></tr></thead>
         <tbody>
           <tr><td>QT-20260909-0629</td><td class="mono">PERFHOT-B00221</td><td><span class="tag red">失败</span></td><td>执行超时（超过 60 秒）被中止，本行未更新，可重试</td><td class="num">0</td><td><span class="btn">重试</span></td></tr>
           <tr><td>QT-20260911-0842</td><td class="mono">PERFHOT-B00239</td><td><span class="tag red">失败</span></td><td>价格已更新，但版本记录写入失败，请重试</td><td class="num">0</td><td><span class="btn">重试</span></td></tr>
