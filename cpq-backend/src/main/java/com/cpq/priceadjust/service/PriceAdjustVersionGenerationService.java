@@ -173,8 +173,11 @@ public class PriceAdjustVersionGenerationService {
             if (item.currentPrice != null) {
                 anyPriced = true;
                 if (item.previousPrice != null && item.previousPrice.signum() != 0) {
+                    // repair-260918 B-9：6 → 12 位（列 element_price_version_item.change_rate = numeric(18,12)，
+                    // 不迁移）。元素单价自 task-260916 起 9 位小数，6 位涨跌率会把 2.9 万量级银价的小幅变动
+                    // 存成 0（页面显示 0%，看起来像「没变」）。已生成版本不回算。
                     item.changeRate = item.currentPrice.subtract(item.previousPrice)
-                        .divide(item.previousPrice, 6, RoundingMode.HALF_UP);
+                        .divide(item.previousPrice, 12, RoundingMode.HALF_UP);
                 }
             }
             newItems.add(item);
@@ -191,6 +194,11 @@ public class PriceAdjustVersionGenerationService {
             List<UUID> staleJobIds = pendingJobs.stream().map(j -> j.id).toList();
             pending.status = ElementPriceVersion.STATUS_SUPERSEDED;
             pending.persist();
+            // repair-260918 B-8②：显式 flush —— 版本行的 UPDATE 必须先于下面三条批量语句执行（Hibernate
+            // 对批量 HQL 只按其查询空间做自动 flush，不保证先刷 element_price_version）。这样本事务一开始就
+            // 持有该行的行锁，与预算循环 processMaterial 里的 `SELECT status … FOR SHARE` 互斥：要么等在途料号
+            // 提交后再作废（下面的 voidPendingByVersion 能作废到它），要么在途料号等作废提交后读到 SUPERSEDED 而不写。
+            em.flush();
             MaterialPriceUpdateJobItem.staleAllUnfinishedByJobIds(staleJobIds);
             // 🔒 同一事务里按 items 真实状态全量重算 job 计数器 + 批次状态（禁止增量推算）。
             //    上一行是 item 级批量 UPDATE，不碰 job 行；而被取代的 job 永远不会再执行、

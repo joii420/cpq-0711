@@ -10,7 +10,7 @@ import type {
 import { formatNumber } from '../../../utils/formatNumber';
 import {
   ELEMENT_PRICE_SCALE,
-  formatDisplayDecimal,
+  formatChangeRate,
   normalizeDecimalString,
   toDecimal,
   type DecimalString,
@@ -26,14 +26,6 @@ export interface ReviewDetailDrawerProps {
 
 function fmt(v: DecimalString | null | undefined, digits = 2): string {
   return formatNumber(v, { isComputed: true, decimals: digits }) ?? '—';
-}
-function fmtRate(v: DecimalString | null | undefined): { text: string; color?: string } {
-  if (v == null) return { text: '—' };
-  const rate = toDecimal(v);
-  const pct = formatDisplayDecimal(rate.times('100'), 1);
-  if (rate.isPositive()) return { text: `+${pct}%`, color: '#cf1322' };
-  if (rate.isNegative()) return { text: `${pct}%`, color: '#389e0d' };
-  return { text: `${pct}%` };
 }
 
 /**
@@ -85,7 +77,7 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
     { title: '本版价', dataIndex: 'currentPrice', align: 'right' as const, render: (v: DecimalString | null) => fmt(v, ELEMENT_PRICE_SCALE) },
     {
       title: '涨跌', dataIndex: 'changeRate', align: 'right' as const,
-      render: (v: DecimalString | null) => { const r = fmtRate(v); return <span style={{ color: r.color }}>{r.text}</span>; },
+      render: (v: DecimalString | null) => { const r = formatChangeRate(v); return <span style={{ color: r.color }}>{r.text}</span>; },
     },
     { title: '该料号用量', dataIndex: 'usageQty', align: 'right' as const, render: (v: DecimalString | null) => v ?? '—' },
     { title: '对单价影响', dataIndex: 'unitPriceImpact', align: 'right' as const, render: (v: DecimalString | null) => fmt(v) },

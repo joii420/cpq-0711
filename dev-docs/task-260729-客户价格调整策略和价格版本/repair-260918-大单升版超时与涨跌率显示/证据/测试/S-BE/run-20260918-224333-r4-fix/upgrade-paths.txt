@@ -1,0 +1,10 @@
+[2026-09-18T22:44:10.811252171] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=2, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=3}
+[2026-09-18T22:44:20.470593904] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=5}
+[2026-09-18T22:44:26.575185141] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=1}
+[2026-09-18T22:44:33.371308492] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=5}
+[2026-09-18T22:44:48.084097865] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=2}
+[2026-09-18T22:44:49.188506052] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=2}
+[2026-09-18T22:44:58.095066282] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=2, upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=1}
+[2026-09-18T22:45:11.794129306] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=7, upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=7}
+[2026-09-18T22:45:27.249678480] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=6}
+[2026-09-18T22:45:28.221274273] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=1}

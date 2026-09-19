@@ -1,0 +1,3 @@
+[2026-09-18T22:51:11.311165174] 开关=Optional[false]；runOnStartup 前={job=547812a4cf2cf2e343034afe0e8db34c, reviews=0:|12:adebd788b43dfb6984f77cfd05f01fec}
+10 秒后={job=547812a4cf2cf2e343034afe0e8db34c, reviews=0:|12:adebd788b43dfb6984f77cfd05f01fec}
+[2026-09-18T22:51:12.483692847] 阳性对照（直接调 recoverJobs + resumeBudgets）后={job=93d8832fb4e96eb5a341d5202245238d, reviews=3:b44344b8a5981468e16290020823cdd8|12:adebd788b43dfb6984f77cfd05f01fec}

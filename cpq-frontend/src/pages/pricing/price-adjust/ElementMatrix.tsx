@@ -4,22 +4,12 @@ import type { ColumnsType } from 'antd/es/table';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import type { ElementRowDTO, VersionColumnDTO } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
-import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatChangeRate, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 20;
 
 function formatPrice(v: DecimalString | null | undefined): string {
   return formatNumber(v, { isComputed: true, decimals: ELEMENT_PRICE_SCALE }) ?? '—';
-}
-
-function formatRate(v: DecimalString | null | undefined): { text: string; color?: string } {
-  if (v == null) return { text: '—' };
-  const rate = toDecimal(v);
-  const pct = formatDisplayDecimal(rate.times('100'), 1);
-  // 🔒 涨红跌绿（fronttask §1.3），不是股市反方向的西式配色
-  if (rate.isPositive()) return { text: `+${pct}%`, color: '#cf1322' };
-  if (rate.isNegative()) return { text: `${pct}%`, color: '#389e0d' };
-  return { text: `${pct}%` };
 }
 
 export interface ElementMatrixProps {
@@ -136,7 +126,7 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
       if (cell.priceState === 'NO_PRICE') {
         return <Tag color="orange" style={{ fontSize: 11 }}>无价</Tag>;
       }
-      const rate = formatRate(cell.changeRate);
+      const rate = formatChangeRate(cell.changeRate);
       return (
         <div>
           <div>{formatPrice(cell.unitPrice)}</div>

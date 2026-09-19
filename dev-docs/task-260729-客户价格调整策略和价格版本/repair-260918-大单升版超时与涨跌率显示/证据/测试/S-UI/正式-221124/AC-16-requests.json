@@ -1,0 +1,13 @@
+{
+  "jobId": "0918a0a0-0000-4000-8000-00000000a016",
+  "firstDoneServedAt": "2026-09-19T05:12:29.304Z",
+  "doneShownAt": "2026-09-19T05:12:30.271Z",
+  "windowEnd": "2026-09-19T05:13:00.377Z",
+  "runningPhaseHits": 2,
+  "doneHits": 1,
+  "hitsAfterFirstDone": [],
+  "otherJobPaths": [],
+  "pollGapsMs": [
+    2028
+  ]
+}

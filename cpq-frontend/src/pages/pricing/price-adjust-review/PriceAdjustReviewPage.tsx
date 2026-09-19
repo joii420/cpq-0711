@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Input, Select, Checkbox, Space, Tag, Spin, message } from 'antd';
+import { Input, Select, Checkbox, Space, Tag, Spin, Tooltip, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import SelectableTable, { runBatch } from '../../../components/SelectableTable';
@@ -141,9 +141,11 @@ const PriceAdjustReviewPage: React.FC = () => {
           return <span><Spin size="small" style={{ marginRight: 6 }} />预算计算中</span>;
         }
         if (r.budgetStatus === 'FAILED') {
+          // repair-260918 F-3 (AC-26): hover shows the budgetError text verbatim; no reason => no tooltip.
+          const failTag = <Tag color="red">预算失败</Tag>;
           return (
             <span>
-              <Tag color="red">预算失败</Tag>
+              {r.budgetError?.trim() ? <Tooltip title={r.budgetError}>{failTag}</Tooltip> : failTag}
               <a onClick={(e) => { e.stopPropagation(); handleRecomputeOne(r.reviewId); }}>重算</a>
             </span>
           );

@@ -1,0 +1,15 @@
+[2026-09-18T22:24:24.455856075] Ac260918BudgetTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=executor params=2uuid=3, upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=2}
+[2026-09-18T22:25:59.426242015] Ac260918BudgetTest 拦到的 upgrade 调用：{}
+[2026-09-18T22:28:04.085908848] Ac260918BudgetTest 拦到的 upgrade 调用：{}
+[2026-09-18T22:28:12.949971500] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=2, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=3}
+[2026-09-18T22:28:22.193949170] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=5}
+[2026-09-18T22:28:28.603471428] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=1}
+[2026-09-18T22:29:35.114501976] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=4}
+[2026-09-18T22:29:50.366881454] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=2}
+[2026-09-18T22:29:51.607178967] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=2}
+[2026-09-18T22:30:00.075117018] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=2, upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=1}
+[2026-09-18T22:30:12.631498990] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=7, upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=7}
+[2026-09-18T22:30:29.531281931] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=6}
+[2026-09-18T22:30:30.634445413] Ac260918LargeQuoteSequenceTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean,PrecomputedTreeRows,Map) dryRun=true thread=executor params=2uuid=1}
+[2026-09-18T22:30:47.519302013] Ac260918StartupRecoveryTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=executor params=2uuid=2}
+[2026-09-18T22:31:00.175872456] Ac260918StartupRecoveryTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=1, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=1}

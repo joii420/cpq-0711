@@ -9,22 +9,12 @@ import type {
   VersionDTO, VersionItemDTO, PendingVersionExistsPayload, StrategyNoElementsPayload,
 } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
-import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, toDecimal, type DecimalString } from '../../../utils/precision';
+import { ELEMENT_PRICE_SCALE, formatChangeRate, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 10;
 
 const formatPrice = (value: DecimalString | null): string =>
   formatNumber(value, { isComputed: true, decimals: ELEMENT_PRICE_SCALE }) ?? '—';
-
-function formatRate(value: DecimalString | null): { text: string; color?: string } {
-  if (value == null) return { text: '—' };
-  const rate = toDecimal(value);
-  const pct = formatDisplayDecimal(rate.times('100'), 1);
-  return {
-    text: `${rate.isPositive() ? '+' : ''}${pct}%`,
-    color: rate.isPositive() ? '#cf1322' : rate.isNegative() ? '#389e0d' : undefined,
-  };
-}
 
 export interface VersionTrailPanelHandle {
   /** 供父层在保存策略/元素清单成功后调用，让「最新已生成版本」等联动刷新。 */
@@ -224,7 +214,7 @@ const VersionTrailPanel = forwardRef<VersionTrailPanelHandle, VersionTrailPanelP
               {
                 title: '涨跌', dataIndex: 'changeRate', align: 'right' as const,
                 render: (v: DecimalString | null) => {
-                  const rate = formatRate(v);
+                  const rate = formatChangeRate(v);
                   return <span style={{ color: rate.color }}>{rate.text}</span>;
                 },
               },

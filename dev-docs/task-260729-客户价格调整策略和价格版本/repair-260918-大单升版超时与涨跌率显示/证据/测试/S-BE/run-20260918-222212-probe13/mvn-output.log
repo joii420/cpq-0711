@@ -1,0 +1,161 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 436 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 988 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 25 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 750 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.priceadjust.ac260918.Ac260918T13SqlCountIndependentOfLinesTest
+2026-09-18 22:22:33.798 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-18 22:22:33.824 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-18 22:22:33.971 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-18 22:22:34.430 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-18 22:22:34.566 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-18 22:22:34.840 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-18 22:22:34.954 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-18 22:22:35.368 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-18 22:22:35.684 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 428 migrations (execution time 00:00.151s)
+2026-09-18 22:22:35.914 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 445
+2026-09-18 22:22:35.915 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-18 22:22:35.923 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-18 22:22:36.015 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-18 22:22:36.015 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-18 22:22:36.585 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-18 22:22:36.637 INFO  [io.qua.sch.run.SimpleScheduler] (main) Simple scheduler is disabled by config property and will not be started
+2026-09-18 22:22:36.710 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-18 22:22:36.718 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-09-18 22:22:36.793 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-18 22:22:36.875 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-18 22:22:37.268 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-18 22:22:37.292 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-18 22:22:37.314 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:22:37.336 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:22:37.337 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-18 22:22:37.550 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-18 22:22:37.627 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.872s. Listening on: http://localhost:55002
+2026-09-18 22:22:37.627 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-18 22:22:37.627 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-09-18 22:22:39.478 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:22:39.532 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:22:39.533 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=5eab1993-6e14-42e7-b047-1a240a8016f6 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:22:39.646 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=8e06c549-551e-400b-b6fb-e635862d29ee quotation=RP0918A-018897e0-S12 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:22:39.647 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=8e06c549-551e-400b-b6fb-e635862d29ee quotation=b011d465-0950-478c-ac46-d8ffe2772a5a lines=12 dryRun=true sql=24 ms=765
+2026-09-18 22:22:39.862 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:22:39.894 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:22:39.895 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=5eab1993-6e14-42e7-b047-1a240a8016f6 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:22:39.988 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=464bdb52-eb9b-4942-bbf5-657343e9690e quotation=RP0918A-018897e0-B1000 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:22:39.989 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=464bdb52-eb9b-4942-bbf5-657343e9690e quotation=97cd738c-b5db-40ac-b13e-1901796657bc lines=1000 dryRun=true sql=24 ms=326
+2026-09-18 22:22:40.163 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (main) [perf] revision-write quotation=b011d465-0950-478c-ac46-d8ffe2772a5a kind=INITIAL ms=25
+2026-09-18 22:22:40.254 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:22:40.281 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:22:40.281 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=5eab1993-6e14-42e7-b047-1a240a8016f6 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:22:40.396 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (main) [perf] revision-write quotation=b011d465-0950-478c-ac46-d8ffe2772a5a kind=CURRENT ms=33
+2026-09-18 22:22:40.397 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=8e06c549-551e-400b-b6fb-e635862d29ee quotation=RP0918A-018897e0-S12 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:22:40.397 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=8e06c549-551e-400b-b6fb-e635862d29ee quotation=b011d465-0950-478c-ac46-d8ffe2772a5a lines=12 dryRun=false sql=28 ms=394
+2026-09-18 22:22:40.681 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (main) [perf] revision-write quotation=97cd738c-b5db-40ac-b13e-1901796657bc kind=INITIAL ms=146
+2026-09-18 22:22:40.784 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:22:40.800 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:22:40.801 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=5eab1993-6e14-42e7-b047-1a240a8016f6 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:22:41.071 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (main) [perf] revision-write quotation=97cd738c-b5db-40ac-b13e-1901796657bc kind=CURRENT ms=188
+2026-09-18 22:22:41.071 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=464bdb52-eb9b-4942-bbf5-657343e9690e quotation=RP0918A-018897e0-B1000 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:22:41.071 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=464bdb52-eb9b-4942-bbf5-657343e9690e quotation=97cd738c-b5db-40ac-b13e-1901796657bc lines=1000 dryRun=false sql=28 ms=667
+2026-09-18 22:22:41.312 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:22:41.343 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:22:41.344 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=5eab1993-6e14-42e7-b047-1a240a8016f6 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:22:41.466 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (main) [perf] revision-write quotation=b011d465-0950-478c-ac46-d8ffe2772a5a kind=CURRENT ms=35
+2026-09-18 22:22:41.467 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=35d28753-1ae4-4594-bfec-3215431c1ab0 quotation=RP0918A-018897e0-S12 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:22:41.467 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=35d28753-1ae4-4594-bfec-3215431c1ab0 quotation=b011d465-0950-478c-ac46-d8ffe2772a5a lines=12 dryRun=false sql=27 ms=379
+2026-09-18 22:22:41.734 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:22:41.762 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:22:41.762 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=5eab1993-6e14-42e7-b047-1a240a8016f6 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:22:42.033 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (main) [perf] revision-write quotation=97cd738c-b5db-40ac-b13e-1901796657bc kind=CURRENT ms=166
+2026-09-18 22:22:42.034 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=f91863a5-6ed4-4808-8902-a8e18b37ea58 quotation=RP0918A-018897e0-B1000 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:22:42.034 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=f91863a5-6ed4-4808-8902-a8e18b37ea58 quotation=97cd738c-b5db-40ac-b13e-1901796657bc lines=1000 dryRun=false sql=27 ms=546
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.364152954] 结果：dry-small=SUCCESS dry-large=SUCCESS real1-small=SUCCESS real1-large=SUCCESS real2-small=SUCCESS real2-large=SUCCESS 
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.364897206] [perf] upgrade li=8e06c549-551e-400b-b6fb-e635862d29ee quotation=b011d465-0950-478c-ac46-d8ffe2772a5a lines=12 dryRun=true sql=24 ms=765
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365062497] [perf] upgrade li=464bdb52-eb9b-4942-bbf5-657343e9690e quotation=97cd738c-b5db-40ac-b13e-1901796657bc lines=1000 dryRun=true sql=24 ms=326
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365119051] [perf] upgrade li=8e06c549-551e-400b-b6fb-e635862d29ee quotation=b011d465-0950-478c-ac46-d8ffe2772a5a lines=12 dryRun=false sql=28 ms=394
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365165782] [perf] upgrade li=464bdb52-eb9b-4942-bbf5-657343e9690e quotation=97cd738c-b5db-40ac-b13e-1901796657bc lines=1000 dryRun=false sql=28 ms=667
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365209230] [perf] upgrade li=35d28753-1ae4-4594-bfec-3215431c1ab0 quotation=b011d465-0950-478c-ac46-d8ffe2772a5a lines=12 dryRun=false sql=27 ms=379
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365253032] [perf] upgrade li=f91863a5-6ed4-4808-8902-a8e18b37ea58 quotation=97cd738c-b5db-40ac-b13e-1901796657bc lines=1000 dryRun=false sql=27 ms=546
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365478465] [perf] revision-write quotation=97cd738c-b5db-40ac-b13e-1901796657bc kind=INITIAL ms=146
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365542256] [perf] revision-write quotation=97cd738c-b5db-40ac-b13e-1901796657bc kind=CURRENT ms=188
+[RP0918A-EVIDENCE AC-13] [2026-09-18T22:22:42.365583947] [perf] revision-write quotation=97cd738c-b5db-40ac-b13e-1901796657bc kind=CURRENT ms=166
+[RP0918A-EVIDENCE cleanup] [2026-09-18T22:22:45.247043608] 客户 RP0918A-018897e0 自建数据已按 id 清理完毕（报价单 2 张）
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 11.98 s -- in com.cpq.priceadjust.ac260918.Ac260918T13SqlCountIndependentOfLinesTest
+2026-09-18 22:22:45.319 INFO  [io.quarkus] (main) cpq-backend stopped in 0.031s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  31.688 s
+[INFO] Finished at: 2026-09-18T22:22:45-07:00
+[INFO] ------------------------------------------------------------------------

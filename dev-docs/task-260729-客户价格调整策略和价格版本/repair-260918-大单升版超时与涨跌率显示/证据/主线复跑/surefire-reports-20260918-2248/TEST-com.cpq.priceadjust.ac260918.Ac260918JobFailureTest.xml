@@ -1,0 +1,913 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report.xsd" version="3.0.2" name="com.cpq.priceadjust.ac260918.Ac260918JobFailureTest" time="30.348" tests="4" errors="0" skipped="0" failures="0">
+  <properties>
+    <property name="java.specification.version" value="21"/>
+    <property name="sun.jnu.encoding" value="UTF-8"/>
+    <property name="io.quarkus.security.http.test-if-basic-auth-implicitly-required" value="true"/>
+    <property name="java.class.path" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/test-classes:/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/classes:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-orm-panache/3.34.3/quarkus-hibernate-orm-panache-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-orm/3.34.3/quarkus-hibernate-orm-3.34.3.jar:/home/joii/.m2/repository/org/hibernate/orm/hibernate-core/7.2.9.Final/hibernate-core-7.2.9.Final.jar:/home/joii/.m2/repository/org/hibernate/models/hibernate-models/1.0.1/hibernate-models-1.0.1.jar:/home/joii/.m2/repository/org/hibernate/orm/hibernate-graalvm/7.2.9.Final/hibernate-graalvm-7.2.9.Final.jar:/home/joii/.m2/repository/org/glassfish/jaxb/jaxb-runtime/4.0.6/jaxb-runtime-4.0.6.jar:/home/joii/.m2/repository/org/glassfish/jaxb/jaxb-core/4.0.6/jaxb-core-4.0.6.jar:/home/joii/.m2/repository/org/eclipse/angus/angus-activation/2.0.3/angus-activation-2.0.3.jar:/home/joii/.m2/repository/org/glassfish/jaxb/txw2/4.0.6/txw2-4.0.6.jar:/home/joii/.m2/repository/com/sun/istack/istack-commons-runtime/4.1.2/istack-commons-runtime-4.1.2.jar:/home/joii/.m2/repository/jakarta/xml/bind/jakarta.xml.bind-api/4.0.5/jakarta.xml.bind-api-4.0.5.jar:/home/joii/.m2/repository/jakarta/activation/jakarta.activation-api/2.1.4/jakarta.activation-api-2.1.4.jar:/home/joii/.m2/repository/jakarta/persistence/jakarta.persistence-api/3.2.0/jakarta.persistence-api-3.2.0.jar:/home/joii/.m2/repository/jakarta/transaction/jakarta.transaction-api/2.0.1/jakarta.transaction-api-2.0.1.jar:/home/joii/.m2/repository/org/hibernate/local-cache/quarkus-local-cache/0.5.0/quarkus-local-cache-0.5.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-orm-panache-common/3.34.3/quarkus-hibernate-orm-panache-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-panache-hibernate-common/3.34.3/quarkus-panache-hibernate-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-panache-common/3.34.3/quarkus-panache-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest-jackson/3.34.3/quarkus-rest-jackson-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest/3.34.3/quarkus-rest-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest-common/3.34.3/quarkus-rest-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-common/3.34.3/resteasy-reactive-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-common-types/3.34.3/resteasy-reactive-common-types-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-vertx/3.34.3/resteasy-reactive-vertx-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive/3.34.3/resteasy-reactive-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/vertx/utils/quarkus-vertx-utils/3.34.3/quarkus-vertx-utils-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-jsonp/3.34.3/quarkus-jsonp-3.34.3.jar:/home/joii/.m2/repository/org/eclipse/parsson/parsson/1.1.7/parsson-1.1.7.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest-jackson-common/3.34.3/quarkus-rest-jackson-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-jackson/3.34.3/resteasy-reactive-jackson-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-security/3.34.3/quarkus-security-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-security-runtime-spi/3.34.3/quarkus-security-runtime-spi-3.34.3.jar:/home/joii/.m2/repository/jakarta/interceptor/jakarta.interceptor-api/2.2.0/jakarta.interceptor-api-2.2.0.jar:/home/joii/.m2/repository/jakarta/annotation/jakarta.annotation-api/3.0.0/jakarta.annotation-api-3.0.0.jar:/home/joii/.m2/repository/io/quarkus/security/quarkus-security/2.3.2/quarkus-security-2.3.2.jar:/home/joii/.m2/repository/org/jboss/logging/jboss-logging/3.6.3.Final/jboss-logging-3.6.3.Final.jar:/home/joii/.m2/repository/io/smallrye/reactive/mutiny/3.1.1/mutiny-3.1.1.jar:/home/joii/.m2/repository/org/jctools/jctools-core/4.0.5/jctools-core-4.0.5.jar:/home/joii/.m2/repository/jakarta/enterprise/jakarta.enterprise.cdi-api/4.1.0/jakarta.enterprise.cdi-api-4.1.0.jar:/home/joii/.m2/repository/jakarta/enterprise/jakarta.enterprise.lang-model/4.1.0/jakarta.enterprise.lang-model-4.1.0.jar:/home/joii/.m2/repository/jakarta/el/jakarta.el-api/6.0.1/jakarta.el-api-6.0.1.jar:/home/joii/.m2/repository/jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler/3.34.3/quarkus-scheduler-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-kotlin/3.34.3/quarkus-scheduler-kotlin-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-common/3.34.3/quarkus-scheduler-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-api/3.34.3/quarkus-scheduler-api-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-spi/3.34.3/quarkus-scheduler-spi-3.34.3.jar:/home/joii/.m2/repository/io/opentelemetry/instrumentation/opentelemetry-instrumentation-api/2.23.0/opentelemetry-instrumentation-api-2.23.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-api/1.57.0/opentelemetry-api-1.57.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-context/1.57.0/opentelemetry-context-1.57.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-common/1.57.0/opentelemetry-common-1.57.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-api-incubator/1.57.0-alpha/opentelemetry-api-incubator-1.57.0-alpha.jar:/home/joii/.m2/repository/io/opentelemetry/semconv/opentelemetry-semconv/1.37.0/opentelemetry-semconv-1.37.0.jar:/home/joii/.m2/repository/com/cronutils/cron-utils/9.2.1/cron-utils-9.2.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-virtual-threads/3.34.3/quarkus-virtual-threads-3.34.3.jar:/home/joii/.m2/repository/io/vertx/vertx-core/4.5.26/vertx-core-4.5.26.jar:/home/joii/.m2/repository/io/netty/netty-common/4.1.132.Final/netty-common-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-buffer/4.1.132.Final/netty-buffer-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-transport/4.1.132.Final/netty-transport-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-handler/4.1.132.Final/netty-handler-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-transport-native-unix-common/4.1.132.Final/netty-transport-native-unix-common-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-handler-proxy/4.1.132.Final/netty-handler-proxy-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-socks/4.1.132.Final/netty-codec-socks-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-http/4.1.132.Final/netty-codec-http-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-http2/4.1.132.Final/netty-codec-http2-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-resolver/4.1.132.Final/netty-resolver-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-resolver-dns/4.1.132.Final/netty-resolver-dns-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-dns/4.1.132.Final/netty-codec-dns-4.1.132.Final.jar:/home/joii/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.21.2/jackson-core-2.21.2.jar:/home/joii/.m2/repository/io/quarkus/quarkus-vertx/3.34.3/quarkus-vertx-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-netty/3.34.3/quarkus-netty-3.34.3.jar:/home/joii/.m2/repository/io/netty/netty-codec/4.1.132.Final/netty-codec-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-haproxy/4.1.132.Final/netty-codec-haproxy-4.1.132.Final.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-vertx-context/2.17.0/smallrye-common-vertx-context-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-constraint/2.17.0/smallrye-common-constraint-2.17.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-vertx-latebound-mdc-provider/3.34.3/quarkus-vertx-latebound-mdc-provider-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-core/3.21.6/smallrye-mutiny-vertx-core-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-runtime/3.21.6/smallrye-mutiny-vertx-runtime-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/vertx-mutiny-generator/3.21.6/vertx-mutiny-generator-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-codegen/4.5.26/vertx-codegen-4.5.26.jar:/home/joii/.m2/repository/io/smallrye/smallrye-fault-tolerance-vertx/6.10.1/smallrye-fault-tolerance-vertx-6.10.1.jar:/home/joii/.m2/repository/org/jboss/slf4j/slf4j-jboss-logmanager/2.0.2.Final/slf4j-jboss-logmanager-2.0.2.Final.jar:/home/joii/.m2/repository/org/glassfish/expressly/expressly/6.0.0/expressly-6.0.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-validator/3.34.3/quarkus-hibernate-validator-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-core/3.34.3/quarkus-core-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-os/2.17.0/smallrye-common-os-2.17.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-ide-launcher/3.34.3/quarkus-ide-launcher-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-development-mode-spi/3.34.3/quarkus-development-mode-spi-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config/3.16.0/smallrye-config-3.16.0.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config-core/3.16.0/smallrye-config-core-3.16.0.jar:/home/joii/.m2/repository/org/eclipse/microprofile/config/microprofile-config-api/3.1/microprofile-config-api-3.1.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-classloader/2.17.0/smallrye-common-classloader-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config-common/3.16.0/smallrye-config-common-3.16.0.jar:/home/joii/.m2/repository/org/jboss/logmanager/jboss-logmanager/3.2.1.Final/jboss-logmanager-3.2.1.Final.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-cpu/2.17.0/smallrye-common-cpu-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-expression/2.17.0/smallrye-common-expression-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-net/2.17.0/smallrye-common-net-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-ref/2.17.0/smallrye-common-ref-2.17.0.jar:/home/joii/.m2/repository/jakarta/json/jakarta.json-api/2.1.3/jakarta.json-api-2.1.3.jar:/home/joii/.m2/repository/org/jboss/threads/jboss-threads/3.9.2/jboss-threads-3.9.2.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-function/2.17.0/smallrye-common-function-2.17.0.jar:/home/joii/.m2/repository/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar:/home/joii/.m2/repository/org/wildfly/common/wildfly-common/2.0.1/wildfly-common-2.0.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-value-registry/3.34.3/quarkus-value-registry-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-runner/3.34.3/quarkus-bootstrap-runner-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-fs-util/1.3.0/quarkus-fs-util-1.3.0.jar:/home/joii/.m2/repository/org/hibernate/validator/hibernate-validator/9.1.0.Final/hibernate-validator-9.1.0.Final.jar:/home/joii/.m2/repository/jakarta/validation/jakarta.validation-api/3.1.1/jakarta.validation-api-3.1.1.jar:/home/joii/.m2/repository/com/fasterxml/classmate/1.7.1/classmate-1.7.1.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config-validator/3.16.0/smallrye-config-validator-3.16.0.jar:/home/joii/.m2/repository/jakarta/ws/rs/jakarta.ws.rs-api/3.1.0/jakarta.ws.rs-api-3.1.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-flyway/3.34.3/quarkus-flyway-3.34.3.jar:/home/joii/.m2/repository/org/flywaydb/flyway-core/12.0.0/flyway-core-12.0.0.jar:/home/joii/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.21.2/jackson-databind-2.21.2.jar:/home/joii/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.21/jackson-annotations-2.21.jar:/home/joii/.m2/repository/io/quarkus/quarkus-agroal/3.34.3/quarkus-agroal-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-datasource/3.34.3/quarkus-datasource-3.34.3.jar:/home/joii/.m2/repository/io/agroal/agroal-api/3.0.1/agroal-api-3.0.1.jar:/home/joii/.m2/repository/io/agroal/agroal-narayana/3.0.1/agroal-narayana-3.0.1.jar:/home/joii/.m2/repository/org/jboss/jboss-transaction-spi/8.0.0.Final/jboss-transaction-spi-8.0.0.Final.jar:/home/joii/.m2/repository/io/agroal/agroal-pool/3.0.1/agroal-pool-3.0.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-credentials/3.34.3/quarkus-credentials-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-narayana-jta/3.34.3/quarkus-narayana-jta-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-transaction-annotations/3.34.3/quarkus-transaction-annotations-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation-jta/2.3.0/smallrye-context-propagation-jta-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-reactive-converter-api/3.0.3/smallrye-reactive-converter-api-3.0.3.jar:/home/joii/.m2/repository/org/reactivestreams/reactive-streams/1.0.4/reactive-streams-1.0.4.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-reactive-converter-mutiny/3.0.3/smallrye-reactive-converter-mutiny-3.0.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/mutiny-zero-flow-adapters/1.1.1/mutiny-zero-flow-adapters-1.1.1.jar:/home/joii/.m2/repository/org/jboss/narayana/jta/narayana-jta/7.3.3.Final/narayana-jta-7.3.3.Final.jar:/home/joii/.m2/repository/jakarta/resource/jakarta.resource-api/2.1.0/jakarta.resource-api-2.1.0.jar:/home/joii/.m2/repository/org/jboss/invocation/jboss-invocation/2.0.0.Final/jboss-invocation-2.0.0.Final.jar:/home/joii/.m2/repository/org/eclipse/microprofile/reactive-streams-operators/microprofile-reactive-streams-operators-api/3.0.1/microprofile-reactive-streams-operators-api-3.0.1.jar:/home/joii/.m2/repository/org/jboss/narayana/jts/narayana-jts-integration/7.3.3.Final/narayana-jts-integration-7.3.3.Final.jar:/home/joii/.m2/repository/io/quarkus/quarkus-datasource-common/3.34.3/quarkus-datasource-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-jdbc-postgresql/3.34.3/quarkus-jdbc-postgresql-3.34.3.jar:/home/joii/.m2/repository/org/postgresql/postgresql/42.7.10/postgresql-42.7.10.jar:/home/joii/.m2/repository/io/quarkus/quarkus-mailer/3.34.3/quarkus-mailer-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-tls-registry/3.34.3/quarkus-tls-registry-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-tls-registry-spi/3.34.3/quarkus-tls-registry-spi-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/certs/smallrye-private-key-pem-parser/0.9.2/smallrye-private-key-pem-parser-0.9.2.jar:/home/joii/.m2/repository/io/quarkus/quarkus-mutiny/3.34.3/quarkus-mutiny-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-smallrye-context-propagation/3.34.3/quarkus-smallrye-context-propagation-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation/2.3.0/smallrye-context-propagation-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation-api/2.3.0/smallrye-context-propagation-api-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation-storage/2.3.0/smallrye-context-propagation-storage-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/reactive/mutiny-smallrye-context-propagation/3.1.1/mutiny-smallrye-context-propagation-3.1.1.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-mail-client/3.21.6/smallrye-mutiny-vertx-mail-client-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-mail-client/4.5.26/vertx-mail-client-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-auth-common/4.5.26/vertx-auth-common-4.5.26.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc/3.34.3/quarkus-arc-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/arc/arc/3.34.3/arc-3.34.3.jar:/home/joii/.m2/repository/org/eclipse/microprofile/context-propagation/microprofile-context-propagation-api/1.3/microprofile-context-propagation-api-1.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit/3.34.3/quarkus-junit-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-core/3.34.3/quarkus-bootstrap-core-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-classloader-commons/3.34.3/quarkus-classloader-commons-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-app-model/3.34.3/quarkus-bootstrap-app-model-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-json/3.34.3/quarkus-bootstrap-json-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-io/2.17.0/smallrye-common-io-2.17.0.jar:/home/joii/.m2/repository/org/eclipse/sisu/org.eclipse.sisu.inject/0.9.0.M4/org.eclipse.sisu.inject-0.9.0.M4.jar:/home/joii/.m2/repository/org/ow2/asm/asm/9.9.1/asm-9.9.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-test-common/3.34.3/quarkus-test-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-core-deployment/3.34.3/quarkus-core-deployment-3.34.3.jar:/home/joii/.m2/repository/org/aesh/readline/2.6/readline-2.6.jar:/home/joii/.m2/repository/org/fusesource/jansi/jansi/2.4.0/jansi-2.4.0.jar:/home/joii/.m2/repository/org/aesh/aesh/2.8.2/aesh-2.8.2.jar:/home/joii/.m2/repository/io/quarkus/gizmo/gizmo/1.10.1/gizmo-1.10.1.jar:/home/joii/.m2/repository/org/ow2/asm/asm-util/9.9.1/asm-util-9.9.1.jar:/home/joii/.m2/repository/org/ow2/asm/asm-analysis/9.9.1/asm-analysis-9.9.1.jar:/home/joii/.m2/repository/io/quarkus/gizmo/gizmo2/2.1.1/gizmo2-2.1.1.jar:/home/joii/.m2/repository/io/smallrye/classfile/jdk-classfile-backport/26/jdk-classfile-backport-26.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-resource/2.17.0/smallrye-common-resource-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/jandex-gizmo2/3.5.3/jandex-gizmo2-3.5.3.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-process/2.17.0/smallrye-common-process-2.17.0.jar:/home/joii/.m2/repository/org/ow2/asm/asm-commons/9.9.1/asm-commons-9.9.1.jar:/home/joii/.m2/repository/org/ow2/asm/asm-tree/9.9.1/asm-tree-9.9.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-validator-spi/3.34.3/quarkus-hibernate-validator-spi-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-class-change-agent/3.34.3/quarkus-class-change-agent-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-builder/3.34.3/quarkus-builder-3.34.3.jar:/home/joii/.m2/repository/org/graalvm/sdk/nativeimage/23.1.2/nativeimage-23.1.2.jar:/home/joii/.m2/repository/org/graalvm/sdk/word/23.1.2/word-23.1.2.jar:/home/joii/.m2/repository/org/junit/platform/junit-platform-launcher/6.0.3/junit-platform-launcher-6.0.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-maven-resolver/3.34.3/quarkus-bootstrap-maven-resolver-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/beanbag/smallrye-beanbag-maven/1.6.1/smallrye-beanbag-maven-1.6.1.jar:/home/joii/.m2/repository/io/smallrye/beanbag/smallrye-beanbag-sisu/1.6.1/smallrye-beanbag-sisu-1.6.1.jar:/home/joii/.m2/repository/io/smallrye/beanbag/smallrye-beanbag/1.6.1/smallrye-beanbag-1.6.1.jar:/home/joii/.m2/repository/javax/inject/javax.inject/1/javax.inject-1.jar:/home/joii/.m2/repository/org/apache/maven/maven-artifact/3.9.12/maven-artifact-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-builder-support/3.9.12/maven-builder-support-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-model/3.9.12/maven-model-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-model-builder/3.9.12/maven-model-builder-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-repository-metadata/3.9.12/maven-repository-metadata-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-settings/3.9.12/maven-settings-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-api/1.9.25/maven-resolver-api-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-impl/1.9.25/maven-resolver-impl-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-named-locks/1.9.25/maven-resolver-named-locks-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-spi/1.9.25/maven-resolver-spi-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-util/1.9.25/maven-resolver-util-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-transport-http/1.9.25/maven-resolver-transport-http-1.9.25.jar:/home/joii/.m2/repository/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-provider-api/3.5.3/wagon-provider-api-3.5.3.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-http-shared/3.5.3/wagon-http-shared-3.5.3.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-interpolation/1.26/plexus-interpolation-1.26.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-utils/3.6.1/plexus-utils-3.6.1.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-xml/4.0.2/plexus-xml-4.0.2.jar:/home/joii/.m2/repository/org/apache/maven/maven-xml-impl/4.0.0-alpha-7/maven-xml-impl-4.0.0-alpha-7.jar:/home/joii/.m2/repository/org/apache/maven/maven-api-xml/4.0.0-alpha-7/maven-api-xml-4.0.0-alpha-7.jar:/home/joii/.m2/repository/org/apache/maven/maven-api-meta/4.0.0-alpha-7/maven-api-meta-4.0.0-alpha-7.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-cipher/2.0/plexus-cipher-2.0.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-sec-dispatcher/2.0/plexus-sec-dispatcher-2.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-maven4-resolver/3.34.3/quarkus-bootstrap-maven4-resolver-3.34.3.jar:/home/joii/.m2/repository/org/apache/maven/maven-embedder/3.9.12/maven-embedder-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-core/3.9.12/maven-core-3.9.12.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-component-annotations/2.1.0/plexus-component-annotations-2.1.0.jar:/home/joii/.m2/repository/org/apache/maven/maven-plugin-api/3.9.12/maven-plugin-api-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/shared/maven-shared-utils/3.4.2/maven-shared-utils-3.4.2.jar:/home/joii/.m2/repository/com/google/inject/guice/5.1.0/guice-5.1.0-classes.jar:/home/joii/.m2/repository/aopalliance/aopalliance/1.0/aopalliance-1.0.jar:/home/joii/.m2/repository/com/google/guava/guava/33.5.0-jre/guava-33.5.0-jre.jar:/home/joii/.m2/repository/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar:/home/joii/.m2/repository/javax/annotation/javax.annotation-api/1.3.2/javax.annotation-api-1.3.2.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.jar:/home/joii/.m2/repository/commons-cli/commons-cli/1.11.0/commons-cli-1.11.0.jar:/home/joii/.m2/repository/org/eclipse/sisu/org.eclipse.sisu.plexus/0.9.0.M4/org.eclipse.sisu.plexus-0.9.0.M4.jar:/home/joii/.m2/repository/org/apache/maven/maven-settings-builder/3.9.12/maven-settings-builder-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-resolver-provider/3.9.12/maven-resolver-provider-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-connector-basic/1.9.25/maven-resolver-connector-basic-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-transport-wagon/1.9.25/maven-resolver-transport-wagon-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-http/3.5.3/wagon-http-3.5.3.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-file/3.5.3/wagon-file-3.5.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-gradle-resolver/3.34.3/quarkus-bootstrap-gradle-resolver-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/jandex/3.5.3/jandex-3.5.3.jar:/home/joii/.m2/repository/org/jboss/logging/commons-logging-jboss-logging/2.0.0.Final/commons-logging-jboss-logging-2.0.0.Final.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-config/3.34.3/quarkus-junit-config-3.34.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter-api/6.0.3/junit-jupiter-api-6.0.3.jar:/home/joii/.m2/repository/org/opentest4j/opentest4j/1.3.0/opentest4j-1.3.0.jar:/home/joii/.m2/repository/org/junit/platform/junit-platform-commons/6.0.3/junit-platform-commons-6.0.3.jar:/home/joii/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/home/joii/.m2/repository/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-common/3.34.3/quarkus-junit-common-3.34.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter-params/6.0.3/junit-jupiter-params-6.0.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter-engine/6.0.3/junit-jupiter-engine-6.0.3.jar:/home/joii/.m2/repository/org/junit/platform/junit-platform-engine/6.0.3/junit-platform-engine-6.0.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter/6.0.3/junit-jupiter-6.0.3.jar:/home/joii/.m2/repository/org/assertj/assertj-core/3.26.3/assertj-core-3.26.3.jar:/home/joii/.m2/repository/net/bytebuddy/byte-buddy/1.17.8/byte-buddy-1.17.8.jar:/home/joii/.m2/repository/io/rest-assured/rest-assured/5.5.6/rest-assured-5.5.6.jar:/home/joii/.m2/repository/org/apache/groovy/groovy/4.0.22/groovy-4.0.22.jar:/home/joii/.m2/repository/org/apache/groovy/groovy-xml/4.0.22/groovy-xml-4.0.22.jar:/home/joii/.m2/repository/org/apache/httpcomponents/httpclient/4.5.14/httpclient-4.5.14.jar:/home/joii/.m2/repository/org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar:/home/joii/.m2/repository/commons-codec/commons-codec/1.21.0/commons-codec-1.21.0.jar:/home/joii/.m2/repository/org/apache/httpcomponents/httpmime/4.5.14/httpmime-4.5.14.jar:/home/joii/.m2/repository/org/hamcrest/hamcrest/2.2/hamcrest-2.2.jar:/home/joii/.m2/repository/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar:/home/joii/.m2/repository/io/rest-assured/json-path/5.5.6/json-path-5.5.6.jar:/home/joii/.m2/repository/org/apache/groovy/groovy-json/4.0.22/groovy-json-4.0.22.jar:/home/joii/.m2/repository/io/rest-assured/rest-assured-common/5.5.6/rest-assured-common-5.5.6.jar:/home/joii/.m2/repository/io/rest-assured/xml-path/5.5.6/xml-path-5.5.6.jar:/home/joii/.m2/repository/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/home/joii/.m2/repository/org/awaitility/awaitility/4.2.2/awaitility-4.2.2.jar:/home/joii/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar:/home/joii/.m2/repository/org/apache/poi/poi-ooxml/5.2.5/poi-ooxml-5.2.5.jar:/home/joii/.m2/repository/org/apache/poi/poi/5.2.5/poi-5.2.5.jar:/home/joii/.m2/repository/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar:/home/joii/.m2/repository/com/zaxxer/SparseBitSet/1.3/SparseBitSet-1.3.jar:/home/joii/.m2/repository/org/apache/poi/poi-ooxml-lite/5.2.5/poi-ooxml-lite-5.2.5.jar:/home/joii/.m2/repository/org/apache/xmlbeans/xmlbeans/5.2.0/xmlbeans-5.2.0.jar:/home/joii/.m2/repository/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar:/home/joii/.m2/repository/commons-io/commons-io/2.21.0/commons-io-2.21.0.jar:/home/joii/.m2/repository/com/github/virtuald/curvesapi/1.08/curvesapi-1.08.jar:/home/joii/.m2/repository/org/apache/logging/log4j/log4j-api/2.25.3/log4j-api-2.25.3.jar:/home/joii/.m2/repository/org/apache/commons/commons-collections4/4.4/commons-collections4-4.4.jar:/home/joii/.m2/repository/org/apache/commons/commons-jexl3/3.3/commons-jexl3-3.3.jar:/home/joii/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/home/joii/.m2/repository/io/quarkus/quarkus-qute/3.34.3/quarkus-qute-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/qute/qute-core/3.34.3/qute-core-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-reactive-routes/3.34.3/quarkus-reactive-routes-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-jackson/3.34.3/quarkus-jackson-3.34.3.jar:/home/joii/.m2/repository/com/fasterxml/jackson/datatype/jackson-datatype-jsr310/2.21.2/jackson-datatype-jsr310-2.21.2.jar:/home/joii/.m2/repository/com/fasterxml/jackson/datatype/jackson-datatype-jdk8/2.21.2/jackson-datatype-jdk8-2.21.2.jar:/home/joii/.m2/repository/com/fasterxml/jackson/module/jackson-module-parameter-names/2.21.2/jackson-module-parameter-names-2.21.2.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-annotation/2.17.0/smallrye-common-annotation-2.17.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-vertx-http/3.34.3/quarkus-vertx-http-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-web/3.21.6/smallrye-mutiny-vertx-web-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-web-common/3.21.6/smallrye-mutiny-vertx-web-common-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-auth-common/3.21.6/smallrye-mutiny-vertx-auth-common-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-bridge-common/3.21.6/smallrye-mutiny-vertx-bridge-common-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-uri-template/3.21.6/smallrye-mutiny-vertx-uri-template-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-uri-template/4.5.26/vertx-uri-template-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-web/4.5.26/vertx-web-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-web-common/4.5.26/vertx-web-common-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-bridge-common/4.5.26/vertx-bridge-common-4.5.26.jar:/home/joii/.m2/repository/org/crac/crac/1.5.0/crac-1.5.0.jar:/home/joii/.m2/repository/com/aayushatharva/brotli4j/brotli4j/1.16.0/brotli4j-1.16.0.jar:/home/joii/.m2/repository/com/aayushatharva/brotli4j/service/1.16.0/service-1.16.0.jar:/home/joii/.m2/repository/com/aayushatharva/brotli4j/native-linux-x86_64/1.16.0/native-linux-x86_64-1.16.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-redis-client/3.34.3/quarkus-redis-client-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-proxy-registry/3.34.3/quarkus-proxy-registry-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-redis-client/3.21.6/smallrye-mutiny-vertx-redis-client-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-redis-client/4.5.26/vertx-redis-client-4.5.26.jar:/home/joii/.m2/repository/io/quarkus/quarkus-devservices/3.34.3/quarkus-devservices-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-cache/3.34.3/quarkus-cache-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-caffeine/3.34.3/quarkus-caffeine-3.34.3.jar:/home/joii/.m2/repository/com/github/ben-manes/caffeine/caffeine/3.2.3/caffeine-3.2.3.jar:/home/joii/.m2/repository/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0.jar:/home/joii/.m2/repository/org/antlr/antlr4-runtime/4.13.1/antlr4-runtime-4.13.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-mockito/3.34.3/quarkus-junit-mockito-3.34.3.jar:/home/joii/.m2/repository/org/mockito/mockito-junit-jupiter/5.21.0/mockito-junit-jupiter-5.21.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-mockito-config/3.34.3/quarkus-junit-mockito-config-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-deployment/3.34.3/quarkus-arc-deployment-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-smallrye-context-propagation-spi/3.34.3/quarkus-smallrye-context-propagation-spi-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-devui-deployment-spi/3.34.3/quarkus-devui-deployment-spi-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-dev/3.34.3/quarkus-arc-dev-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/arc/arc-processor/3.34.3/arc-processor-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-test-supplement/3.34.3/quarkus-arc-test-supplement-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-test-supplement-decorator/3.34.3/quarkus-arc-test-supplement-decorator-3.34.3.jar:/home/joii/.m2/repository/org/mockito/mockito-core/5.21.0/mockito-core-5.21.0.jar:/home/joii/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar:/home/joii/.m2/repository/org/objenesis/objenesis/3.3/objenesis-3.3.jar:"/>
+    <property name="java.vm.vendor" value="Ubuntu"/>
+    <property name="quarkus-internal-test.serialized-app-model.path" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/quarkus/bootstrap/test-app-model.dat"/>
+    <property name="sun.arch.data.model" value="64"/>
+    <property name="java.vendor.url" value="https://ubuntu.com/"/>
+    <property name="user.timezone" value="America/Los_Angeles"/>
+    <property name="org.jboss.logging.provider" value="jboss"/>
+    <property name="logging.initial-configurator.min-level" value="500"/>
+    <property name="java.vm.specification.version" value="21"/>
+    <property name="os.name" value="Linux"/>
+    <property name="sun.java.launcher" value="SUN_STANDARD"/>
+    <property name="user.country" value="US"/>
+    <property name="groovy.use.classvalue" value="false"/>
+    <property name="sun.boot.library.path" value="/usr/lib/jvm/java-21-openjdk-amd64/lib"/>
+    <property name="sun.java.command" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/surefire/surefirebooter-20260918224835974_3.jar /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/surefire 2026-09-18T22-48-35_922-jvmRun1 surefire-20260918224835974_1tmp surefire_0-20260918224835974_2tmp"/>
+    <property name="jdk.debug" value="release"/>
+    <property name="maven.home" value="/home/joii/.m2/wrapper/dists/apache-maven-3.9.12/6068d197"/>
+    <property name="test" value="Ac260918T03T05ChangeRateStorageTest,Ac260918LargeQuoteSequenceTest,Ac260918T13SqlCountIndependentOfLinesTest,Ac260918JobFailureTest,Ac260918BudgetTest,Ac260918StartupRecoveryTest,Ac260918T19SmallQuoteRegressionTest,Repair260918BackendSelfTest,Repair260918InjectionSelfTest,Repair260918LiveJobCountsSelfTest"/>
+    <property name="surefire.test.class.path" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/test-classes:/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/classes:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-orm-panache/3.34.3/quarkus-hibernate-orm-panache-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-orm/3.34.3/quarkus-hibernate-orm-3.34.3.jar:/home/joii/.m2/repository/org/hibernate/orm/hibernate-core/7.2.9.Final/hibernate-core-7.2.9.Final.jar:/home/joii/.m2/repository/org/hibernate/models/hibernate-models/1.0.1/hibernate-models-1.0.1.jar:/home/joii/.m2/repository/org/hibernate/orm/hibernate-graalvm/7.2.9.Final/hibernate-graalvm-7.2.9.Final.jar:/home/joii/.m2/repository/org/glassfish/jaxb/jaxb-runtime/4.0.6/jaxb-runtime-4.0.6.jar:/home/joii/.m2/repository/org/glassfish/jaxb/jaxb-core/4.0.6/jaxb-core-4.0.6.jar:/home/joii/.m2/repository/org/eclipse/angus/angus-activation/2.0.3/angus-activation-2.0.3.jar:/home/joii/.m2/repository/org/glassfish/jaxb/txw2/4.0.6/txw2-4.0.6.jar:/home/joii/.m2/repository/com/sun/istack/istack-commons-runtime/4.1.2/istack-commons-runtime-4.1.2.jar:/home/joii/.m2/repository/jakarta/xml/bind/jakarta.xml.bind-api/4.0.5/jakarta.xml.bind-api-4.0.5.jar:/home/joii/.m2/repository/jakarta/activation/jakarta.activation-api/2.1.4/jakarta.activation-api-2.1.4.jar:/home/joii/.m2/repository/jakarta/persistence/jakarta.persistence-api/3.2.0/jakarta.persistence-api-3.2.0.jar:/home/joii/.m2/repository/jakarta/transaction/jakarta.transaction-api/2.0.1/jakarta.transaction-api-2.0.1.jar:/home/joii/.m2/repository/org/hibernate/local-cache/quarkus-local-cache/0.5.0/quarkus-local-cache-0.5.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-orm-panache-common/3.34.3/quarkus-hibernate-orm-panache-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-panache-hibernate-common/3.34.3/quarkus-panache-hibernate-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-panache-common/3.34.3/quarkus-panache-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest-jackson/3.34.3/quarkus-rest-jackson-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest/3.34.3/quarkus-rest-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest-common/3.34.3/quarkus-rest-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-common/3.34.3/resteasy-reactive-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-common-types/3.34.3/resteasy-reactive-common-types-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-vertx/3.34.3/resteasy-reactive-vertx-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive/3.34.3/resteasy-reactive-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/vertx/utils/quarkus-vertx-utils/3.34.3/quarkus-vertx-utils-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-jsonp/3.34.3/quarkus-jsonp-3.34.3.jar:/home/joii/.m2/repository/org/eclipse/parsson/parsson/1.1.7/parsson-1.1.7.jar:/home/joii/.m2/repository/io/quarkus/quarkus-rest-jackson-common/3.34.3/quarkus-rest-jackson-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/resteasy/reactive/resteasy-reactive-jackson/3.34.3/resteasy-reactive-jackson-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-security/3.34.3/quarkus-security-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-security-runtime-spi/3.34.3/quarkus-security-runtime-spi-3.34.3.jar:/home/joii/.m2/repository/jakarta/interceptor/jakarta.interceptor-api/2.2.0/jakarta.interceptor-api-2.2.0.jar:/home/joii/.m2/repository/jakarta/annotation/jakarta.annotation-api/3.0.0/jakarta.annotation-api-3.0.0.jar:/home/joii/.m2/repository/io/quarkus/security/quarkus-security/2.3.2/quarkus-security-2.3.2.jar:/home/joii/.m2/repository/org/jboss/logging/jboss-logging/3.6.3.Final/jboss-logging-3.6.3.Final.jar:/home/joii/.m2/repository/io/smallrye/reactive/mutiny/3.1.1/mutiny-3.1.1.jar:/home/joii/.m2/repository/org/jctools/jctools-core/4.0.5/jctools-core-4.0.5.jar:/home/joii/.m2/repository/jakarta/enterprise/jakarta.enterprise.cdi-api/4.1.0/jakarta.enterprise.cdi-api-4.1.0.jar:/home/joii/.m2/repository/jakarta/enterprise/jakarta.enterprise.lang-model/4.1.0/jakarta.enterprise.lang-model-4.1.0.jar:/home/joii/.m2/repository/jakarta/el/jakarta.el-api/6.0.1/jakarta.el-api-6.0.1.jar:/home/joii/.m2/repository/jakarta/inject/jakarta.inject-api/2.0.1/jakarta.inject-api-2.0.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler/3.34.3/quarkus-scheduler-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-kotlin/3.34.3/quarkus-scheduler-kotlin-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-common/3.34.3/quarkus-scheduler-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-api/3.34.3/quarkus-scheduler-api-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-scheduler-spi/3.34.3/quarkus-scheduler-spi-3.34.3.jar:/home/joii/.m2/repository/io/opentelemetry/instrumentation/opentelemetry-instrumentation-api/2.23.0/opentelemetry-instrumentation-api-2.23.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-api/1.57.0/opentelemetry-api-1.57.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-context/1.57.0/opentelemetry-context-1.57.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-common/1.57.0/opentelemetry-common-1.57.0.jar:/home/joii/.m2/repository/io/opentelemetry/opentelemetry-api-incubator/1.57.0-alpha/opentelemetry-api-incubator-1.57.0-alpha.jar:/home/joii/.m2/repository/io/opentelemetry/semconv/opentelemetry-semconv/1.37.0/opentelemetry-semconv-1.37.0.jar:/home/joii/.m2/repository/com/cronutils/cron-utils/9.2.1/cron-utils-9.2.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-virtual-threads/3.34.3/quarkus-virtual-threads-3.34.3.jar:/home/joii/.m2/repository/io/vertx/vertx-core/4.5.26/vertx-core-4.5.26.jar:/home/joii/.m2/repository/io/netty/netty-common/4.1.132.Final/netty-common-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-buffer/4.1.132.Final/netty-buffer-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-transport/4.1.132.Final/netty-transport-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-handler/4.1.132.Final/netty-handler-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-transport-native-unix-common/4.1.132.Final/netty-transport-native-unix-common-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-handler-proxy/4.1.132.Final/netty-handler-proxy-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-socks/4.1.132.Final/netty-codec-socks-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-http/4.1.132.Final/netty-codec-http-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-http2/4.1.132.Final/netty-codec-http2-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-resolver/4.1.132.Final/netty-resolver-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-resolver-dns/4.1.132.Final/netty-resolver-dns-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-dns/4.1.132.Final/netty-codec-dns-4.1.132.Final.jar:/home/joii/.m2/repository/com/fasterxml/jackson/core/jackson-core/2.21.2/jackson-core-2.21.2.jar:/home/joii/.m2/repository/io/quarkus/quarkus-vertx/3.34.3/quarkus-vertx-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-netty/3.34.3/quarkus-netty-3.34.3.jar:/home/joii/.m2/repository/io/netty/netty-codec/4.1.132.Final/netty-codec-4.1.132.Final.jar:/home/joii/.m2/repository/io/netty/netty-codec-haproxy/4.1.132.Final/netty-codec-haproxy-4.1.132.Final.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-vertx-context/2.17.0/smallrye-common-vertx-context-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-constraint/2.17.0/smallrye-common-constraint-2.17.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-vertx-latebound-mdc-provider/3.34.3/quarkus-vertx-latebound-mdc-provider-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-core/3.21.6/smallrye-mutiny-vertx-core-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-runtime/3.21.6/smallrye-mutiny-vertx-runtime-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/vertx-mutiny-generator/3.21.6/vertx-mutiny-generator-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-codegen/4.5.26/vertx-codegen-4.5.26.jar:/home/joii/.m2/repository/io/smallrye/smallrye-fault-tolerance-vertx/6.10.1/smallrye-fault-tolerance-vertx-6.10.1.jar:/home/joii/.m2/repository/org/jboss/slf4j/slf4j-jboss-logmanager/2.0.2.Final/slf4j-jboss-logmanager-2.0.2.Final.jar:/home/joii/.m2/repository/org/glassfish/expressly/expressly/6.0.0/expressly-6.0.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-validator/3.34.3/quarkus-hibernate-validator-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-core/3.34.3/quarkus-core-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-os/2.17.0/smallrye-common-os-2.17.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-ide-launcher/3.34.3/quarkus-ide-launcher-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-development-mode-spi/3.34.3/quarkus-development-mode-spi-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config/3.16.0/smallrye-config-3.16.0.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config-core/3.16.0/smallrye-config-core-3.16.0.jar:/home/joii/.m2/repository/org/eclipse/microprofile/config/microprofile-config-api/3.1/microprofile-config-api-3.1.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-classloader/2.17.0/smallrye-common-classloader-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config-common/3.16.0/smallrye-config-common-3.16.0.jar:/home/joii/.m2/repository/org/jboss/logmanager/jboss-logmanager/3.2.1.Final/jboss-logmanager-3.2.1.Final.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-cpu/2.17.0/smallrye-common-cpu-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-expression/2.17.0/smallrye-common-expression-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-net/2.17.0/smallrye-common-net-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-ref/2.17.0/smallrye-common-ref-2.17.0.jar:/home/joii/.m2/repository/jakarta/json/jakarta.json-api/2.1.3/jakarta.json-api-2.1.3.jar:/home/joii/.m2/repository/org/jboss/threads/jboss-threads/3.9.2/jboss-threads-3.9.2.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-function/2.17.0/smallrye-common-function-2.17.0.jar:/home/joii/.m2/repository/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar:/home/joii/.m2/repository/org/wildfly/common/wildfly-common/2.0.1/wildfly-common-2.0.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-value-registry/3.34.3/quarkus-value-registry-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-runner/3.34.3/quarkus-bootstrap-runner-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-fs-util/1.3.0/quarkus-fs-util-1.3.0.jar:/home/joii/.m2/repository/org/hibernate/validator/hibernate-validator/9.1.0.Final/hibernate-validator-9.1.0.Final.jar:/home/joii/.m2/repository/jakarta/validation/jakarta.validation-api/3.1.1/jakarta.validation-api-3.1.1.jar:/home/joii/.m2/repository/com/fasterxml/classmate/1.7.1/classmate-1.7.1.jar:/home/joii/.m2/repository/io/smallrye/config/smallrye-config-validator/3.16.0/smallrye-config-validator-3.16.0.jar:/home/joii/.m2/repository/jakarta/ws/rs/jakarta.ws.rs-api/3.1.0/jakarta.ws.rs-api-3.1.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-flyway/3.34.3/quarkus-flyway-3.34.3.jar:/home/joii/.m2/repository/org/flywaydb/flyway-core/12.0.0/flyway-core-12.0.0.jar:/home/joii/.m2/repository/com/fasterxml/jackson/core/jackson-databind/2.21.2/jackson-databind-2.21.2.jar:/home/joii/.m2/repository/com/fasterxml/jackson/core/jackson-annotations/2.21/jackson-annotations-2.21.jar:/home/joii/.m2/repository/io/quarkus/quarkus-agroal/3.34.3/quarkus-agroal-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-datasource/3.34.3/quarkus-datasource-3.34.3.jar:/home/joii/.m2/repository/io/agroal/agroal-api/3.0.1/agroal-api-3.0.1.jar:/home/joii/.m2/repository/io/agroal/agroal-narayana/3.0.1/agroal-narayana-3.0.1.jar:/home/joii/.m2/repository/org/jboss/jboss-transaction-spi/8.0.0.Final/jboss-transaction-spi-8.0.0.Final.jar:/home/joii/.m2/repository/io/agroal/agroal-pool/3.0.1/agroal-pool-3.0.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-credentials/3.34.3/quarkus-credentials-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-narayana-jta/3.34.3/quarkus-narayana-jta-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-transaction-annotations/3.34.3/quarkus-transaction-annotations-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation-jta/2.3.0/smallrye-context-propagation-jta-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-reactive-converter-api/3.0.3/smallrye-reactive-converter-api-3.0.3.jar:/home/joii/.m2/repository/org/reactivestreams/reactive-streams/1.0.4/reactive-streams-1.0.4.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-reactive-converter-mutiny/3.0.3/smallrye-reactive-converter-mutiny-3.0.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/mutiny-zero-flow-adapters/1.1.1/mutiny-zero-flow-adapters-1.1.1.jar:/home/joii/.m2/repository/org/jboss/narayana/jta/narayana-jta/7.3.3.Final/narayana-jta-7.3.3.Final.jar:/home/joii/.m2/repository/jakarta/resource/jakarta.resource-api/2.1.0/jakarta.resource-api-2.1.0.jar:/home/joii/.m2/repository/org/jboss/invocation/jboss-invocation/2.0.0.Final/jboss-invocation-2.0.0.Final.jar:/home/joii/.m2/repository/org/eclipse/microprofile/reactive-streams-operators/microprofile-reactive-streams-operators-api/3.0.1/microprofile-reactive-streams-operators-api-3.0.1.jar:/home/joii/.m2/repository/org/jboss/narayana/jts/narayana-jts-integration/7.3.3.Final/narayana-jts-integration-7.3.3.Final.jar:/home/joii/.m2/repository/io/quarkus/quarkus-datasource-common/3.34.3/quarkus-datasource-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-jdbc-postgresql/3.34.3/quarkus-jdbc-postgresql-3.34.3.jar:/home/joii/.m2/repository/org/postgresql/postgresql/42.7.10/postgresql-42.7.10.jar:/home/joii/.m2/repository/io/quarkus/quarkus-mailer/3.34.3/quarkus-mailer-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-tls-registry/3.34.3/quarkus-tls-registry-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-tls-registry-spi/3.34.3/quarkus-tls-registry-spi-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/certs/smallrye-private-key-pem-parser/0.9.2/smallrye-private-key-pem-parser-0.9.2.jar:/home/joii/.m2/repository/io/quarkus/quarkus-mutiny/3.34.3/quarkus-mutiny-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-smallrye-context-propagation/3.34.3/quarkus-smallrye-context-propagation-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation/2.3.0/smallrye-context-propagation-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation-api/2.3.0/smallrye-context-propagation-api-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/smallrye-context-propagation-storage/2.3.0/smallrye-context-propagation-storage-2.3.0.jar:/home/joii/.m2/repository/io/smallrye/reactive/mutiny-smallrye-context-propagation/3.1.1/mutiny-smallrye-context-propagation-3.1.1.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-mail-client/3.21.6/smallrye-mutiny-vertx-mail-client-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-mail-client/4.5.26/vertx-mail-client-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-auth-common/4.5.26/vertx-auth-common-4.5.26.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc/3.34.3/quarkus-arc-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/arc/arc/3.34.3/arc-3.34.3.jar:/home/joii/.m2/repository/org/eclipse/microprofile/context-propagation/microprofile-context-propagation-api/1.3/microprofile-context-propagation-api-1.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit/3.34.3/quarkus-junit-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-core/3.34.3/quarkus-bootstrap-core-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-classloader-commons/3.34.3/quarkus-classloader-commons-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-app-model/3.34.3/quarkus-bootstrap-app-model-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-json/3.34.3/quarkus-bootstrap-json-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-io/2.17.0/smallrye-common-io-2.17.0.jar:/home/joii/.m2/repository/org/eclipse/sisu/org.eclipse.sisu.inject/0.9.0.M4/org.eclipse.sisu.inject-0.9.0.M4.jar:/home/joii/.m2/repository/org/ow2/asm/asm/9.9.1/asm-9.9.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-test-common/3.34.3/quarkus-test-common-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-core-deployment/3.34.3/quarkus-core-deployment-3.34.3.jar:/home/joii/.m2/repository/org/aesh/readline/2.6/readline-2.6.jar:/home/joii/.m2/repository/org/fusesource/jansi/jansi/2.4.0/jansi-2.4.0.jar:/home/joii/.m2/repository/org/aesh/aesh/2.8.2/aesh-2.8.2.jar:/home/joii/.m2/repository/io/quarkus/gizmo/gizmo/1.10.1/gizmo-1.10.1.jar:/home/joii/.m2/repository/org/ow2/asm/asm-util/9.9.1/asm-util-9.9.1.jar:/home/joii/.m2/repository/org/ow2/asm/asm-analysis/9.9.1/asm-analysis-9.9.1.jar:/home/joii/.m2/repository/io/quarkus/gizmo/gizmo2/2.1.1/gizmo2-2.1.1.jar:/home/joii/.m2/repository/io/smallrye/classfile/jdk-classfile-backport/26/jdk-classfile-backport-26.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-resource/2.17.0/smallrye-common-resource-2.17.0.jar:/home/joii/.m2/repository/io/smallrye/jandex-gizmo2/3.5.3/jandex-gizmo2-3.5.3.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-process/2.17.0/smallrye-common-process-2.17.0.jar:/home/joii/.m2/repository/org/ow2/asm/asm-commons/9.9.1/asm-commons-9.9.1.jar:/home/joii/.m2/repository/org/ow2/asm/asm-tree/9.9.1/asm-tree-9.9.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-hibernate-validator-spi/3.34.3/quarkus-hibernate-validator-spi-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-class-change-agent/3.34.3/quarkus-class-change-agent-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-builder/3.34.3/quarkus-builder-3.34.3.jar:/home/joii/.m2/repository/org/graalvm/sdk/nativeimage/23.1.2/nativeimage-23.1.2.jar:/home/joii/.m2/repository/org/graalvm/sdk/word/23.1.2/word-23.1.2.jar:/home/joii/.m2/repository/org/junit/platform/junit-platform-launcher/6.0.3/junit-platform-launcher-6.0.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-maven-resolver/3.34.3/quarkus-bootstrap-maven-resolver-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/beanbag/smallrye-beanbag-maven/1.6.1/smallrye-beanbag-maven-1.6.1.jar:/home/joii/.m2/repository/io/smallrye/beanbag/smallrye-beanbag-sisu/1.6.1/smallrye-beanbag-sisu-1.6.1.jar:/home/joii/.m2/repository/io/smallrye/beanbag/smallrye-beanbag/1.6.1/smallrye-beanbag-1.6.1.jar:/home/joii/.m2/repository/javax/inject/javax.inject/1/javax.inject-1.jar:/home/joii/.m2/repository/org/apache/maven/maven-artifact/3.9.12/maven-artifact-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-builder-support/3.9.12/maven-builder-support-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-model/3.9.12/maven-model-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-model-builder/3.9.12/maven-model-builder-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-repository-metadata/3.9.12/maven-repository-metadata-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-settings/3.9.12/maven-settings-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-api/1.9.25/maven-resolver-api-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-impl/1.9.25/maven-resolver-impl-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-named-locks/1.9.25/maven-resolver-named-locks-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-spi/1.9.25/maven-resolver-spi-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-util/1.9.25/maven-resolver-util-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-transport-http/1.9.25/maven-resolver-transport-http-1.9.25.jar:/home/joii/.m2/repository/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-provider-api/3.5.3/wagon-provider-api-3.5.3.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-http-shared/3.5.3/wagon-http-shared-3.5.3.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-interpolation/1.26/plexus-interpolation-1.26.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-utils/3.6.1/plexus-utils-3.6.1.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-xml/4.0.2/plexus-xml-4.0.2.jar:/home/joii/.m2/repository/org/apache/maven/maven-xml-impl/4.0.0-alpha-7/maven-xml-impl-4.0.0-alpha-7.jar:/home/joii/.m2/repository/org/apache/maven/maven-api-xml/4.0.0-alpha-7/maven-api-xml-4.0.0-alpha-7.jar:/home/joii/.m2/repository/org/apache/maven/maven-api-meta/4.0.0-alpha-7/maven-api-meta-4.0.0-alpha-7.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-cipher/2.0/plexus-cipher-2.0.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-sec-dispatcher/2.0/plexus-sec-dispatcher-2.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-maven4-resolver/3.34.3/quarkus-bootstrap-maven4-resolver-3.34.3.jar:/home/joii/.m2/repository/org/apache/maven/maven-embedder/3.9.12/maven-embedder-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-core/3.9.12/maven-core-3.9.12.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-component-annotations/2.1.0/plexus-component-annotations-2.1.0.jar:/home/joii/.m2/repository/org/apache/maven/maven-plugin-api/3.9.12/maven-plugin-api-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/shared/maven-shared-utils/3.4.2/maven-shared-utils-3.4.2.jar:/home/joii/.m2/repository/com/google/inject/guice/5.1.0/guice-5.1.0-classes.jar:/home/joii/.m2/repository/aopalliance/aopalliance/1.0/aopalliance-1.0.jar:/home/joii/.m2/repository/com/google/guava/guava/33.5.0-jre/guava-33.5.0-jre.jar:/home/joii/.m2/repository/com/google/guava/failureaccess/1.0.1/failureaccess-1.0.1.jar:/home/joii/.m2/repository/javax/annotation/javax.annotation-api/1.3.2/javax.annotation-api-1.3.2.jar:/home/joii/.m2/repository/org/codehaus/plexus/plexus-classworlds/2.6.0/plexus-classworlds-2.6.0.jar:/home/joii/.m2/repository/commons-cli/commons-cli/1.11.0/commons-cli-1.11.0.jar:/home/joii/.m2/repository/org/eclipse/sisu/org.eclipse.sisu.plexus/0.9.0.M4/org.eclipse.sisu.plexus-0.9.0.M4.jar:/home/joii/.m2/repository/org/apache/maven/maven-settings-builder/3.9.12/maven-settings-builder-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/maven-resolver-provider/3.9.12/maven-resolver-provider-3.9.12.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-connector-basic/1.9.25/maven-resolver-connector-basic-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/resolver/maven-resolver-transport-wagon/1.9.25/maven-resolver-transport-wagon-1.9.25.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-http/3.5.3/wagon-http-3.5.3.jar:/home/joii/.m2/repository/org/apache/maven/wagon/wagon-file/3.5.3/wagon-file-3.5.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-bootstrap-gradle-resolver/3.34.3/quarkus-bootstrap-gradle-resolver-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/jandex/3.5.3/jandex-3.5.3.jar:/home/joii/.m2/repository/org/jboss/logging/commons-logging-jboss-logging/2.0.0.Final/commons-logging-jboss-logging-2.0.0.Final.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-config/3.34.3/quarkus-junit-config-3.34.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter-api/6.0.3/junit-jupiter-api-6.0.3.jar:/home/joii/.m2/repository/org/opentest4j/opentest4j/1.3.0/opentest4j-1.3.0.jar:/home/joii/.m2/repository/org/junit/platform/junit-platform-commons/6.0.3/junit-platform-commons-6.0.3.jar:/home/joii/.m2/repository/org/apiguardian/apiguardian-api/1.1.2/apiguardian-api-1.1.2.jar:/home/joii/.m2/repository/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-common/3.34.3/quarkus-junit-common-3.34.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter-params/6.0.3/junit-jupiter-params-6.0.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter-engine/6.0.3/junit-jupiter-engine-6.0.3.jar:/home/joii/.m2/repository/org/junit/platform/junit-platform-engine/6.0.3/junit-platform-engine-6.0.3.jar:/home/joii/.m2/repository/org/junit/jupiter/junit-jupiter/6.0.3/junit-jupiter-6.0.3.jar:/home/joii/.m2/repository/org/assertj/assertj-core/3.26.3/assertj-core-3.26.3.jar:/home/joii/.m2/repository/net/bytebuddy/byte-buddy/1.17.8/byte-buddy-1.17.8.jar:/home/joii/.m2/repository/io/rest-assured/rest-assured/5.5.6/rest-assured-5.5.6.jar:/home/joii/.m2/repository/org/apache/groovy/groovy/4.0.22/groovy-4.0.22.jar:/home/joii/.m2/repository/org/apache/groovy/groovy-xml/4.0.22/groovy-xml-4.0.22.jar:/home/joii/.m2/repository/org/apache/httpcomponents/httpclient/4.5.14/httpclient-4.5.14.jar:/home/joii/.m2/repository/org/apache/httpcomponents/httpcore/4.4.16/httpcore-4.4.16.jar:/home/joii/.m2/repository/commons-codec/commons-codec/1.21.0/commons-codec-1.21.0.jar:/home/joii/.m2/repository/org/apache/httpcomponents/httpmime/4.5.14/httpmime-4.5.14.jar:/home/joii/.m2/repository/org/hamcrest/hamcrest/2.2/hamcrest-2.2.jar:/home/joii/.m2/repository/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar:/home/joii/.m2/repository/io/rest-assured/json-path/5.5.6/json-path-5.5.6.jar:/home/joii/.m2/repository/org/apache/groovy/groovy-json/4.0.22/groovy-json-4.0.22.jar:/home/joii/.m2/repository/io/rest-assured/rest-assured-common/5.5.6/rest-assured-common-5.5.6.jar:/home/joii/.m2/repository/io/rest-assured/xml-path/5.5.6/xml-path-5.5.6.jar:/home/joii/.m2/repository/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/home/joii/.m2/repository/org/awaitility/awaitility/4.2.2/awaitility-4.2.2.jar:/home/joii/.m2/repository/org/mindrot/jbcrypt/0.4/jbcrypt-0.4.jar:/home/joii/.m2/repository/org/apache/poi/poi-ooxml/5.2.5/poi-ooxml-5.2.5.jar:/home/joii/.m2/repository/org/apache/poi/poi/5.2.5/poi-5.2.5.jar:/home/joii/.m2/repository/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar:/home/joii/.m2/repository/com/zaxxer/SparseBitSet/1.3/SparseBitSet-1.3.jar:/home/joii/.m2/repository/org/apache/poi/poi-ooxml-lite/5.2.5/poi-ooxml-lite-5.2.5.jar:/home/joii/.m2/repository/org/apache/xmlbeans/xmlbeans/5.2.0/xmlbeans-5.2.0.jar:/home/joii/.m2/repository/org/apache/commons/commons-compress/1.28.0/commons-compress-1.28.0.jar:/home/joii/.m2/repository/commons-io/commons-io/2.21.0/commons-io-2.21.0.jar:/home/joii/.m2/repository/com/github/virtuald/curvesapi/1.08/curvesapi-1.08.jar:/home/joii/.m2/repository/org/apache/logging/log4j/log4j-api/2.25.3/log4j-api-2.25.3.jar:/home/joii/.m2/repository/org/apache/commons/commons-collections4/4.4/commons-collections4-4.4.jar:/home/joii/.m2/repository/org/apache/commons/commons-jexl3/3.3/commons-jexl3-3.3.jar:/home/joii/.m2/repository/commons-logging/commons-logging/1.2/commons-logging-1.2.jar:/home/joii/.m2/repository/io/quarkus/quarkus-qute/3.34.3/quarkus-qute-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/qute/qute-core/3.34.3/qute-core-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-reactive-routes/3.34.3/quarkus-reactive-routes-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-jackson/3.34.3/quarkus-jackson-3.34.3.jar:/home/joii/.m2/repository/com/fasterxml/jackson/datatype/jackson-datatype-jsr310/2.21.2/jackson-datatype-jsr310-2.21.2.jar:/home/joii/.m2/repository/com/fasterxml/jackson/datatype/jackson-datatype-jdk8/2.21.2/jackson-datatype-jdk8-2.21.2.jar:/home/joii/.m2/repository/com/fasterxml/jackson/module/jackson-module-parameter-names/2.21.2/jackson-module-parameter-names-2.21.2.jar:/home/joii/.m2/repository/io/smallrye/common/smallrye-common-annotation/2.17.0/smallrye-common-annotation-2.17.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-vertx-http/3.34.3/quarkus-vertx-http-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-web/3.21.6/smallrye-mutiny-vertx-web-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-web-common/3.21.6/smallrye-mutiny-vertx-web-common-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-auth-common/3.21.6/smallrye-mutiny-vertx-auth-common-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-bridge-common/3.21.6/smallrye-mutiny-vertx-bridge-common-3.21.6.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-uri-template/3.21.6/smallrye-mutiny-vertx-uri-template-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-uri-template/4.5.26/vertx-uri-template-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-web/4.5.26/vertx-web-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-web-common/4.5.26/vertx-web-common-4.5.26.jar:/home/joii/.m2/repository/io/vertx/vertx-bridge-common/4.5.26/vertx-bridge-common-4.5.26.jar:/home/joii/.m2/repository/org/crac/crac/1.5.0/crac-1.5.0.jar:/home/joii/.m2/repository/com/aayushatharva/brotli4j/brotli4j/1.16.0/brotli4j-1.16.0.jar:/home/joii/.m2/repository/com/aayushatharva/brotli4j/service/1.16.0/service-1.16.0.jar:/home/joii/.m2/repository/com/aayushatharva/brotli4j/native-linux-x86_64/1.16.0/native-linux-x86_64-1.16.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-redis-client/3.34.3/quarkus-redis-client-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-proxy-registry/3.34.3/quarkus-proxy-registry-3.34.3.jar:/home/joii/.m2/repository/io/smallrye/reactive/smallrye-mutiny-vertx-redis-client/3.21.6/smallrye-mutiny-vertx-redis-client-3.21.6.jar:/home/joii/.m2/repository/io/vertx/vertx-redis-client/4.5.26/vertx-redis-client-4.5.26.jar:/home/joii/.m2/repository/io/quarkus/quarkus-devservices/3.34.3/quarkus-devservices-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-cache/3.34.3/quarkus-cache-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-caffeine/3.34.3/quarkus-caffeine-3.34.3.jar:/home/joii/.m2/repository/com/github/ben-manes/caffeine/caffeine/3.2.3/caffeine-3.2.3.jar:/home/joii/.m2/repository/com/google/errorprone/error_prone_annotations/2.48.0/error_prone_annotations-2.48.0.jar:/home/joii/.m2/repository/org/antlr/antlr4-runtime/4.13.1/antlr4-runtime-4.13.1.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-mockito/3.34.3/quarkus-junit-mockito-3.34.3.jar:/home/joii/.m2/repository/org/mockito/mockito-junit-jupiter/5.21.0/mockito-junit-jupiter-5.21.0.jar:/home/joii/.m2/repository/io/quarkus/quarkus-junit-mockito-config/3.34.3/quarkus-junit-mockito-config-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-deployment/3.34.3/quarkus-arc-deployment-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-smallrye-context-propagation-spi/3.34.3/quarkus-smallrye-context-propagation-spi-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-devui-deployment-spi/3.34.3/quarkus-devui-deployment-spi-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-dev/3.34.3/quarkus-arc-dev-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/arc/arc-processor/3.34.3/arc-processor-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-test-supplement/3.34.3/quarkus-arc-test-supplement-3.34.3.jar:/home/joii/.m2/repository/io/quarkus/quarkus-arc-test-supplement-decorator/3.34.3/quarkus-arc-test-supplement-decorator-3.34.3.jar:/home/joii/.m2/repository/org/mockito/mockito-core/5.21.0/mockito-core-5.21.0.jar:/home/joii/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar:/home/joii/.m2/repository/org/objenesis/objenesis/3.3/objenesis-3.3.jar:"/>
+    <property name="sun.cpu.endian" value="little"/>
+    <property name="vertx.disableWebsockets" value="true"/>
+    <property name="user.home" value="/home/joii"/>
+    <property name="user.language" value="en"/>
+    <property name="java.specification.vendor" value="Oracle Corporation"/>
+    <property name="io.netty.allocator.maxOrder" value="3"/>
+    <property name="java.version.date" value="2026-07-21"/>
+    <property name="java.home" value="/usr/lib/jvm/java-21-openjdk-amd64"/>
+    <property name="file.separator" value="/"/>
+    <property name="basedir" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend"/>
+    <property name="java.vm.compressedOopsMode" value="Zero based"/>
+    <property name="line.separator" value="&#10;"/>
+    <property name="java.vm.specification.vendor" value="Oracle Corporation"/>
+    <property name="java.specification.name" value="Java Platform API Specification"/>
+    <property name="io.netty.allocator.disableCacheFinalizersForFastThreadLocalThreads" value="true"/>
+    <property name="surefire.real.class.path" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend/target/surefire/surefirebooter-20260918224835974_3.jar"/>
+    <property name="jdk.net.URLClassPath.disableClassPathURLCheck" value="true"/>
+    <property name="rp0918a.allowRunOnStartup" value="true"/>
+    <property name="polyglot.engine.WarnInterpreterOnly" value="false"/>
+    <property name="sun.management.compiler" value="HotSpot 64-Bit Tiered Compilers"/>
+    <property name="java.runtime.version" value="21.0.12+8-1-26.04-Ubuntu"/>
+    <property name="user.name" value="joii"/>
+    <property name="stdout.encoding" value="UTF-8"/>
+    <property name="path.separator" value=":"/>
+    <property name="os.version" value="6.6.87.2-microsoft-standard-WSL2"/>
+    <property name="java.runtime.name" value="OpenJDK Runtime Environment"/>
+    <property name="file.encoding" value="UTF-8"/>
+    <property name="java.vm.name" value="OpenJDK 64-Bit Server VM"/>
+    <property name="localRepository" value="/home/joii/.m2/repository"/>
+    <property name="java.vendor.url.bug" value="https://bugs.launchpad.net/ubuntu/+source/openjdk-21"/>
+    <property name="java.io.tmpdir" value="/tmp"/>
+    <property name="java.version" value="21.0.12"/>
+    <property name="java.util.concurrent.ForkJoinPool.common.threadFactory" value="io.quarkus.bootstrap.forkjoin.QuarkusForkJoinWorkerThreadFactory"/>
+    <property name="user.dir" value="/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-backend"/>
+    <property name="os.arch" value="amd64"/>
+    <property name="java.vm.specification.name" value="Java Virtual Machine Specification"/>
+    <property name="vertx.disableDnsResolver" value="true"/>
+    <property name="rp0918a.ac19.label" value="mainline-verify"/>
+    <property name="native.encoding" value="UTF-8"/>
+    <property name="java.util.logging.manager" value="org.jboss.logmanager.LogManager"/>
+    <property name="java.library.path" value="/usr/java/packages/lib:/usr/lib/x86_64-linux-gnu/jni:/lib/x86_64-linux-gnu:/usr/lib/x86_64-linux-gnu:/usr/lib/jni:/lib:/usr/lib"/>
+    <property name="jdk.console" value="java.base"/>
+    <property name="java.vm.info" value="mixed mode, sharing"/>
+    <property name="stderr.encoding" value="UTF-8"/>
+    <property name="java.vendor" value="Ubuntu"/>
+    <property name="vertx.disableTCCL" value="true"/>
+    <property name="java.vm.version" value="21.0.12+8-1-26.04-Ubuntu"/>
+    <property name="vertx.logger-delegate-factory-class-name" value="io.quarkus.vertx.core.runtime.VertxLogDelegateFactory"/>
+    <property name="sun.io.unicode.encoding" value="UnicodeLittle"/>
+    <property name="io.netty.machineId" value="1e:d6:07:f4:16:ca:6d:cb"/>
+    <property name="java.class.version" value="65.0"/>
+  </properties>
+  <testcase name="tBe14_ac14_groupRevisionWriteFails_itemsMarkedRevisionWriteFailed_retryRecovers" classname="com.cpq.priceadjust.ac260918.Ac260918JobFailureTest" time="7.876">
+    <system-out><![CDATA[2026-09-18 22:49:27.835 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version 2056fad7-71ae-4b5b-939d-67509d01d11d → 10b1f000-fcfc-4ab8-84a1-d9d97e149a9a）
+2026-09-18 22:49:28.062 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:28.101 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:28.101 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=054917c6-74e1-4234-8135-8b0585795862 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:28.190 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=ff1ec112-a886-469f-8f96-a1dfadd268ca quotation=RP0918A-58b70f5b-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:28.191 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=ff1ec112-a886-469f-8f96-a1dfadd268ca quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db lines=12 dryRun=true sql=24 ms=342
+2026-09-18 22:49:28.214 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=7cec9b3d-efdf-42ef-96b7-f110b544ec5d material=RP0918A-58b70f5b-J-0003 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:28.454 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version 2056fad7-71ae-4b5b-939d-67509d01d11d → 10b1f000-fcfc-4ab8-84a1-d9d97e149a9a）
+2026-09-18 22:49:28.911 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:28.943 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:28.944 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=054917c6-74e1-4234-8135-8b0585795862 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:29.036 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=c975b692-cc5f-42ce-8c6a-8fddf609df26 quotation=RP0918A-58b70f5b-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:29.037 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=c975b692-cc5f-42ce-8c6a-8fddf609df26 quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db lines=12 dryRun=true sql=24 ms=568
+2026-09-18 22:49:29.069 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=9535c002-9d67-4176-812b-b5f94ef7e36c material=RP0918A-58b70f5b-J-0008 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:29.425 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] executeJob jobId=8e0335c2-4c9e-473c-b84a-68df5cad17dd items=2 retry=false
+2026-09-18 22:49:29.493 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=8e0335c2-4c9e-473c-b84a-68df5cad17dd 批量预渲染完成：0/2 个 line item 命中预渲染结果
+2026-09-18 22:49:29.774 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (executor-thread-2) [perf] revision-write quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db kind=INITIAL ms=13
+2026-09-18 22:49:29.875 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-2) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:29.931 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-2) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:29.931 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-2) [seed-editrows] comp=054917c6-74e1-4234-8135-8b0585795862 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:29.993 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-2) [b0-upgrade] li=ff1ec112-a886-469f-8f96-a1dfadd268ca quotation=RP0918A-58b70f5b-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:49:29.993 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-2) [perf] upgrade li=ff1ec112-a886-469f-8f96-a1dfadd268ca quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db lines=12 dryRun=false sql=27 ms=406
+2026-09-18 22:49:30.368 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-2) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:30.412 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-2) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:30.412 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-2) [seed-editrows] comp=054917c6-74e1-4234-8135-8b0585795862 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:30.724 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-2) [b0-upgrade] li=c975b692-cc5f-42ce-8c6a-8fddf609df26 quotation=RP0918A-58b70f5b-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:49:30.724 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-2) [perf] upgrade li=c975b692-cc5f-42ce-8c6a-8fddf609df26 quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db lines=12 dryRun=false sql=26 ms=633
+2026-09-18 22:49:30.782 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=8e0335c2-4c9e-473c-b84a-68df5cad17dd quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db 写本期版本记录失败，本组 2 条成功明细改 REVISION_WRITE_FAILED: java.lang.RuntimeException: RP0918A 注入：分组写本期快照失败 quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db
+	at com.cpq.priceadjust.ac260918.RevisionWriterInterceptor.before(RevisionWriterInterceptor.java:88)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.CurrentPeriodRevisionWriter.write(CurrentPeriodRevisionWriter.java:134)
+	at com.cpq.priceadjust.service.CurrentPeriodRevisionWriter_ClientProxy.write(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.writeGroupRevisionInNewTx(PriceAdjustJobExecutionService.java:171)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.writeGroupRevisionInNewTx$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$14.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.writeGroupRevisionInNewTx(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.completeGroup(PriceAdjustJobExecutionService.java:157)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:127)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
+2026-09-18 22:49:30.871 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=8e0335c2-4c9e-473c-b84a-68df5cad17dd finalized status=FAILED total=2 success=0 failed=2 conflict=0 stale=0
+2026-09-18 22:49:30.904 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_JOB_SUMMARY recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:30.927 INFO  [quarkus-mailer] (executor-thread-2) Sending email 调价批次执行完成（含失败/冲突项）：RP0918A-58b70f5b from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户【RP0918A-58b70f5b】价格版本【RP8A58b70f5b-TGT】批量更新已完成，共 2 条：成功 0，失败 2，冲突 0。失败/冲突项需人工处理，请到调价管理页核实明细。
+html body: 
+<empty>
+2026-09-18 22:49:30.934 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_QUOTATION_REVIEW recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:30.934 INFO  [quarkus-mailer] (executor-thread-2) Sending email 报价单价格更新存在异常，请查看【RP0918A-58b70f5b-J】 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户价格版本【RP8A58b70f5b-TGT】更新涉及您的报价单【RP0918A-58b70f5b-J】：成功 0，失败 2，冲突 0（需人工处理或重试，请联系财务）。
+html body: 
+<empty>
+[RP0918A-EVIDENCE AC-14] [2026-09-18T22:49:31.075924471] 批次 8e0335c2-4c9e-473c-b84a-68df5cad17dd 状态 FAILED；写快照调用=[WriteCall[quotationId=2c279656-cf1f-4f2d-883f-52fd4113b6db, targetVersionId=10b1f000-fcfc-4ab8-84a1-d9d97e149a9a, materialNos=[RP0918A-58b70f5b-J-0003, RP0918A-58b70f5b-J-0008], injectedFailure=true, thread=executor-thread-2, atMillis=1789796970782]]；明细={RP0918A-58b70f5b-J-0003=[{"itemId":"b80a33f4-855a-4a19-ac1f-7b444d57dac4","quotationId":"2c279656-cf1f-4f2d-883f-52fd4113b6db","quotationNo":"RP0918A-58b70f5b-J","materialNo":"RP0918A-58b70f5b-J-0003","lineItemId":"ff1ec112-a886-469f-8f96-a1dfadd268ca","status":"FAILED","errorCode":"REVISION_WRITE_FAILED","errorMessage":"价格已更新，但版本记录写入失败，请重试","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:30.783678Z"}], RP0918A-58b70f5b-J-0008=[{"itemId":"3e1a261e-c39c-4dae-b0fb-82a56615f7da","quotationId":"2c279656-cf1f-4f2d-883f-52fd4113b6db","quotationNo":"RP0918A-58b70f5b-J","materialNo":"RP0918A-58b70f5b-J-0008","lineItemId":"c975b692-cc5f-42ce-8c6a-8fddf609df26","status":"FAILED","errorCode":"REVISION_WRITE_FAILED","errorMessage":"价格已更新，但版本记录写入失败，请重试","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:30.783678Z"}]}
+[RP0918A-EVIDENCE counts] [2026-09-18T22:49:31.386563621] AC-14 失败后：批次={"jobId":"8e0335c2-4c9e-473c-b84a-68df5cad17dd","customerNo":"RP0918A-58b70f5b","versionNo":"RP8A58b70f5b-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:29.226166Z","status":"FAILED","total":2,"success":0,"failed":2,"conflict":0,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:30.871322Z","notified":true} 明细分布={FAILED=2}
+2026-09-18 22:49:31.785 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-3) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:31.833 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:31.834 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [seed-editrows] comp=054917c6-74e1-4234-8135-8b0585795862 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:31.946 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (executor-thread-3) [perf] revision-write quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db kind=CURRENT ms=29
+2026-09-18 22:49:31.947 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [b0-upgrade] li=ff1ec112-a886-469f-8f96-a1dfadd268ca quotation=RP0918A-58b70f5b-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28894.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:49:31.947 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [perf] upgrade li=ff1ec112-a886-469f-8f96-a1dfadd268ca quotation=2c279656-cf1f-4f2d-883f-52fd4113b6db lines=12 dryRun=false sql=28 ms=395
+2026-09-18 22:49:32.010 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=8e0335c2-4c9e-473c-b84a-68df5cad17dd finalized status=PARTIAL total=2 success=1 failed=1 conflict=0 stale=0
+2026-09-18 22:49:32.010 INFO  [com.cpq.pri.ser.PriceAdjustNotificationService] (executor-thread-3) [price-adjust-notify] jobId=8e0335c2-4c9e-473c-b84a-68df5cad17dd 已通知过，跳过（幂等）
+[RP0918A-EVIDENCE AC-14] [2026-09-18T22:49:32.106372514] 重试 RP0918A-58b70f5b-J-0003 → SUCCESS/null/升版成功：版本明细 1 条（含无价），价格承载组件 1 个，snapshot_rows/row_data 共改写 1 行（RP0918A-ELEM-58b70f5b=1），editRows 清理 0 条，subtotal 28894.734567890000→28894.73456789，quotation.totalAmount=346726.814814680；小计 前=28894.734567890000 后=28894.734567890000；单价 前=28893.5 后=28893.5；本期记录=R26091802 [RP0918A-58b70f5b-J-0003]
+[RP0918A-EVIDENCE counts] [2026-09-18T22:49:32.243121197] AC-14 重试后：批次={"jobId":"8e0335c2-4c9e-473c-b84a-68df5cad17dd","customerNo":"RP0918A-58b70f5b","versionNo":"RP8A58b70f5b-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:29.226166Z","status":"PARTIAL","total":2,"success":1,"failed":1,"conflict":0,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:32.010461Z","notified":true} 明细分布={FAILED=1, SUCCESS=1}
+[RP0918A-EVIDENCE upgrade-paths] [2026-09-18T22:49:32.244007621] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=2, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=3}
+[RP0918A-EVIDENCE cleanup] [2026-09-18T22:49:34.813211079] 客户 RP0918A-58b70f5b 自建数据已按 id 清理完毕（报价单 1 张）
+]]></system-out>
+  </testcase>
+  <testcase name="tBe24_ac24_batchRetryRerunsFailedAndConflict_notStale" classname="com.cpq.priceadjust.ac260918.Ac260918JobFailureTest" time="9.826">
+    <system-out><![CDATA[2026-09-18 22:49:35.609 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version 5137c4e1-52e0-4068-ba2a-a63c1b5163a7 → f50a671e-7497-4055-ac17-d191fc2884bc）
+2026-09-18 22:49:35.848 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:35.878 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:35.878 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=90fd122d-8f0e-42b5-b9fe-a9526c694e2b 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:35.961 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=32bfbe06-406d-4c13-b497-363cbc09407d quotation=RP0918A-a95171d1-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:35.961 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=32bfbe06-406d-4c13-b497-363cbc09407d quotation=af41a312-ef68-46a4-a673-f53d29f0305c lines=12 dryRun=true sql=24 ms=339
+2026-09-18 22:49:35.985 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=2c89cc99-ae92-49be-bbc0-64cfb8f90bfd material=RP0918A-a95171d1-J-0003 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:36.269 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version 5137c4e1-52e0-4068-ba2a-a63c1b5163a7 → f50a671e-7497-4055-ac17-d191fc2884bc）
+2026-09-18 22:49:36.503 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:36.528 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:36.528 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=90fd122d-8f0e-42b5-b9fe-a9526c694e2b 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:36.609 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=becbadcb-1d53-475f-96b3-87c305b2458d quotation=RP0918A-a95171d1-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:36.610 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=becbadcb-1d53-475f-96b3-87c305b2458d quotation=af41a312-ef68-46a4-a673-f53d29f0305c lines=12 dryRun=true sql=24 ms=324
+2026-09-18 22:49:36.639 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=69206712-43ee-4538-991c-de92ff2417d9 material=RP0918A-a95171d1-J-0006 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:36.922 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version 5137c4e1-52e0-4068-ba2a-a63c1b5163a7 → f50a671e-7497-4055-ac17-d191fc2884bc）
+2026-09-18 22:49:37.140 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:37.164 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:37.164 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=90fd122d-8f0e-42b5-b9fe-a9526c694e2b 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:37.249 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=3ef240be-f04f-4933-a8de-b411142430a5 quotation=RP0918A-a95171d1-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:37.250 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=3ef240be-f04f-4933-a8de-b411142430a5 quotation=af41a312-ef68-46a4-a673-f53d29f0305c lines=12 dryRun=true sql=24 ms=316
+2026-09-18 22:49:37.277 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=8fae5e8e-1c9d-4a21-8915-b5b659695fbe material=RP0918A-a95171d1-J-0009 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:37.696 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] executeJob jobId=a5525a9f-5944-48df-8729-e0f120d1dead items=3 retry=false
+2026-09-18 22:49:37.822 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead 批量预渲染完成：0/3 个 line item 命中预渲染结果
+2026-09-18 22:49:37.894 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead item=7d363cbc-22bd-461f-be8d-a06364885570 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe24_ac24_batchRetryRerunsFailedAndConflict_notStale$9(Ac260918JobFailureTest.java:297)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.IllegalStateException: boom-24
+	... 50 more
+
+2026-09-18 22:49:37.979 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead item=532eb251-442e-4fa4-abb3-371673ab090b 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe24_ac24_batchRetryRerunsFailedAndConflict_notStale$9(Ac260918JobFailureTest.java:297)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.IllegalStateException: boom-24
+	... 50 more
+
+2026-09-18 22:49:38.095 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead item=54ab9669-7055-4266-bb27-eb4013c40da2 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe24_ac24_batchRetryRerunsFailedAndConflict_notStale$9(Ac260918JobFailureTest.java:297)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.IllegalStateException: boom-24
+	... 50 more
+
+2026-09-18 22:49:38.185 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead finalized status=FAILED total=3 success=0 failed=3 conflict=0 stale=0
+2026-09-18 22:49:38.223 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_JOB_SUMMARY recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:38.231 INFO  [quarkus-mailer] (executor-thread-2) Sending email 调价批次执行完成（含失败/冲突项）：RP0918A-a95171d1 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户【RP0918A-a95171d1】价格版本【RP8Aa95171d1-TGT】批量更新已完成，共 3 条：成功 0，失败 3，冲突 0。失败/冲突项需人工处理，请到调价管理页核实明细。
+html body: 
+<empty>
+2026-09-18 22:49:38.254 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_QUOTATION_REVIEW recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:38.254 INFO  [quarkus-mailer] (executor-thread-2) Sending email 报价单价格更新存在异常，请查看【RP0918A-a95171d1-J】 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户价格版本【RP8Aa95171d1-TGT】更新涉及您的报价单【RP0918A-a95171d1-J】：成功 0，失败 3，冲突 0（需人工处理或重试，请联系财务）。
+html body: 
+<empty>
+2026-09-18 22:49:38.593 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] executeJob jobId=a5525a9f-5944-48df-8729-e0f120d1dead items=2 retry=true
+2026-09-18 22:49:38.650 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead 批量预渲染完成：0/2 个 line item 命中预渲染结果
+2026-09-18 22:49:38.994 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (executor-thread-3) [perf] revision-write quotation=af41a312-ef68-46a4-a673-f53d29f0305c kind=INITIAL ms=9
+2026-09-18 22:49:39.090 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-3) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:39.113 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:39.114 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [seed-editrows] comp=90fd122d-8f0e-42b5-b9fe-a9526c694e2b 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:39.188 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [b0-upgrade] li=32bfbe06-406d-4c13-b497-363cbc09407d quotation=RP0918A-a95171d1-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:49:39.188 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [perf] upgrade li=32bfbe06-406d-4c13-b497-363cbc09407d quotation=af41a312-ef68-46a4-a673-f53d29f0305c lines=12 dryRun=false sql=27 ms=351
+2026-09-18 22:49:39.608 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-3) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:39.636 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:39.636 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [seed-editrows] comp=90fd122d-8f0e-42b5-b9fe-a9526c694e2b 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:39.713 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [b0-upgrade] li=becbadcb-1d53-475f-96b3-87c305b2458d quotation=RP0918A-a95171d1-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-18 22:49:39.713 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [perf] upgrade li=becbadcb-1d53-475f-96b3-87c305b2458d quotation=af41a312-ef68-46a4-a673-f53d29f0305c lines=12 dryRun=false sql=26 ms=346
+2026-09-18 22:49:39.768 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (executor-thread-3) [perf] revision-write quotation=af41a312-ef68-46a4-a673-f53d29f0305c kind=CURRENT ms=16
+2026-09-18 22:49:39.856 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=a5525a9f-5944-48df-8729-e0f120d1dead finalized status=PARTIAL total=3 success=2 failed=0 conflict=0 stale=1
+2026-09-18 22:49:39.856 INFO  [com.cpq.pri.ser.PriceAdjustNotificationService] (executor-thread-3) [price-adjust-notify] jobId=a5525a9f-5944-48df-8729-e0f120d1dead 已通知过，跳过（幂等）
+[RP0918A-EVIDENCE AC-24] [2026-09-18T22:49:41.893417835] 批量重试前=[{"itemId":"7d363cbc-22bd-461f-be8d-a06364885570","quotationId":"af41a312-ef68-46a4-a673-f53d29f0305c","quotationNo":"RP0918A-a95171d1-J","materialNo":"RP0918A-a95171d1-J-0003","lineItemId":"32bfbe06-406d-4c13-b497-363cbc09407d","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"IllegalStateException: boom-24","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:37.90271Z"}, {"itemId":"532eb251-442e-4fa4-abb3-371673ab090b","quotationId":"af41a312-ef68-46a4-a673-f53d29f0305c","quotationNo":"RP0918A-a95171d1-J","materialNo":"RP0918A-a95171d1-J-0006","lineItemId":"becbadcb-1d53-475f-96b3-87c305b2458d","status":"CONFLICT","errorCode":"ROW_VERSION_CONFLICT","errorMessage":"RP0918A 模拟行版本冲突","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:38.000291Z"}, {"itemId":"54ab9669-7055-4266-bb27-eb4013c40da2","quotationId":"af41a312-ef68-46a4-a673-f53d29f0305c","quotationNo":"RP0918A-a95171d1-J","materialNo":"RP0918A-a95171d1-J-0009","lineItemId":"3ef240be-f04f-4933-a8de-b411142430a5","status":"STALE","errorCode":null,"errorMessage":"RP0918A 模拟所属版本已被取代","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:38.106753Z"}]
+后=[{"itemId":"54ab9669-7055-4266-bb27-eb4013c40da2","quotationId":"af41a312-ef68-46a4-a673-f53d29f0305c","quotationNo":"RP0918A-a95171d1-J","materialNo":"RP0918A-a95171d1-J-0009","lineItemId":"3ef240be-f04f-4933-a8de-b411142430a5","status":"STALE","errorCode":null,"errorMessage":"RP0918A 模拟所属版本已被取代","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:38.106753Z"}, {"itemId":"7d363cbc-22bd-461f-be8d-a06364885570","quotationId":"af41a312-ef68-46a4-a673-f53d29f0305c","quotationNo":"RP0918A-a95171d1-J","materialNo":"RP0918A-a95171d1-J-0003","lineItemId":"32bfbe06-406d-4c13-b497-363cbc09407d","status":"SUCCESS","errorCode":null,"errorMessage":"升版成功：版本明细 1 条（含无价），价格承载组件 1 个，snapshot_rows/row_data 共改写 1 行（RP0918A-ELEM-a95171d1=1），editRows 清理 0 条，subtotal 28893.734567890000→28894.73456789，quotation.totalAmount=346725.814814680","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:39.188691Z"}, {"itemId":"532eb251-442e-4fa4-abb3-371673ab090b","quotationId":"af41a312-ef68-46a4-a673-f53d29f0305c","quotationNo":"RP0918A-a95171d1-J","materialNo":"RP0918A-a95171d1-J-0006","lineItemId":"becbadcb-1d53-475f-96b3-87c305b2458d","status":"SUCCESS","errorCode":null,"errorMessage":"升版成功：版本明细 1 条（含无价），价格承载组件 1 个，snapshot_rows/row_data 共改写 1 行（RP0918A-ELEM-a95171d1=1），editRows 清理 0 条，subtotal 28893.734567890000→28894.73456789，quotation.totalAmount=346726.814814680","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:39.713413Z"}]
+执行中探针=[running=1 probedItem=RUNNING job={"jobId":"a5525a9f-5944-48df-8729-e0f120d1dead","customerNo":"RP0918A-a95171d1","versionNo":"RP8Aa95171d1-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:37.414902Z","status":"RUNNING","total":3,"success":0,"failed":0,"conflict":1,"stale":1,"skipped":0,"running":1,"finishedAt":null,"notified":true}, running=1 probedItem=RUNNING job={"jobId":"a5525a9f-5944-48df-8729-e0f120d1dead","customerNo":"RP0918A-a95171d1","versionNo":"RP8Aa95171d1-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:37.414902Z","status":"RUNNING","total":3,"success":1,"failed":0,"conflict":0,"stale":1,"skipped":0,"running":1,"finishedAt":null,"notified":true}]
+STALE 行被执行次数=0
+[RP0918A-EVIDENCE counts] [2026-09-18T22:49:42.073377116] AC-24 批量重试后：批次={"jobId":"a5525a9f-5944-48df-8729-e0f120d1dead","customerNo":"RP0918A-a95171d1","versionNo":"RP8Aa95171d1-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:37.414902Z","status":"PARTIAL","total":3,"success":2,"failed":0,"conflict":0,"stale":1,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:39.856255Z","notified":true} 明细分布={STALE=1, SUCCESS=2}
+[RP0918A-EVIDENCE upgrade-paths] [2026-09-18T22:49:42.073973412] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=5}
+[RP0918A-EVIDENCE cleanup] [2026-09-18T22:49:44.641974320] 客户 RP0918A-a95171d1 自建数据已按 id 清理完毕（报价单 1 张）
+]]></system-out>
+  </testcase>
+  <testcase name="tBe22_ac22_errorThrownDuringExecution_jobDoesNotStayRunning" classname="com.cpq.priceadjust.ac260918.Ac260918JobFailureTest" time="6.395">
+    <system-out><![CDATA[2026-09-18 22:49:45.404 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version f4b46d29-b934-470d-a982-2d4a5ca67596 → d17c2eff-54a8-4235-8195-a052b52ba430）
+2026-09-18 22:49:45.616 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:45.641 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:45.641 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=c98d4d4a-c3a0-41d8-ae80-c53399548902 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:45.719 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=ce970266-e5ad-4130-bcab-086fe4e0b4b4 quotation=RP0918A-756f9c5c-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:45.720 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=ce970266-e5ad-4130-bcab-086fe4e0b4b4 quotation=d99a6c8b-52be-44e4-a15b-a20cd648ac1d lines=12 dryRun=true sql=24 ms=301
+2026-09-18 22:49:45.745 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=cc5c88cc-c3b8-46eb-aeca-715b51a86216 material=RP0918A-756f9c5c-J-0002 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:46.042 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version f4b46d29-b934-470d-a982-2d4a5ca67596 → d17c2eff-54a8-4235-8195-a052b52ba430）
+2026-09-18 22:49:46.290 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:46.310 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:46.311 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=c98d4d4a-c3a0-41d8-ae80-c53399548902 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:46.385 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=48504e58-f5e3-4c00-979b-a01010617588 quotation=RP0918A-756f9c5c-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:46.386 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=48504e58-f5e3-4c00-979b-a01010617588 quotation=d99a6c8b-52be-44e4-a15b-a20cd648ac1d lines=12 dryRun=true sql=24 ms=329
+2026-09-18 22:49:46.403 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=a11f1496-7687-4fa1-a255-367830b0663b material=RP0918A-756f9c5c-J-0004 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:46.639 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version f4b46d29-b934-470d-a982-2d4a5ca67596 → d17c2eff-54a8-4235-8195-a052b52ba430）
+2026-09-18 22:49:46.879 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:46.914 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:46.914 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=c98d4d4a-c3a0-41d8-ae80-c53399548902 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:46.994 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=7a2657be-8e0d-4700-8a71-b7c0f55a2409 quotation=RP0918A-756f9c5c-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:46.994 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=7a2657be-8e0d-4700-8a71-b7c0f55a2409 quotation=d99a6c8b-52be-44e4-a15b-a20cd648ac1d lines=12 dryRun=true sql=24 ms=340
+2026-09-18 22:49:47.021 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=e903d670-fb7a-4bf1-91d3-495fbfb96812 material=RP0918A-756f9c5c-J-0006 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:47.453 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] executeJob jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 items=3 retry=false
+2026-09-18 22:49:47.549 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 批量预渲染完成：0/3 个 line item 命中预渲染结果
+2026-09-18 22:49:47.642 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 执行入口异常（AssertionError: RP0918A 注入 Error（不是 Exception）），收尾后批次不会停在 RUNNING: java.lang.AssertionError: RP0918A 注入 Error（不是 Exception）
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe22_ac22_errorThrownDuringExecution_jobDoesNotStayRunning$8(Ac260918JobFailureTest.java:258)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
+2026-09-18 22:49:47.664 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 收尾：3 条未完成明细置 FAILED（UNEXPECTED_ERROR: AssertionError: RP0918A 注入 Error（不是 Exception））
+2026-09-18 22:49:47.690 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 finalized status=FAILED total=3 success=0 failed=3 conflict=0 stale=0
+2026-09-18 22:49:47.703 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_JOB_SUMMARY recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:47.724 INFO  [quarkus-mailer] (executor-thread-2) Sending email 调价批次执行完成（含失败/冲突项）：RP0918A-756f9c5c from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户【RP0918A-756f9c5c】价格版本【RP8A756f9c5c-TGT】批量更新已完成，共 3 条：成功 0，失败 3，冲突 0。失败/冲突项需人工处理，请到调价管理页核实明细。
+html body: 
+<empty>
+2026-09-18 22:49:47.744 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_QUOTATION_REVIEW recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:47.745 INFO  [quarkus-mailer] (executor-thread-2) Sending email 报价单价格更新存在异常，请查看【RP0918A-756f9c5c-J】 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户价格版本【RP8A756f9c5c-TGT】更新涉及您的报价单【RP0918A-756f9c5c-J】：成功 0，失败 3，冲突 0（需人工处理或重试，请联系财务）。
+html body: 
+<empty>
+2026-09-18 22:49:47.765 ERROR [com.cpq.pri.ser.PriceAdjustReviewService] (executor-thread-2) [price-adjust] approve jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 异步执行异常: java.util.concurrent.CompletionException: java.lang.AssertionError: RP0918A 注入 Error（不是 Exception）
+	at java.base/java.util.concurrent.CompletableFuture.encodeThrowable(CompletableFuture.java:315)
+	at java.base/java.util.concurrent.CompletableFuture.completeThrowable(CompletableFuture.java:320)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1807)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.AssertionError: RP0918A 注入 Error（不是 Exception）
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe22_ac22_errorThrownDuringExecution_jobDoesNotStayRunning$8(Ac260918JobFailureTest.java:258)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	... 9 more
+
+[RP0918A-EVIDENCE AC-22] [2026-09-18T22:49:48.405566226] 注入触发 1 次；批次 9240ee6c-7f62-42a5-9b34-68f875dc96f1 状态 FAILED；明细=[{"itemId":"4faeb9e2-a6c8-4c9e-8727-d3b943fb8f2c","quotationId":"d99a6c8b-52be-44e4-a15b-a20cd648ac1d","quotationNo":"RP0918A-756f9c5c-J","materialNo":"RP0918A-756f9c5c-J-0004","lineItemId":"48504e58-f5e3-4c00-979b-a01010617588","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"AssertionError: RP0918A 注入 Error（不是 Exception）","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:47.64315Z"},{"itemId":"5efb31e7-a37c-48fb-ba39-de0852bdf625","quotationId":"d99a6c8b-52be-44e4-a15b-a20cd648ac1d","quotationNo":"RP0918A-756f9c5c-J","materialNo":"RP0918A-756f9c5c-J-0006","lineItemId":"7a2657be-8e0d-4700-8a71-b7c0f55a2409","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"AssertionError: RP0918A 注入 Error（不是 Exception）","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:47.64315Z"},{"itemId":"1b06b9c9-8928-4fc8-87ec-af9970655d4d","quotationId":"d99a6c8b-52be-44e4-a15b-a20cd648ac1d","quotationNo":"RP0918A-756f9c5c-J","materialNo":"RP0918A-756f9c5c-J-0002","lineItemId":"ce970266-e5ad-4130-bcab-086fe4e0b4b4","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"AssertionError: RP0918A 注入 Error（不是 Exception）","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:47.64315Z"}]
+ERROR 日志:
+[ERROR com.cpq.priceadjust.service.PriceAdjustJobExecutionService] [price-adjust-job] jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 执行入口异常（AssertionError: RP0918A 注入 Error（不是 Exception）），收尾后批次不会停在 RUNNING | java.lang.AssertionError: RP0918A 注入 Error（不是 Exception） <- 
+[ERROR com.cpq.priceadjust.service.PriceAdjustJobExecutionService] [price-adjust-job] jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 收尾：3 条未完成明细置 FAILED（UNEXPECTED_ERROR: AssertionError: RP0918A 注入 Error（不是 Exception）） | 
+[ERROR com.cpq.priceadjust.service.PriceAdjustReviewService] [price-adjust] approve jobId=9240ee6c-7f62-42a5-9b34-68f875dc96f1 异步执行异常 | java.util.concurrent.CompletionException: java.lang.AssertionError: RP0918A 注入 Error（不是 Exception） <- java.lang.AssertionError: RP0918A 注入 Error（不是 Exception） <- 
+
+[RP0918A-EVIDENCE upgrade-paths] [2026-09-18T22:49:48.406590994] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=1}
+[RP0918A-EVIDENCE cleanup] [2026-09-18T22:49:51.038727645] 客户 RP0918A-756f9c5c 自建数据已按 id 清理完毕（报价单 1 张）
+]]></system-out>
+  </testcase>
+  <testcase name="tBe15_ac15_failureReasonsReadable_bothPaths" classname="com.cpq.priceadjust.ac260918.Ac260918JobFailureTest" time="6.241">
+    <system-out><![CDATA[2026-09-18 22:49:51.810 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version b2de6264-d027-46ef-b3db-db27fc7b7434 → bd11f51f-7dcf-4525-9c22-c7d62c0b2c77）
+2026-09-18 22:49:52.038 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:52.067 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:52.067 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=63d55e8f-f671-4dea-b2ff-7967c6230a48 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:52.120 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=65a9981f-be03-41b9-9e8a-e55bc993b873 quotation=RP0918A-89997061-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:52.121 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=65a9981f-be03-41b9-9e8a-e55bc993b873 quotation=6f8c80c0-b807-4651-aeff-cc5132ab3fd8 lines=12 dryRun=true sql=24 ms=296
+2026-09-18 22:49:52.139 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=8646bb00-f0eb-47dd-bc83-db13dd0edcb1 material=RP0918A-89997061-J-0002 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:52.401 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version b2de6264-d027-46ef-b3db-db27fc7b7434 → bd11f51f-7dcf-4525-9c22-c7d62c0b2c77）
+2026-09-18 22:49:52.598 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:52.622 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:52.623 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=63d55e8f-f671-4dea-b2ff-7967c6230a48 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:52.705 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=fee5f8ab-fd2e-4239-a02f-dd529622a37f quotation=RP0918A-89997061-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:52.705 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=fee5f8ab-fd2e-4239-a02f-dd529622a37f quotation=6f8c80c0-b807-4651-aeff-cc5132ab3fd8 lines=12 dryRun=true sql=24 ms=288
+2026-09-18 22:49:52.732 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=00fe238c-da40-4e31-b0f8-09c57fee4893 material=RP0918A-89997061-J-0005 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:52.988 DEBUG [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 元素 Ag 价格有变动：28892.500000000000 → 28893.500000000000（version b2de6264-d027-46ef-b3db-db27fc7b7434 → bd11f51f-7dcf-4525-9c22-c7d62c0b2c77）
+2026-09-18 22:49:53.205 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-18 22:49:53.243 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-18 22:49:53.244 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=63d55e8f-f671-4dea-b2ff-7967c6230a48 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-18 22:49:53.342 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=791a3b83-43eb-4f0d-98cf-f3ed38f41030 quotation=RP0918A-89997061-J 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-18 22:49:53.342 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=791a3b83-43eb-4f0d-98cf-f3ed38f41030 quotation=6f8c80c0-b807-4651-aeff-cc5132ab3fd8 lines=12 dryRun=true sql=24 ms=341
+2026-09-18 22:49:53.368 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=075c2779-76c5-4097-919a-a24bfcb3510b material=RP0918A-89997061-J-0009 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-18 22:49:53.829 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] executeJob jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c items=3 retry=false
+2026-09-18 22:49:53.880 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c 批量预渲染完成：0/3 个 line item 命中预渲染结果
+2026-09-18 22:49:53.924 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c item=17c0d9b7-88d0-4fc9-a3a7-9a11766b2a95 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe15_ac15_failureReasonsReadable_bothPaths$1(Ac260918JobFailureTest.java:176)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: jakarta.transaction.RollbackException: ARJUNA016102: The transaction is not active! Uid is 0:ffff:rp0918a:15
+	... 50 more
+
+2026-09-18 22:49:54.013 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c item=ec8f76a3-accc-480f-ab75-d79128c53d9d 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe15_ac15_failureReasonsReadable_bothPaths$2(Ac260918JobFailureTest.java:179)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: jakarta.persistence.PersistenceException: could not execute statement
+	... 50 more
+Caused by: java.sql.SQLException: ERROR: canceling statement due to statement timeout
+	... 50 more
+
+2026-09-18 22:49:54.201 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c item=500eb5c7-1d2b-430f-9f9a-940402cee98c 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe15_ac15_failureReasonsReadable_bothPaths$3(Ac260918JobFailureTest.java:182)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.lambda$runJob$1(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.CurrentRevisionDeferral.callDeferred(CurrentRevisionDeferral.java:30)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.runJob(PriceAdjustJobExecutionService.java:115)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeJob(PriceAdjustJobExecutionService.java:67)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.executeJob(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustReviewService.lambda$approve$8(PriceAdjustReviewService.java:473)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.IllegalStateException: boom
+	... 50 more
+
+2026-09-18 22:49:54.299 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c finalized status=FAILED total=3 success=0 failed=3 conflict=0 stale=0
+2026-09-18 22:49:54.313 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-3) Created notification type=PRICE_ADJUST_JOB_SUMMARY recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:54.331 INFO  [quarkus-mailer] (executor-thread-3) Sending email 调价批次执行完成（含失败/冲突项）：RP0918A-89997061 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户【RP0918A-89997061】价格版本【RP8A89997061-TGT】批量更新已完成，共 3 条：成功 0，失败 3，冲突 0。失败/冲突项需人工处理，请到调价管理页核实明细。
+html body: 
+<empty>
+2026-09-18 22:49:54.344 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-3) Created notification type=PRICE_ADJUST_QUOTATION_REVIEW recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-18 22:49:54.344 INFO  [quarkus-mailer] (executor-thread-3) Sending email 报价单价格更新存在异常，请查看【RP0918A-89997061-J】 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户价格版本【RP8A89997061-TGT】更新涉及您的报价单【RP0918A-89997061-J】：成功 0，失败 3，冲突 0（需人工处理或重试，请联系财务）。
+html body: 
+<empty>
+[RP0918A-EVIDENCE AC-15] [2026-09-18T22:49:54.463717547] 批次 788d97c5-6696-4af3-9ab2-88cb9e08d43c FAILED
+  a(Rollback)={"itemId":"17c0d9b7-88d0-4fc9-a3a7-9a11766b2a95","quotationId":"6f8c80c0-b807-4651-aeff-cc5132ab3fd8","quotationNo":"RP0918A-89997061-J","materialNo":"RP0918A-89997061-J-0002","lineItemId":"65a9981f-be03-41b9-9e8a-e55bc993b873","status":"FAILED","errorCode":"EXECUTION_TIMEOUT","errorMessage":"执行超时（超过 60 秒）被中止，本行未更新，可重试","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:53.937458Z"}
+  b(57014)={"itemId":"ec8f76a3-accc-480f-ab75-d79128c53d9d","quotationId":"6f8c80c0-b807-4651-aeff-cc5132ab3fd8","quotationNo":"RP0918A-89997061-J","materialNo":"RP0918A-89997061-J-0005","lineItemId":"fee5f8ab-fd2e-4239-a02f-dd529622a37f","status":"FAILED","errorCode":"EXECUTION_TIMEOUT","errorMessage":"执行超时（超过 60 秒）被中止，本行未更新，可重试","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:54.103174Z"}
+  c(ISE)={"itemId":"500eb5c7-1d2b-430f-9f9a-940402cee98c","quotationId":"6f8c80c0-b807-4651-aeff-cc5132ab3fd8","quotationNo":"RP0918A-89997061-J","materialNo":"RP0918A-89997061-J-0009","lineItemId":"791a3b83-43eb-4f0d-98cf-f3ed38f41030","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"IllegalStateException: boom","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:54.213677Z"}
+[RP0918A-EVIDENCE counts] [2026-09-18T22:49:54.612128809] AC-15 批量执行后：批次={"jobId":"788d97c5-6696-4af3-9ab2-88cb9e08d43c","customerNo":"RP0918A-89997061","versionNo":"RP8A89997061-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:53.514051Z","status":"FAILED","total":3,"success":0,"failed":3,"conflict":0,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:54.299933Z","notified":true} 明细分布={FAILED=3}
+2026-09-18 22:49:54.713 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] retryJobItem item=500eb5c7-1d2b-430f-9f9a-940402cee98c 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe15_ac15_failureReasonsReadable_bothPaths$4(Ac260918JobFailureTest.java:208)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:39)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:124)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:431)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$8.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:124)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.retryJobItem(PriceAdjustJobExecutionService.java:590)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.retryJobItem(Unknown Source)
+	at com.cpq.priceadjust.resource.PriceAdjustJobResource.lambda$retryJobItem$2(PriceAdjustJobResource.java:144)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.IllegalStateException: boom-retry
+	... 67 more
+
+2026-09-18 22:49:54.746 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c finalized status=FAILED total=3 success=0 failed=3 conflict=0 stale=0
+2026-09-18 22:49:54.746 INFO  [com.cpq.pri.ser.PriceAdjustNotificationService] (executor-thread-2) [price-adjust-notify] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c 已通知过，跳过（幂等）
+[RP0918A-EVIDENCE AC-15] [2026-09-18T22:49:54.783320149] 观察：单条重试① 前 retry_count=0 后=0
+[RP0918A-EVIDENCE AC-15] [2026-09-18T22:49:54.813101016] 单条重试① c → {"itemId":"500eb5c7-1d2b-430f-9f9a-940402cee98c","quotationId":"6f8c80c0-b807-4651-aeff-cc5132ab3fd8","quotationNo":"RP0918A-89997061-J","materialNo":"RP0918A-89997061-J-0009","lineItemId":"791a3b83-43eb-4f0d-98cf-f3ed38f41030","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"IllegalStateException: boom-retry","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:54.71869Z"}（注入触发 1 次）
+[RP0918A-EVIDENCE counts] [2026-09-18T22:49:54.853985477] AC-15 单条重试①后：批次={"jobId":"788d97c5-6696-4af3-9ab2-88cb9e08d43c","customerNo":"RP0918A-89997061","versionNo":"RP8A89997061-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:53.514051Z","status":"FAILED","total":3,"success":0,"failed":3,"conflict":0,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:54.746441Z","notified":true} 明细分布={FAILED=3}
+2026-09-18 22:49:54.957 ERROR [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] retryJobItem item=17c0d9b7-88d0-4fc9-a3a7-9a11766b2a95 执行异常: java.lang.RuntimeException: Error invoking subclass method
+	at com.cpq.priceadjust.ac260918.Ac260918JobFailureTest.lambda$tBe15_ac15_failureReasonsReadable_bothPaths$6(Ac260918JobFailureTest.java:232)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.lambda$throwing$1(UpgradeInterceptor.java:166)
+	at com.cpq.priceadjust.ac260918.UpgradeInterceptor.before(UpgradeInterceptor.java:130)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.answer(DelegatingMock.java:55)
+	at com.cpq.priceadjust.ac260918.DelegatingMock.lambda$install$0(DelegatingMock.java:47)
+	at org.mockito.internal.handler.MockHandlerImpl.handle(MockHandlerImpl.java:111)
+	at org.mockito.internal.handler.NullResultGuardian.handle(NullResultGuardian.java:29)
+	at org.mockito.internal.handler.InvocationNotifierHandler.handle(InvocationNotifierHandler.java:34)
+	at org.mockito.internal.creation.bytebuddy.access.MockMethodInterceptor.doIntercept(MockMethodInterceptor.java:84)
+	at org.mockito.internal.creation.bytebuddy.MockMethodAdvice.handle(MockMethodAdvice.java:136)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService.upgrade(MaterialVersionUpgradeService.java:192)
+	at com.cpq.priceadjust.service.MaterialVersionUpgradeService_ClientProxy.upgrade(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:468)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$2.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:39)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:124)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.executeItem(PriceAdjustJobExecutionService.java:431)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem$$superforward(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass$8.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext$NextAroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:97)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.doIntercept(TransactionalInterceptorRequiresNew.java:41)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew.intercept(TransactionalInterceptorRequiresNew.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequiresNew_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:70)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:129)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_Subclass.executeItem(Unknown Source)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService.retryJobItem(PriceAdjustJobExecutionService.java:590)
+	at com.cpq.priceadjust.service.PriceAdjustJobExecutionService_ClientProxy.retryJobItem(Unknown Source)
+	at com.cpq.priceadjust.resource.PriceAdjustJobResource.lambda$retryJobItem$2(PriceAdjustJobResource.java:144)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.lang.IllegalStateException: boom-conflict
+	... 67 more
+
+[RP0918A-EVIDENCE AC-15] [2026-09-18T22:49:54.985652267] 观察：单条重试② 前 retry_count=0 后=0
+2026-09-18 22:49:54.985 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-3) [price-adjust-job] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c finalized status=FAILED total=3 success=0 failed=3 conflict=0 stale=0
+2026-09-18 22:49:54.985 INFO  [com.cpq.pri.ser.PriceAdjustNotificationService] (executor-thread-3) [price-adjust-notify] jobId=788d97c5-6696-4af3-9ab2-88cb9e08d43c 已通知过，跳过（幂等）
+[RP0918A-EVIDENCE AC-15] [2026-09-18T22:49:55.023288749] 单条重试② a(CONFLICT) → {"itemId":"17c0d9b7-88d0-4fc9-a3a7-9a11766b2a95","quotationId":"6f8c80c0-b807-4651-aeff-cc5132ab3fd8","quotationNo":"RP0918A-89997061-J","materialNo":"RP0918A-89997061-J-0002","lineItemId":"65a9981f-be03-41b9-9e8a-e55bc993b873","status":"FAILED","errorCode":"UNEXPECTED_ERROR","errorMessage":"IllegalStateException: boom-conflict","diffValue":null,"retryCount":0,"updatedAt":"2026-09-19T05:49:54.963109Z"}；批次 前={"jobId":"788d97c5-6696-4af3-9ab2-88cb9e08d43c","customerNo":"RP0918A-89997061","versionNo":"RP8A89997061-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:53.514051Z","status":"FAILED","total":3,"success":0,"failed":2,"conflict":1,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:54.746441Z","notified":true} 后={"jobId":"788d97c5-6696-4af3-9ab2-88cb9e08d43c","customerNo":"RP0918A-89997061","versionNo":"RP8A89997061-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:53.514051Z","status":"FAILED","total":3,"success":0,"failed":3,"conflict":0,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:54.985715Z","notified":true}
+[RP0918A-EVIDENCE counts] [2026-09-18T22:49:55.060830020] AC-15 单条重试②后：批次={"jobId":"788d97c5-6696-4af3-9ab2-88cb9e08d43c","customerNo":"RP0918A-89997061","versionNo":"RP8A89997061-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:49:53.514051Z","status":"FAILED","total":3,"success":0,"failed":3,"conflict":0,"stale":0,"skipped":0,"running":0,"finishedAt":"2026-09-19T05:49:54.985715Z","notified":true} 明细分布={FAILED=3}
+[RP0918A-EVIDENCE upgrade-paths] [2026-09-18T22:49:55.061491460] Ac260918JobFailureTest 拦到的 upgrade 调用：{upgrade(UUID,UUID,boolean) dryRun=true thread=main params=2uuid=3, upgrade(UUID,UUID,boolean,PrecomputedTreeRows) dryRun=false thread=executor params=2uuid=5}
+[RP0918A-EVIDENCE cleanup] [2026-09-18T22:49:57.281838370] 客户 RP0918A-89997061 自建数据已按 id 清理完毕（报价单 1 张）
+]]></system-out>
+  </testcase>
+</testsuite>

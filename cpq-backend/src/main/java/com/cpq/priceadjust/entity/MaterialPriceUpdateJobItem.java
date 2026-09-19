@@ -86,6 +86,61 @@ public class MaterialPriceUpdateJobItem extends PanacheEntityBase {
     }
 
     /**
+     * repair-260918 B-5：明细开始执行前置 RUNNING（调用方须在独立短事务里调用并提交，外面才看得见）。
+     * STALE 是终态，不动。
+     */
+    public static int markRunning(UUID itemId) {
+        return update("status = ?1, updatedAt = ?2 where id = ?3 and status <> ?4",
+                RUNNING, OffsetDateTime.now(), itemId, STALE);
+    }
+
+    /**
+     * repair-260918 B-10 / B-11：把仍为 WAITING / RUNNING 的明细一次性置 FAILED（一条批量 UPDATE）。
+     *
+     * @param jobIds   批次范围（必填）
+     * @param itemIds  非 null 时只动这些明细（执行入口兜底只收自己这次负责的那批，不误伤并发的单条重试）
+     */
+    public static int failUnfinished(java.util.Collection<UUID> jobIds, java.util.Collection<UUID> itemIds,
+                                     String errorCode, String errorMessage) {
+        if (jobIds == null || jobIds.isEmpty()) return 0;
+        if (itemIds == null) {
+            return update("status = ?1, errorCode = ?2, errorMessage = ?3, updatedAt = ?4 " +
+                    "where jobId in ?5 and status in (?6, ?7)",
+                FAILED, errorCode, errorMessage, OffsetDateTime.now(), jobIds, WAITING, RUNNING);
+        }
+        if (itemIds.isEmpty()) return 0;
+        return update("status = ?1, errorCode = ?2, errorMessage = ?3, updatedAt = ?4 " +
+                "where jobId in ?5 and status in (?6, ?7) and id in ?8",
+            FAILED, errorCode, errorMessage, OffsetDateTime.now(), jobIds, WAITING, RUNNING, itemIds);
+    }
+
+    /** repair-260918 B-4⑤：本组已 SUCCESS 的明细因写本期版本记录失败改 FAILED（一条批量 UPDATE）。 */
+    public static int markRevisionWriteFailed(java.util.Collection<UUID> itemIds, String errorCode, String errorMessage) {
+        if (itemIds == null || itemIds.isEmpty()) return 0;
+        return update("status = ?1, errorCode = ?2, errorMessage = ?3, updatedAt = ?4 where id in ?5 and status = ?6",
+            FAILED, errorCode, errorMessage, OffsetDateTime.now(), itemIds, SUCCESS);
+    }
+
+    /**
+     * repair-260918 B-5（AC-9 / AC-16 补充）：各批次按状态实时汇总的明细数，一条 {@code GROUP BY job_id, status}
+     * （🚫 逐批次查）。返回 {@code jobId → (status → count)}；没有明细的批次不在 map 里。
+     */
+    public static java.util.Map<UUID, java.util.Map<String, Integer>> countByStatusForJobs(java.util.Collection<UUID> jobIds) {
+        java.util.Map<UUID, java.util.Map<String, Integer>> out = new java.util.HashMap<>();
+        if (jobIds == null || jobIds.isEmpty()) return out;
+        List<Object[]> rows = getEntityManager().createQuery(
+                "select i.jobId, i.status, count(i) from MaterialPriceUpdateJobItem i " +
+                "where i.jobId in :ids group by i.jobId, i.status", Object[].class)
+            .setParameter("ids", jobIds)
+            .getResultList();
+        for (Object[] r : rows) { // pure in-memory distribution
+            out.computeIfAbsent((UUID) r[0], k -> new java.util.HashMap<>())
+               .put((String) r[1], ((Number) r[2]).intValue());
+        }
+        return out;
+    }
+
+    /**
      * job 名下<b>所有非 SUCCESS 项</b>（WAITING/RUNNING/FAILED/CONFLICT）一律置 STALE 终态
      * （§11.6.3.2，版本被新版取代时）。
      *

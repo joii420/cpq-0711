@@ -1,0 +1,37 @@
+{
+  "review": {
+    "id": "881dfdf5-f4fe-469a-95e5-8fc103e60b65",
+    "lines": 15,
+    "material_no": "S0011",
+    "quotation_number": "QT-20260910-0805"
+  },
+  "probe": {
+    "found": true,
+    "why": "ok",
+    "headers": [
+      "元素",
+      "命中规则",
+      "上版价",
+      "本版价",
+      "涨跌",
+      "该料号用量",
+      "对单价影响",
+      "标记"
+    ],
+    "rowTexts": [
+      "Ag 银 客户调价策略 28892.5 28893.5 +0.0035% 0 0"
+    ],
+    "cellText": "+0.0035%",
+    "rateHits": [
+      {
+        "text": "+0.0035%",
+        "color": "rgb(207, 19, 34)",
+        "tag": "SPAN"
+      }
+    ],
+    "refColor": "rgba(0, 0, 0, 0.88)",
+    "refSource": "同行第 1 格「Ag 银」<TD>",
+    "priceColor": "",
+    "priceSource": ""
+  }
+}
