@@ -1,0 +1,14 @@
+
+Running 1 test using 1 worker
+
+[pgrep] others=[]
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-21-已勾选.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-21-重启前.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-21-重启后.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-21-重启后35秒.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/mainline-results.json
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-21-重启日志.txt
+  ✓  1 e2e/mainline260918-verify.spec.ts:270:3 › repair-260918 主线亲验（写流程） › AC-21 · 批次执行中服务重启（热重载） (51.9s)
+
+  1 passed (52.7s)
+PW_EXIT=0

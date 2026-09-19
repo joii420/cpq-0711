@@ -9,6 +9,7 @@
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import fs from 'node:fs';
+import { execSync } from 'node:child_process';
 import { apiLogin, gotoApp, sql, shot, writeEvid, assertNoOtherPlaywright, drawer, dump } from './repair260918-sui.helpers';
 
 const LOG_8081 = '/tmp/claude-1000/-home-joii-project-cpq/4b0ef42f-bb97-49fa-8d26-13f122f32e2b/scratchpad/shared-8081.log';
@@ -263,6 +264,107 @@ test.describe.serial('repair-260918 主线亲验（写流程）', () => {
     expect(logs.length).toBe(1);
     expect(R.ac11.controlsUnchanged).toBe(true);
     expect(R.ac11.approved.every((x: any) => x.eq), JSON.stringify(R.ac11.approved)).toBe(true);
+  });
+
+  // AC-21：用户 2026-09-18 23:4x 单独批准（D-9）—— 批次执行中热重载 8081 一次（同 D-4 方式：touch 一个被监视的 java 源文件，内容不变）。
+  test('AC-21 · 批次执行中服务重启（热重载）', async ({ page }) => {
+    await apiLogin(page);
+    const mats = ['PERFHOT-B00070', 'PERFHOT-B00071', 'PERFHOT-B00072', 'PERFHOT-B00073', 'PERFHOT-B00074'];
+    const TOUCH = '/home/joii/project/cpq/cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceAdjustFailureTranslator.java';
+    expect(sql<any>(`select id from material_price_update_job where status='RUNNING'`).length, '触发前不应有别的执行中批次（启动收尾会波及）').toBe(0);
+    const reqs: { t: number; url: string }[] = [];
+    page.on('request', r => { if (r.url().includes('/api/cpq/price-adjust/jobs/')) reqs.push({ t: Date.now(), url: r.url() }); });
+    const a = await approve(page, mats, 'AC-21', { keyword: 'PERFHOT-B0007' });
+    const jd = drawer(page, /更新执行进度/);
+    await expect(jd).toBeVisible({ timeout: 30_000 });
+    const counts = () => Object.fromEntries(sql<{ status: string; n: number }>(
+      `select status, count(*) n from material_price_update_job_item where job_id='${a.jobId}' group by 1`).map(x => [x.status, Number(x.n)]));
+    let c: Record<string, number> = {};
+    const tw = Date.now();
+    for (;;) {
+      c = counts();
+      if ((c.SUCCESS ?? 0) >= 1 && (c.RUNNING ?? 0) >= 1 && (c.WAITING ?? 0) >= 1) break;
+      if (jobOf(a.jobId).status !== 'RUNNING' || Date.now() - tw > 60_000) throw new Error(`没等到重启窗口（未触发重启）：${JSON.stringify(c)}`);
+      await new Promise(r => setTimeout(r, 200));
+    }
+    const itemsAtTrigger = sql<any>(`select id, material_no, quotation_id, status from material_price_update_job_item where job_id='${a.jobId}' order by created_at`);
+    await shot(jd, 'AC-21-重启前');
+    const logN0 = logLines().length;
+    const tTouch = Date.now();
+    execSync(`touch '${TOUCH}'`);
+    // 立即发一个请求触发热重载（Quarkus dev 在下一个 HTTP 请求时检测改动并重启应用）
+    await page.request.get('http://localhost:8081/api/cpq/components?page=1&size=1', { failOnStatusCode: false, timeout: 180_000 }).catch(() => {});
+    let upLine = '';
+    for (const t = Date.now(); Date.now() - t < 180_000;) {
+      upLine = logLines().slice(logN0).find(l => l.includes('[price-adjust-recovery] 启动收尾')) ?? '';
+      if (upLine) break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    expect(upLine, '热重载后应出现启动收尾日志').not.toBe('');
+    const tUp = Date.now();
+    let j = jobOf(a.jobId);
+    while (j.status === 'RUNNING' && Date.now() - tUp < 60_000) { await new Promise(r => setTimeout(r, 1000)); j = jobOf(a.jobId); }
+    const tFinal = Date.now();
+    const itemsAfter = sql<any>(`select i.id, i.material_no, q.quotation_number qn, i.status, i.error_code, i.error_message
+      from material_price_update_job_item i join quotation q on q.id=i.quotation_id where i.job_id='${a.jobId}' order by i.created_at`);
+    const cur = sql<any>(`select q.quotation_number qn, r.upgraded_material_nos::text nos from quotation_price_revision r join quotation q on q.id=r.quotation_id
+      join element_price_version v on v.id=r.based_version_id where v.version_no='${VNO}' and q.quotation_number in ('${Q0629}','${Q0842}')`);
+    const succInRev = itemsAfter.filter((i: any) => i.status === 'SUCCESS')
+      .map((i: any) => ({ ...i, inCurrentRev: (cur.find((c2: any) => c2.qn === i.qn)?.nos ?? '').includes(`"${i.material_no}"`) }));
+    await page.waitForTimeout(3000);
+    await shot(jd, 'AC-21-重启后');
+    await page.waitForTimeout(32_000);
+    await shot(jd, 'AC-21-重启后35秒');
+    const reqsAfterFinal = reqs.filter(r => r.t > tFinal + 3000);
+    const restartLog = logLines().slice(logN0).filter(l => /price-adjust|revision-write|\[perf\] upgrade.*dryRun=false|Installed features|stopped in|started in|ERROR/.test(l)).slice(0, 120);
+    const jobItemCounts = sql<any>(`select total_count, success_count, failed_count, conflict_count, status from material_price_update_job where id='${a.jobId}'`)[0];
+    R.ac21 = { jobId: a.jobId, triggerCounts: c, itemsAtTrigger, touchAt: new Date(tTouch).toISOString(), upLine, secsTouchToUp: (tUp - tTouch) / 1000,
+      secsUpToFinal: (tFinal - tUp) / 1000, job: j, jobItemCounts, itemsAfter, succInRev, reqsTotal: reqs.length, reqsAfterFinal, restartLog };
+    save();
+    writeEvid('AC-21-重启日志.txt', restartLog.join('\n'));
+    expect(j.status, JSON.stringify(R.ac21.job)).not.toBe('RUNNING');
+    expect(succInRev.every((s: any) => s.inCurrentRev), JSON.stringify(succInRev)).toBe(true);
+    const unfinished = itemsAfter.filter((i: any) => i.status !== 'SUCCESS');
+    expect(unfinished.length, '应有被中断的明细').toBeGreaterThan(0);
+    expect(unfinished.every((i: any) => i.status === 'FAILED' && i.error_code === 'EXECUTION_INTERRUPTED'), JSON.stringify(unfinished)).toBe(true);
+    expect(reqsAfterFinal.length, JSON.stringify(reqsAfterFinal.slice(0, 5))).toBe(0);
+  });
+
+  // D-9 收尾：AC-21 中断的 9 条明细用「批量重试全部失败+冲突项」补齐（兼在真实数据上看 AC-24「失败明细纳入批量重试」）。
+  test('AC-21 收尾 · 批量重试补齐中断明细', async ({ page }) => {
+    await apiLogin(page);
+    const jobId = R.ac21?.jobId as string;
+    expect(jobId, '需先跑 AC-21').toBeTruthy();
+    const before = sql<any>(`select status, error_code, count(*) n from material_price_update_job_item where job_id='${jobId}' group by 1,2 order by 1`);
+    const newest = sql<{ id: string }>(`select id from material_price_update_job order by triggered_at desc limit 1`)[0].id;
+    expect(newest, '批次列表第一行应是 AC-21 的批次').toBe(jobId);
+    await gotoApp(page, '/pricing/jobs');
+    const row = page.locator('tr.ant-table-row').filter({ hasText: VNO }).first();
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    await row.locator('input[type=checkbox]').first().check();
+    await expect(page.getByText(/已选\s*1\s*项/).first()).toBeVisible();
+    await page.getByRole('button', { name: /批量重试全部失败\+冲突项/ }).first().click();
+    const confirm = page.locator('.ant-modal:visible').getByRole('button', { name: /批量重试|确\s*认|确\s*定/ });
+    if (await confirm.count()) await confirm.first().click();
+    const probes: any[] = [];
+    let j = jobOf(jobId);
+    for (const t = Date.now(); Date.now() - t < 120_000;) {
+      const c = sql<any>(`select status, count(*) n from material_price_update_job_item where job_id='${jobId}' group by 1 order by 1`);
+      j = jobOf(jobId);
+      probes.push({ t: Date.now(), c, job: j.status });
+      if (c.length === 1 && c[0].status === 'SUCCESS' && j.status !== 'RUNNING') break;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    const after = sql<any>(`select status, error_code, retry_count, count(*) n from material_price_update_job_item where job_id='${jobId}' group by 1,2,3 order by 1`);
+    const cur = sql<any>(`select q.quotation_number qn, r.upgraded_material_nos::text nos from quotation_price_revision r join quotation q on q.id=r.quotation_id
+      join element_price_version v on v.id=r.based_version_id where v.version_no='${VNO}' and q.quotation_number in ('${Q0629}','${Q0842}') order by 1`);
+    const mats = ['PERFHOT-B00070', 'PERFHOT-B00071', 'PERFHOT-B00072', 'PERFHOT-B00073', 'PERFHOT-B00074'];
+    const covered = cur.map((c2: any) => ({ qn: c2.qn, all5: mats.every(m => c2.nos.includes(`"${m}"`)) }));
+    await shot(page, 'AC-21-收尾-批量重试后');
+    R.ac21retry = { jobId, before, after, job: j, sawRunning: probes.some(p => p.c.some((x: any) => x.status === 'RUNNING')), probes: probes.slice(0, 40), covered };
+    save();
+    expect(after.every((x: any) => x.status === 'SUCCESS'), JSON.stringify(after)).toBe(true);
+    expect(covered.every((c2: any) => c2.all5), JSON.stringify(covered)).toBe(true);
   });
 
   test('AC-10 · 跨两张大单批量通过 3 个料号', async ({ page }) => {

@@ -1,0 +1,24 @@
+--- cpq-backend/src/test/java/com/cpq/priceadjust/ac260918/Rp0918aApi.java	2026-09-18 23:01:43.398931077 -0700
++++ .claude/worktrees/rp0918-ac19-baseline/cpq-backend/src/test/java/com/cpq/priceadjust/ac260918/Rp0918aApi.java	2026-09-18 22:15:38.095534510 -0700
+@@ -35,21 +35,6 @@
+         }
+     }
+ 
+-    // ── 版本生成（用户入口：定价管理 → 立即生成一次） ─────────────────────────
+-
+-    /** {@code POST /versions/generate}（main-api §12.X.3），返回新版本 id；期望 201。 */
+-    public static UUID generateVersion(String customerNo, boolean confirmSupersede) {
+-        Response r = RestAssured.given().contentType(ContentType.JSON)
+-            .body("{\"customerNo\":\"" + customerNo + "\",\"confirmSupersede\":" + confirmSupersede + "}")
+-            .post(BASE + "/versions/generate");
+-        if (r.statusCode() != 201 && r.statusCode() != 200) {
+-            throw new AssertionError("生成版本 HTTP " + r.statusCode() + " " + r.asString());
+-        }
+-        String id = json(r).path("versionId").asText(null);
+-        if (id == null) throw new AssertionError("生成版本响应没有 versionId: " + r.asString());
+-        return UUID.fromString(id);
+-    }
+-
+     // ── 审核 ───────────────────────────────────────────────────────────────
+ 
+     public static Response approve(Collection<UUID> reviewIds) {
