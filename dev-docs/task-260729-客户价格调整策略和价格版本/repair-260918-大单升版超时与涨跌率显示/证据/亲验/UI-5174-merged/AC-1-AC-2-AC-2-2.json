@@ -1,0 +1,37 @@
+{
+  "review": {
+    "id": "0e7ed106-5ec5-4844-a688-9b1bb54c8843",
+    "lines": 6,
+    "material_no": "T260907-M1",
+    "quotation_number": "QT-20260908-0613"
+  },
+  "probe": {
+    "found": true,
+    "why": "ok",
+    "headers": [
+      "元素",
+      "命中规则",
+      "上版价",
+      "本版价",
+      "涨跌",
+      "该料号用量",
+      "对单价影响",
+      "标记"
+    ],
+    "rowTexts": [
+      "Ag 银 客户调价策略 28892.5 28893.5 +0.0035% 0 0"
+    ],
+    "cellText": "+0.0035%",
+    "rateHits": [
+      {
+        "text": "+0.0035%",
+        "color": "rgb(207, 19, 34)",
+        "tag": "SPAN"
+      }
+    ],
+    "refColor": "rgba(0, 0, 0, 0.88)",
+    "refSource": "同行第 1 格「Ag 银」<TD>",
+    "priceColor": "",
+    "priceSource": ""
+  }
+}

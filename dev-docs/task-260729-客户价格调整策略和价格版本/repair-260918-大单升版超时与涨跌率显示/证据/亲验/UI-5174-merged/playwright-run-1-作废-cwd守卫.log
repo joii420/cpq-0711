@@ -1,0 +1,157 @@
+
+Running 21 tests using 1 worker
+
+  ✘   1 e2e/repair260918-ac1-ac2-real.spec.ts:40:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-1 · AC-1 版本明细：银「涨跌」= +0.0035% 红；序列：关抽屉→重开→刷新页面后仍一致 (0ms)
+  -   2 e2e/repair260918-ac1-ac2-real.spec.ts:76:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-2① · AC-2 元素矩阵：V26091802 列银格涨跌小字 = +0.0035% 红
+  -   3 e2e/repair260918-ac1-ac2-real.spec.ts:93:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-2② · AC-2 审核抽屉「一、为什么变」：银「涨跌」= +0.0035% 红
+  -   4 e2e/repair260918-ac1-ac2-real.spec.ts:108:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-2 · 三处一致（汇总）
+  ✘   5 e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} (0ms)
+  ✘   6 e2e/repair260918-ac26-budget-error-tooltip.spec.ts:63:3 › S-UI · AC-26 预算失败原因悬停提示 › T-UI-26 · 悬停「预算失败」⇒ 提示 = budgetError 原文；budgetError 为空 ⇒ 无提示；「重算」可见 (0ms)
+  ✘   7 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=0.000000034611 → +<0.0001%（red） (0ms)
+  -   8 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=-0.000000034611 → -<0.0001%（green）
+  -   9 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=0 → 0%（none）
+  -  10 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=-0.0125 → -1.25%（green）
+  -  11 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=null → —（none）
+  -  12 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=0.000000034611 → +<0.0001%（red）
+  -  13 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.000000034611 → -<0.0001%（green）
+  -  14 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=0 → 0%（none）
+  -  15 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.0125 → -1.25%（green）
+  -  16 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=null → —（none）
+  -  17 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=0.000000034611 → +<0.0001%（red）
+  -  18 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=-0.000000034611 → -<0.0001%（green）
+  -  19 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=0 → 0%（none）
+  -  20 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=-0.0125 → -1.25%（green）
+  -  21 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=null → —（none）
+
+
+  1) e2e/repair260918-ac1-ac2-real.spec.ts:40:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-1 · AC-1 版本明细：银「涨跌」= +0.0035% 红；序列：关抽屉→重开→刷新页面后仍一致 
+
+    Error: 必须在 worktree 内运行（cwd=/home/joii/project/cpq/cpq-frontend）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+       at repair260918-sui.helpers.ts:53
+
+      51 | export function ensureDirs() {
+      52 |   expect(BASE_URL, '必须给 PW_BASE_URL 并用 -c e2e/repair260918-sui.config.ts 运行').toBeTruthy();
+    > 53 |   expect(process.cwd().startsWith(WORKTREE), `必须在 worktree 内运行（cwd=${process.cwd()}）`).toBe(true);
+         |                                                                                        ^
+      54 |   expect(fs.existsSync(TASK_DIR), `任务目录必须存在：${TASK_DIR}`).toBe(true);
+      55 |   fs.mkdirSync(EVID_DIR, { recursive: true });
+      56 | }
+        at ensureDirs (/home/joii/project/cpq/cpq-frontend/e2e/repair260918-sui.helpers.ts:53:88)
+        at /home/joii/project/cpq/cpq-frontend/e2e/repair260918-ac1-ac2-real.spec.ts:32:5
+
+    Error Context: e2e/test-results/repair260918-sui/repair260918-ac1-ac2-real--d306f-0-0035-红；序列：关抽屉→重开→刷新页面后仍一致/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac1-ac2-real--d306f-0-0035-红；序列：关抽屉→重开→刷新页面后仍一致/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/repair260918-sui/repair260918-ac1-ac2-real--d306f-0-0035-红；序列：关抽屉→重开→刷新页面后仍一致/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} 
+
+    Error: 必须在 worktree 内运行（cwd=/home/joii/project/cpq/cpq-frontend）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+       at repair260918-sui.helpers.ts:53
+
+      51 | export function ensureDirs() {
+      52 |   expect(BASE_URL, '必须给 PW_BASE_URL 并用 -c e2e/repair260918-sui.config.ts 运行').toBeTruthy();
+    > 53 |   expect(process.cwd().startsWith(WORKTREE), `必须在 worktree 内运行（cwd=${process.cwd()}）`).toBe(true);
+         |                                                                                        ^
+      54 |   expect(fs.existsSync(TASK_DIR), `任务目录必须存在：${TASK_DIR}`).toBe(true);
+      55 |   fs.mkdirSync(EVID_DIR, { recursive: true });
+      56 | }
+        at ensureDirs (/home/joii/project/cpq/cpq-frontend/e2e/repair260918-sui.helpers.ts:53:88)
+        at /home/joii/project/cpq/cpq-frontend/e2e/repair260918-ac16-job-progress.spec.ts:62:5
+
+    Error Context: e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) e2e/repair260918-ac26-budget-error-tooltip.spec.ts:63:3 › S-UI · AC-26 预算失败原因悬停提示 › T-UI-26 · 悬停「预算失败」⇒ 提示 = budgetError 原文；budgetError 为空 ⇒ 无提示；「重算」可见 
+
+    Error: 必须在 worktree 内运行（cwd=/home/joii/project/cpq/cpq-frontend）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+       at repair260918-sui.helpers.ts:53
+
+      51 | export function ensureDirs() {
+      52 |   expect(BASE_URL, '必须给 PW_BASE_URL 并用 -c e2e/repair260918-sui.config.ts 运行').toBeTruthy();
+    > 53 |   expect(process.cwd().startsWith(WORKTREE), `必须在 worktree 内运行（cwd=${process.cwd()}）`).toBe(true);
+         |                                                                                        ^
+      54 |   expect(fs.existsSync(TASK_DIR), `任务目录必须存在：${TASK_DIR}`).toBe(true);
+      55 |   fs.mkdirSync(EVID_DIR, { recursive: true });
+      56 | }
+        at ensureDirs (/home/joii/project/cpq/cpq-frontend/e2e/repair260918-sui.helpers.ts:53:88)
+        at /home/joii/project/cpq/cpq-frontend/e2e/repair260918-ac26-budget-error-tooltip.spec.ts:56:5
+
+    Error Context: e2e/test-results/repair260918-sui/repair260918-ac26-budget-e-4d6df-budgetError-为空-⇒-无提示；「重算」可见/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac26-budget-e-4d6df-budgetError-为空-⇒-无提示；「重算」可见/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/repair260918-sui/repair260918-ac26-budget-e-4d6df-budgetError-为空-⇒-无提示；「重算」可见/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=0.000000034611 → +<0.0001%（red） 
+
+    Error: 必须在 worktree 内运行（cwd=/home/joii/project/cpq/cpq-frontend）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32mtrue[39m
+    Received: [31mfalse[39m
+
+       at repair260918-sui.helpers.ts:53
+
+      51 | export function ensureDirs() {
+      52 |   expect(BASE_URL, '必须给 PW_BASE_URL 并用 -c e2e/repair260918-sui.config.ts 运行').toBeTruthy();
+    > 53 |   expect(process.cwd().startsWith(WORKTREE), `必须在 worktree 内运行（cwd=${process.cwd()}）`).toBe(true);
+         |                                                                                        ^
+      54 |   expect(fs.existsSync(TASK_DIR), `任务目录必须存在：${TASK_DIR}`).toBe(true);
+      55 |   fs.mkdirSync(EVID_DIR, { recursive: true });
+      56 | }
+        at ensureDirs (/home/joii/project/cpq/cpq-frontend/e2e/repair260918-sui.helpers.ts:53:88)
+        at /home/joii/project/cpq/cpq-frontend/e2e/repair260918-ac4-rate-boundary.spec.ts:63:5
+
+    Error Context: e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-ac8bf-000000034611-→-0-0001-（red）/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-ac8bf-000000034611-→-0-0001-（red）/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-ac8bf-000000034611-→-0-0001-（red）/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4 failed
+    e2e/repair260918-ac1-ac2-real.spec.ts:40:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-1 · AC-1 版本明细：银「涨跌」= +0.0035% 红；序列：关抽屉→重开→刷新页面后仍一致 
+    e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} 
+    e2e/repair260918-ac26-budget-error-tooltip.spec.ts:63:3 › S-UI · AC-26 预算失败原因悬停提示 › T-UI-26 · 悬停「预算失败」⇒ 提示 = budgetError 原文；budgetError 为空 ⇒ 无提示；「重算」可见 
+    e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=0.000000034611 → +<0.0001%（red） 
+  17 did not run
+PW_EXIT=1

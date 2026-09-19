@@ -1,0 +1,225 @@
+
+Running 21 tests using 1 worker
+
+[pgrep] others=[]
+[precondition] CUST-0004 V26091802 Ag = [{"id":"a4147c07-4e2d-412b-b896-c4dd87fe6613","status":"PENDING","change_rate":"0.000035000000","current_price":"28893.500000000000","previous_price":"28892.500000000000"}]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-1-AC-2-AC-1.json
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-1-版本明细-V26091802-银.png
+[AC-1 版本明细·首次] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 +0.0035%"],"cellText":"+0.0035%","rateHits":[{"text":"+0.0035%","color":"rgb(207, 19, 34)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-1 版本明细·重开] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 +0.0035%"],"cellText":"+0.0035%","rateHits":[{"text":"+0.0035%","color":"rgb(207, 19, 34)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-1 版本明细·刷新后] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 +0.0035%"],"cellText":"+0.0035%","rateHits":[{"text":"+0.0035%","color":"rgb(207, 19, 34)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-1-版本明细-刷新后.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-1-AC-2-AC-1.json
+[AC-1 实际] +0.0035% rgb(207, 19, 34)（期望 +0.0035% rgb(207, 19, 34)）
+  ✓   1 e2e/repair260918-ac1-ac2-real.spec.ts:40:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-1 · AC-1 版本明细：银「涨跌」= +0.0035% 红；序列：关抽屉→重开→刷新页面后仍一致 (10.6s)
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-1-AC-2-AC-2-1.json
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-2-1-元素矩阵-V26091802-银.png
+[AC-2① 元素矩阵] probe={"found":true,"why":"ok","headers":["","元素符号","元素名称","V26091802 待处理","V26091801 已被取代"],"rowTexts":["Ag 银 28893.5 +0.0035% 28892.5 —","TEST-EL-AG 测试银 — —","TEST-LMA-AG 测试银4 — —","TEST-PM-AG 测试银3 — —","TEST-PT-AG 测试银2 — —","TEST-ST-AG 测试银3 — —"],"cellText":"28893.5 +0.0035%","rateHits":[{"text":"+0.0035%","color":"rgb(207, 19, 34)","tag":"DIV"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 2 格「Ag」<TD>","priceColor":"rgba(0, 0, 0, 0.88)","priceSource":"同格单价「28893.5」<DIV>"}
+[AC-2① 实际] +0.0035% rgb(207, 19, 34)；格文本「28893.5 +0.0035%」
+  ✓   2 e2e/repair260918-ac1-ac2-real.spec.ts:76:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-2① · AC-2 元素矩阵：V26091802 列银格涨跌小字 = +0.0035% 红 (4.1s)
+[pickReview] candidates=[{"id":"0e7ed106-5ec5-4844-a688-9b1bb54c8843","lines":6,"material_no":"T260907-M1","quotation_number":"QT-20260908-0613"},{"id":"881dfdf5-f4fe-469a-95e5-8fc103e60b65","lines":15,"material_no":"S0011","quotation_number":"QT-20260910-0805"},{"id":"e189d5f4-422f-4598-ae58-1a67f99caf1b","lines":1200,"material_no":"0028-2609000013","quotation_number":"QT-20260911-0842"},{"id":"4d256e1c-9833-4ae8-b76d-ec758dd832e6","lines":1200,"material_no":"0028-2609000014","quotation_number":"QT-20260911-0842"},{"id":"bd5252cc-4265-4c06-8059-581f06a568a8","lines":1200,"material_no":"PERF0909-B00015","quotation_number":"QT-20260911-0842"}]（共 201）
+[AC-2② 选用审核] {"id":"0e7ed106-5ec5-4844-a688-9b1bb54c8843","lines":6,"material_no":"T260907-M1","quotation_number":"QT-20260908-0613"}
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=T260907-M1&customerNo=CUST-0004 status=200 content 1 → 1
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=T260907-M1&customerNo=CUST-0004 status=200 content 1 → 1
+[review-drawer] T260907-M1 抽屉银行出现耗时 953 ms
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-1-AC-2-AC-2-2.json
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-2-2-审核抽屉-T260907-M1-银.png
+[AC-2② 审核抽屉] probe={"found":true,"why":"ok","headers":["元素","命中规则","上版价","本版价","涨跌","该料号用量","对单价影响","标记"],"rowTexts":["Ag 银 客户调价策略 28892.5 28893.5 +0.0035% 0 0"],"cellText":"+0.0035%","rateHits":[{"text":"+0.0035%","color":"rgb(207, 19, 34)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-2② 实际] +0.0035% rgb(207, 19, 34)
+  ✓   3 e2e/repair260918-ac1-ac2-real.spec.ts:93:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-2② · AC-2 审核抽屉「一、为什么变」：银「涨跌」= +0.0035% 红 (4.0s)
+[AC-2 一致性] ["+0.0035%","+0.0035%","+0.0035%"] customer=CUST-0004
+  ✓   4 e2e/repair260918-ac1-ac2-real.spec.ts:108:3 › S-UI · AC-1 / AC-2 真实数据 › T-UI-2 · 三处一致（汇总） (1ms)
+[pgrep] others=[]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[jobs-page] url=http://localhost:5174/pricing/jobs
+  ✘   5 e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} (32.0s)
+[pgrep] others=[]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[AC-26 列表改写] ["http://localhost:5174/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING real=200 wrapped=false","http://localhost:5174/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING real=200 wrapped=false"]
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-26-悬停-有原因.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-26-悬停-无原因.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-26-results.json
+[AC-26 结果] {"tagColor":"rgb(207, 19, 34)","tooltipA":["预算试算超时（超过 60 秒）"],"tooltipB":[],"listHits":["http://localhost:5174/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING real=200 wrapped=false","http://localhost:5174/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING real=200 wrapped=false"],"blocked":[]}
+  ✓   6 e2e/repair260918-ac26-budget-error-tooltip.spec.ts:63:3 › S-UI · AC-26 预算失败原因悬停提示 › T-UI-26 · 悬停「预算失败」⇒ 提示 = budgetError 原文；budgetError 为空 ⇒ 无提示；「重算」可见 (6.5s)
+[pgrep] others=[]
+[precondition] CUST-0004 V26091802 Ag = [{"id":"a4147c07-4e2d-412b-b896-c4dd87fe6613","status":"PENDING","change_rate":"0.000035000000","current_price":"28893.500000000000","previous_price":"28892.500000000000"}]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-版本明细-0.000000034611.png
+[AC-4][版本明细][0.000000034611] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/versions/a4147c07-4e2d-412b-b896-c4dd87fe6613/items?page=1&size=200 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)"]
+[AC-4 版本明细 0.000000034611] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 +<0.0001%"],"cellText":"+<0.0001%","rateHits":[{"text":"+<0.0001%","color":"rgb(207, 19, 34)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+  ✓   7 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=0.000000034611 → +<0.0001%（red） (4.3s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-版本明细--0.000000034611.png
+[AC-4][版本明细][-0.000000034611] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/versions/a4147c07-4e2d-412b-b896-c4dd87fe6613/items?page=1&size=200 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)"]
+[AC-4 版本明细 -0.000000034611] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 -<0.0001%"],"cellText":"-<0.0001%","rateHits":[{"text":"-<0.0001%","color":"rgb(56, 158, 13)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+  ✓   8 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=-0.000000034611 → -<0.0001%（green） (4.2s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-版本明细-0.png
+[AC-4][版本明细][0] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/versions/a4147c07-4e2d-412b-b896-c4dd87fe6613/items?page=1&size=200 status=200 orig=\"0.000035\"(string) → 0(string)"]
+[AC-4 版本明细 0] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 0%"],"cellText":"0%","rateHits":[{"text":"0%","color":"rgba(0, 0, 0, 0.88)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-4 版本明细 0] 无色参考=同行第 1 格「Ag 银」<TD> color=rgba(0, 0, 0, 0.88)；涨跌文字 color=rgba(0, 0, 0, 0.88)
+  ✓   9 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=0 → 0%（none） (4.1s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-版本明细--0.0125.png
+[AC-4][版本明细][-0.0125] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/versions/a4147c07-4e2d-412b-b896-c4dd87fe6613/items?page=1&size=200 status=200 orig=\"0.000035\"(string) → -0.0125(string)"]
+[AC-4 版本明细 -0.0125] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 -1.25%"],"cellText":"-1.25%","rateHits":[{"text":"-1.25%","color":"rgb(56, 158, 13)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+  ✓  10 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=-0.0125 → -1.25%（green） (4.2s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-版本明细-null.png
+[AC-4][版本明细][null] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/versions/a4147c07-4e2d-412b-b896-c4dd87fe6613/items?page=1&size=200 status=200 orig=\"0.000035\"(string) → null(string)"]
+[AC-4 版本明细 null] probe={"found":true,"why":"ok","headers":["元素","本期价","上期价","涨跌","标记"],"rowTexts":["Ag 银 28893.5 28892.5 —"],"cellText":"—","rateHits":[{"text":"—","color":"rgba(0, 0, 0, 0.88)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-4 版本明细 null] 无色参考=同行第 1 格「Ag 银」<TD> color=rgba(0, 0, 0, 0.88)；涨跌文字 color=rgba(0, 0, 0, 0.88)
+  ✓  11 e2e/repair260918-ac4-rate-boundary.spec.ts:81:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [版本明细] changeRate=null → —（none） (4.0s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-元素矩阵-0.000000034611.png
+[AC-4][元素矩阵][0.000000034611] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → 0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20&keyword=Ag status=200 orig=\"0.000035\"(string) → 0.000000034611(string)"]
+[AC-4 元素矩阵 0.000000034611] probe={"found":true,"why":"ok","headers":["","元素符号","元素名称","V26091802 待处理","V26091801 已被取代"],"rowTexts":["191 191 — —","206 206 — —","223 223 — —","258 258 — —","301 301不锈钢 — —","304 304不锈钢 — —","316 316不锈钢 — —","430 430不锈钢 — —","721 721 — —","Ag 银 28893.5 +<0.0001% 28892.5 —","Al 铝 — —","Be 铍 — —","C 碳 — —","Cd 镉 — —","Ce 铈 — —","Cr 铬 — —","Cu 铜 — —","DC04 冷轧钢DC04 — —","Fe 铁 — —","H70 黄铜H70 — —"],"cellText":"28893.5 +<0.0001%","rateHits":[{"text":"+<0.0001%","color":"rgb(207, 19, 34)","tag":"DIV"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 2 格「Ag」<TD>","priceColor":"rgba(0, 0, 0, 0.88)","priceSource":"同格单价「28893.5」<DIV>"}
+  ✓  12 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=0.000000034611 → +<0.0001%（red） (4.1s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-元素矩阵--0.000000034611.png
+[AC-4][元素矩阵][-0.000000034611] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → -0.000000034611(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20&keyword=Ag status=200 orig=\"0.000035\"(string) → -0.000000034611(string)"]
+[AC-4 元素矩阵 -0.000000034611] probe={"found":true,"why":"ok","headers":["","元素符号","元素名称","V26091802 待处理","V26091801 已被取代"],"rowTexts":["Ag 银 28893.5 -<0.0001% 28892.5 —","TEST-EL-AG 测试银 — —","TEST-LMA-AG 测试银4 — —","TEST-PM-AG 测试银3 — —","TEST-PT-AG 测试银2 — —","TEST-ST-AG 测试银3 — —"],"cellText":"28893.5 -<0.0001%","rateHits":[{"text":"-<0.0001%","color":"rgb(56, 158, 13)","tag":"DIV"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 2 格「Ag」<TD>","priceColor":"rgba(0, 0, 0, 0.88)","priceSource":"同格单价「28893.5」<DIV>"}
+  ✓  13 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.000000034611 → -<0.0001%（green） (4.1s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-元素矩阵-0.png
+[AC-4][元素矩阵][0] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20&keyword=Ag status=200 orig=\"0.000035\"(string) → 0(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → 0(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → 0(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → 0(string)"]
+[AC-4 元素矩阵 0] probe={"found":true,"why":"ok","headers":["","元素符号","元素名称","V26091802 待处理","V26091801 已被取代"],"rowTexts":["191 191 — —","206 206 — —","223 223 — —","258 258 — —","301 301不锈钢 — —","304 304不锈钢 — —","316 316不锈钢 — —","430 430不锈钢 — —","721 721 — —","Ag 银 28893.5 0% 28892.5 —","Al 铝 — —","Be 铍 — —","C 碳 — —","Cd 镉 — —","Ce 铈 — —","Cr 铬 — —","Cu 铜 — —","DC04 冷轧钢DC04 — —","Fe 铁 — —","H70 黄铜H70 — —"],"cellText":"28893.5 0%","rateHits":[{"text":"0%","color":"rgba(0, 0, 0, 0.35)","tag":"DIV"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 2 格「Ag」<TD>","priceColor":"rgba(0, 0, 0, 0.88)","priceSource":"同格单价「28893.5」<DIV>"}
+[AC-4 元素矩阵 0] 无色参考=矩阵现网中性灰 rgba(0, 0, 0, 0.35)；涨跌文字 color=rgba(0, 0, 0, 0.35)（同格单价 同格单价「28893.5」<DIV> rgba(0, 0, 0, 0.88) 仅记录）
+  ✓  14 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=0 → 0%（none） (4.8s)
+  ✘  15 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.0125 → -1.25%（green） (32.0s)
+[pgrep] others=[]
+[precondition] CUST-0004 V26091802 Ag = [{"id":"a4147c07-4e2d-412b-b896-c4dd87fe6613","status":"PENDING","change_rate":"0.000035000000","current_price":"28893.500000000000","previous_price":"28892.500000000000"}]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-元素矩阵-null.png
+[AC-4][元素矩阵][null] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → null(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → null(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → null(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → null(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → null(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → null(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20&keyword=Ag status=200 orig=\"0.000035\"(string) → null(string)"]
+[AC-4 元素矩阵 null] probe={"found":true,"why":"ok","headers":["","元素符号","元素名称","V26091802 待处理","V26091801 已被取代"],"rowTexts":["Ag 银 28893.5 — 28892.5 —","TEST-EL-AG 测试银 — —","TEST-LMA-AG 测试银4 — —","TEST-PM-AG 测试银3 — —","TEST-PT-AG 测试银2 — —","TEST-ST-AG 测试银3 — —"],"cellText":"28893.5 —","rateHits":[{"text":"—","color":"rgba(0, 0, 0, 0.35)","tag":"DIV"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 2 格「Ag」<TD>","priceColor":"rgba(0, 0, 0, 0.88)","priceSource":"同格单价「28893.5」<DIV>"}
+[AC-4 元素矩阵 null] 无色参考=矩阵现网中性灰 rgba(0, 0, 0, 0.35)；涨跌文字 color=rgba(0, 0, 0, 0.35)（同格单价 同格单价「28893.5」<DIV> rgba(0, 0, 0, 0.88) 仅记录）
+  ✓  16 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=null → —（none） (4.3s)
+[pickReview] candidates=[{"id":"b206a056-8a62-4dd0-ada3-63369d01f0aa","lines":1,"material_no":"S3120011203","quotation_number":"QT-20260918-0908"},{"id":"0e7ed106-5ec5-4844-a688-9b1bb54c8843","lines":6,"material_no":"T260907-M1","quotation_number":"QT-20260908-0613"},{"id":"46574ec8-86ed-42cc-b022-5a5217f21259","lines":7,"material_no":"0028-2609000054","quotation_number":"QT-20260913-0859"},{"id":"881dfdf5-f4fe-469a-95e5-8fc103e60b65","lines":15,"material_no":"S0011","quotation_number":"QT-20260910-0805"},{"id":"e189d5f4-422f-4598-ae58-1a67f99caf1b","lines":1200,"material_no":"0028-2609000013","quotation_number":"QT-20260911-0842"}]（共 349）
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[review-drawer] S3120011203 抽屉银行出现耗时 1939 ms
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-审核抽屉-S3120011203-0.000000034611.png
+[AC-4][审核抽屉][0.000000034611] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/reviews/b206a056-8a62-4dd0-ada3-63369d01f0aa status=200 orig=\"0.000035\"(string) → 0.000000034611(string)"]
+[AC-4 审核抽屉 0.000000034611] probe={"found":true,"why":"ok","headers":["元素","命中规则","上版价","本版价","涨跌","该料号用量","对单价影响","标记"],"rowTexts":["Ag 银 客户调价策略 28892.5 28893.5 +<0.0001% 0.000054 0"],"cellText":"+<0.0001%","rateHits":[{"text":"+<0.0001%","color":"rgb(207, 19, 34)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+  ✓  17 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=0.000000034611 → +<0.0001%（red） (5.1s)
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[review-drawer] S3120011203 抽屉银行出现耗时 1945 ms
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-审核抽屉-S3120011203--0.000000034611.png
+[AC-4][审核抽屉][-0.000000034611] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/reviews/b206a056-8a62-4dd0-ada3-63369d01f0aa status=200 orig=\"0.000035\"(string) → -0.000000034611(string)"]
+[AC-4 审核抽屉 -0.000000034611] probe={"found":true,"why":"ok","headers":["元素","命中规则","上版价","本版价","涨跌","该料号用量","对单价影响","标记"],"rowTexts":["Ag 银 客户调价策略 28892.5 28893.5 -<0.0001% 0.000054 0"],"cellText":"-<0.0001%","rateHits":[{"text":"-<0.0001%","color":"rgb(56, 158, 13)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+  ✓  18 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=-0.000000034611 → -<0.0001%（green） (4.8s)
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[review-drawer] S3120011203 抽屉银行出现耗时 1943 ms
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-审核抽屉-S3120011203-0.png
+[AC-4][审核抽屉][0] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/reviews/b206a056-8a62-4dd0-ada3-63369d01f0aa status=200 orig=\"0.000035\"(string) → 0(string)"]
+[AC-4 审核抽屉 0] probe={"found":true,"why":"ok","headers":["元素","命中规则","上版价","本版价","涨跌","该料号用量","对单价影响","标记"],"rowTexts":["Ag 银 客户调价策略 28892.5 28893.5 0% 0.000054 0"],"cellText":"0%","rateHits":[{"text":"0%","color":"rgba(0, 0, 0, 0.88)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-4 审核抽屉 0] 无色参考=同行第 1 格「Ag 银」<TD> color=rgba(0, 0, 0, 0.88)；涨跌文字 color=rgba(0, 0, 0, 0.88)
+  ✓  19 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=0 → 0%（none） (4.7s)
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[review-drawer] S3120011203 抽屉银行出现耗时 1951 ms
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-审核抽屉-S3120011203--0.0125.png
+[AC-4][审核抽屉][-0.0125] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/reviews/b206a056-8a62-4dd0-ada3-63369d01f0aa status=200 orig=\"0.000035\"(string) → -0.0125(string)"]
+[AC-4 审核抽屉 -0.0125] probe={"found":true,"why":"ok","headers":["元素","命中规则","上版价","本版价","涨跌","该料号用量","对单价影响","标记"],"rowTexts":["Ag 银 客户调价策略 28892.5 28893.5 -1.25% 0.000054 0"],"cellText":"-1.25%","rateHits":[{"text":"-1.25%","color":"rgb(56, 158, 13)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+  ✓  20 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=-0.0125 → -1.25%（green） (4.8s)
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[reviews-list] /api/cpq/price-adjust/reviews?page=1&size=200&status=PENDING&keyword=S3120011203&customerNo=CUST-0004 status=200 content 1 → 1
+[review-drawer] S3120011203 抽屉银行出现耗时 1946 ms
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-审核抽屉-S3120011203-null.png
+[AC-4][审核抽屉][null] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/reviews/b206a056-8a62-4dd0-ada3-63369d01f0aa status=200 orig=\"0.000035\"(string) → null(string)"]
+[AC-4 审核抽屉 null] probe={"found":true,"why":"ok","headers":["元素","命中规则","上版价","本版价","涨跌","该料号用量","对单价影响","标记"],"rowTexts":["Ag 银 客户调价策略 28892.5 28893.5 — 0.000054 0"],"cellText":"—","rateHits":[{"text":"—","color":"rgba(0, 0, 0, 0.88)","tag":"SPAN"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 1 格「Ag 银」<TD>","priceColor":"","priceSource":""}
+[AC-4 审核抽屉 null] 无色参考=同行第 1 格「Ag 银」<TD> color=rgba(0, 0, 0, 0.88)；涨跌文字 color=rgba(0, 0, 0, 0.88)
+  ✓  21 e2e/repair260918-ac4-rate-boundary.spec.ts:130:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [审核抽屉] changeRate=null → —（none） (4.9s)
+
+
+  1) e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} 
+
+    Error: 批次列表应出现 V26091899
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('tr.ant-table-row').filter({ hasText: 'V26091899' }).first()
+    Expected: visible
+    Timeout: 30000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - 批次列表应出现 V26091899 with timeout 30000ms[22m
+    [2m  - waiting for locator('tr.ant-table-row').filter({ hasText: 'V26091899' }).first()[22m
+
+
+       at repair260918-sui.helpers.ts:496
+
+      494 | export async function openJobDrawer(page: Page, versionNo: string): Promise<Locator> {
+      495 |   const row = page.locator('tr.ant-table-row').filter({ hasText: versionNo }).first();
+    > 496 |   await expect(row, `批次列表应出现 ${versionNo}`).toBeVisible({ timeout: 30_000 });
+          |                                             ^
+      497 |   const link = row.locator('a').filter({ hasText: new RegExp(`^\\s*${versionNo}\\s*$`) });
+      498 |   if ((await link.count()) !== 1) await dump(page, 'AC-16-jobs-page');
+      499 |   await expect(link, `批次行里应恰有 1 个版本号链接「${versionNo}」（入口 = 点版本号）`).toHaveCount(1);
+        at openJobDrawer (/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-frontend/e2e/repair260918-sui.helpers.ts:496:45)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-frontend/e2e/repair260918-ac16-job-progress.spec.ts:104:21
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/repair260918-sui/repair260918-ac16-job-prog-378c4--完成后-30-秒内-0-次-GET-jobs-id-/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.0125 → -1.25%（green） 
+
+    Error: 定价管理页应有「搜索客户」输入框
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: locator('input[placeholder="搜索客户"]').first()
+    Expected: visible
+    Timeout: 30000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - 定价管理页应有「搜索客户」输入框 with timeout 30000ms[22m
+    [2m  - waiting for locator('input[placeholder="搜索客户"]').first()[22m
+
+
+       at repair260918-sui.helpers.ts:385
+
+      383 |   await gotoApp(page, '/pricing');
+      384 |   const search = page.locator('input[placeholder="搜索客户"]').first();
+    > 385 |   await expect(search, '定价管理页应有「搜索客户」输入框').toBeVisible({ timeout: 30_000 });
+          |                                            ^
+      386 |   await search.fill(CUST.name);
+      387 |   await search.press('Enter');
+      388 |   await page.locator('.ant-list-item').filter({ hasText: CUST.name }).first().click();
+        at openAdjustTab (/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-frontend/e2e/repair260918-sui.helpers.ts:385:44)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-frontend/e2e/repair260918-ac4-rate-boundary.spec.ts:118:7
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-fa5db-ate--0-0125-→--1-25-（green）/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-fa5db-ate--0-0125-→--1-25-（green）/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-fa5db-ate--0-0125-→--1-25-（green）/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/repair260918-sui/repair260918-ac4-rate-boun-fa5db-ate--0-0125-→--1-25-（green）/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} 
+    e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.0125 → -1.25%（green） 
+  19 passed (2.6m)
+PW_EXIT=1

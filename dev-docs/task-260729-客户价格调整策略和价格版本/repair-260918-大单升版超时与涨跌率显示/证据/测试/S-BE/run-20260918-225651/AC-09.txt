@@ -1,0 +1,14 @@
+[2026-09-18T22:58:16.038158580] ① 探针 7 次：
+  #0 running=1 success=0 total=7 明细分布={WAITING=6, RUNNING=1} 正在执行那条=RUNNING
+  #1 running=1 success=1 total=7 明细分布={WAITING=5, SUCCESS=1, RUNNING=1} 正在执行那条=RUNNING
+  #2 running=1 success=2 total=7 明细分布={WAITING=4, SUCCESS=2, RUNNING=1} 正在执行那条=RUNNING
+  #3 running=1 success=3 total=7 明细分布={WAITING=3, SUCCESS=3, RUNNING=1} 正在执行那条=RUNNING
+  #4 running=1 success=4 total=7 明细分布={WAITING=2, SUCCESS=4, RUNNING=1} 正在执行那条=RUNNING
+  #5 running=1 success=5 total=7 明细分布={WAITING=1, SUCCESS=5, RUNNING=1} 正在执行那条=RUNNING
+  #6 running=1 success=6 total=7 明细分布={SUCCESS=6, RUNNING=1} 正在执行那条=RUNNING
+[2026-09-18T22:58:16.038456973] ① 执行中 GET /jobs/95bd3746-e5e7-46f4-9e8d-9a348644f80a 原始响应（第 1 次探针）：{"jobId":"95bd3746-e5e7-46f4-9e8d-9a348644f80a","customerNo":"RP0918A-0f5ae34c","versionNo":"RP8A0f5ae34c-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:58:10.778946Z","status":"RUNNING","total":7,"success":0,"failed":0,"conflict":0,"stale":0,"skipped":0,"running":1,"finishedAt":null,"notified":false}
+[2026-09-18T22:58:16.038548196] ① 执行中 GET /jobs/95bd3746-e5e7-46f4-9e8d-9a348644f80a 原始响应（第 2 次探针）：{"jobId":"95bd3746-e5e7-46f4-9e8d-9a348644f80a","customerNo":"RP0918A-0f5ae34c","versionNo":"RP8A0f5ae34c-TGT","triggeredBy":"d1e1147c-a639-4156-aeac-9f938a65ad05","triggeredAt":"2026-09-19T05:58:10.778946Z","status":"RUNNING","total":7,"success":1,"failed":0,"conflict":0,"stale":0,"skipped":0,"running":1,"finishedAt":null,"notified":false}
+[2026-09-18T22:58:16.038650660] ① 违例：无
+[2026-09-18T22:58:16.057618828] ② 批次 95bd3746-e5e7-46f4-9e8d-9a348644f80a 从通过到完成 4824ms（扣探针 802ms 后 4022ms），每条 574.5714285714286ms；1.5×T₀=1165.5ms
+[2026-09-18T22:58:17.929053107] ③ 本期记录行数=1 已升版料号(8)=[RP0918A-0f5ae34c-QL-0432, RP0918A-0f5ae34c-QL-0007, RP0918A-0f5ae34c-QL-0217, RP0918A-0f5ae34c-QL-0259, RP0918A-0f5ae34c-QL-0368, RP0918A-0f5ae34c-QL-0485, RP0918A-0f5ae34c-QL-0598, RP0918A-0f5ae34c-QL-0150]（执行前=[RP0918A-0f5ae34c-QL-0432]）
+[2026-09-18T22:58:17.932753861] ④ 本批对 QL 的 revision-write 日志：[RevisionWrite[quotationId=0095bc2a-dd41-40d0-a064-7422d973c059, kind=CURRENT, ms=178, raw=[perf] revision-write quotation=0095bc2a-dd41-40d0-a064-7422d973c059 kind=CURRENT ms=178]]；CurrentPeriodRevisionWriter#write 调用 1 次

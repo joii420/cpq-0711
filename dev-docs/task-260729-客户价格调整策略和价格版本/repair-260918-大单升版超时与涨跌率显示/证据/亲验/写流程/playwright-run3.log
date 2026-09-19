@@ -1,0 +1,22 @@
+
+Running 2 tests using 1 worker
+
+[pgrep] others=[]
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00230.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00231.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00232.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00233.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00235.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00236.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00237.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-9-已勾选.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-9-执行中.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-9-完成.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/mainline-results.json
+  ✓  1 e2e/mainline260918-verify.spec.ts:220:3 › repair-260918 主线亲验（写流程） › AC-9 / AC-11 / AC-16 · 1200 行单批量通过 7 个料号 (31.9s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-10-已勾选.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/mainline-results.json
+  ✓  2 e2e/mainline260918-verify.spec.ts:268:3 › repair-260918 主线亲验（写流程） › AC-10 · 跨两张大单批量通过 3 个料号 (16.9s)
+
+  2 passed (49.6s)
+PW_EXIT=0

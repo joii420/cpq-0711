@@ -1,0 +1,30 @@
+
+Running 2 tests using 1 worker
+
+[pgrep] others=[]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[jobs-list] real status=200 wrapped=false → 伪造 1 条（RUNNING）
+[jobs-list] real status=200 wrapped=false → 伪造 1 条（RUNNING）
+[jobs-page] url=http://localhost:5174/pricing/jobs
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-16-counts-running.json
+[AC-16 执行中计数行] 总数 3 成功 1 失败 0 冲突 0 执行中 1 等待 1
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-16-执行中.png
+[AC-16 执行中轮询间隔(ms)] [2031]
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-16-counts-done.json
+[AC-16 完成计数行] 总数 3 成功 3 失败 0 冲突 0 执行中 0 等待 0
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-16-完成.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-16-requests.json
+[AC-16 结束后请求] []
+  ✓  1 e2e/repair260918-ac16-job-progress.spec.ts:69:3 › S-UI · AC-16 进度抽屉 › T-UI-16 · 执行中 1 / 等待 1 / 明细「执行中」→ 完成后 30 秒内 0 次 GET /jobs/{id} (37.9s)
+[pgrep] others=[]
+[precondition] CUST-0004 V26091802 Ag = [{"id":"a4147c07-4e2d-412b-b896-c4dd87fe6613","status":"PENDING","change_rate":"0.000035000000","current_price":"28893.500000000000","previous_price":"28892.500000000000"}]
+[identity] frontend :5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend expectTree=master
+[identity] api totalElements=208 cpq_db_0724.quotation=208
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/UI-5174-merged/AC-4-元素矩阵--0.0125.png
+[AC-4][元素矩阵][-0.0125] injectLog=["HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.0125(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.0125(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.0125(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → -0.0125(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20 status=200 orig=\"0.000035\"(string) → -0.0125(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=2000 status=200 orig=\"0.000035\"(string) → -0.0125(string)","HIT http://localhost:5174/api/cpq/price-adjust/strategies/CUST-0004/elements?includeDisabled=true&page=1&size=20&keyword=Ag status=200 orig=\"0.000035\"(string) → -0.0125(string)"]
+[AC-4 元素矩阵 -0.0125] probe={"found":true,"why":"ok","headers":["","元素符号","元素名称","V26091802 待处理","V26091801 已被取代"],"rowTexts":["191 191 — —","206 206 — —","223 223 — —","258 258 — —","301 301不锈钢 — —","304 304不锈钢 — —","316 316不锈钢 — —","430 430不锈钢 — —","721 721 — —","Ag 银 28893.5 -1.25% 28892.5 —","Al 铝 — —","Be 铍 — —","C 碳 — —","Cd 镉 — —","Ce 铈 — —","Cr 铬 — —","Cu 铜 — —","DC04 冷轧钢DC04 — —","Fe 铁 — —","H70 黄铜H70 — —"],"cellText":"28893.5 -1.25%","rateHits":[{"text":"-1.25%","color":"rgb(56, 158, 13)","tag":"DIV"}],"refColor":"rgba(0, 0, 0, 0.88)","refSource":"同行第 2 格「Ag」<TD>","priceColor":"rgba(0, 0, 0, 0.88)","priceSource":"同格单价「28893.5」<DIV>"}
+  ✓  2 e2e/repair260918-ac4-rate-boundary.spec.ts:104:5 › S-UI · AC-4 涨跌率显示边界 › T-UI-4 [元素矩阵] changeRate=-0.0125 → -1.25%（green） (4.1s)
+
+  2 passed (44.2s)
+PW_EXIT=0

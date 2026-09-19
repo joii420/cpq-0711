@@ -1,0 +1,70 @@
+
+Running 5 tests using 1 worker
+
+[pgrep] others=[]
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00007.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/mainline-results.json
+  ✓  1 e2e/mainline260918-verify.spec.ts:89:3 › repair-260918 主线亲验（写流程） › AC-6 / AC-7 · 大单审核抽屉 5 秒内打开 + 试算不写库 (6.5s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00432.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-8-重试前.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-8-重试后.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/mainline-results.json
+  ✓  2 e2e/mainline260918-verify.spec.ts:102:3 › repair-260918 主线亲验（写流程） › AC-8 / AC-20 · 失败明细单条重试（首次升版） (15.7s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/T0-已勾选.png
+[evidence] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/mainline-results.json
+  ✓  3 e2e/mainline260918-verify.spec.ts:175:3 › repair-260918 主线亲验（写流程） › T₀ · 12 行小单单条基准 (6.9s)
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00007.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00217.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00259.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00368.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00485.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF600-B00598.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/drawer-PERF0909-B00150.png
+[shot] /home/joii/project/cpq/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/亲验/写流程/AC-9-已勾选.png
+  ✘  4 e2e/mainline260918-verify.spec.ts:184:3 › repair-260918 主线亲验（写流程） › AC-9 / AC-11 / AC-16 · 1200 行单批量通过 7 个料号 (52.7s)
+  -  5 e2e/mainline260918-verify.spec.ts:228:3 › repair-260918 主线亲验（写流程） › AC-10 · 跨两张大单批量通过 3 个料号
+
+
+  1) e2e/mainline260918-verify.spec.ts:184:3 › repair-260918 主线亲验（写流程） › AC-9 / AC-11 / AC-16 · 1200 行单批量通过 7 个料号 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoContainText[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator: locator('.ant-modal:visible').filter({ hasText: '通过前影响面确认' })
+    Expected substring: [32m"共 [7m7[27m 个料号"[39m
+    Received string:    [31m"[7m通过前影响面确认 · [27m共 [7m1[27m 个料号[7m料号数1将更新的单数1版本推进路径PERF0909-B00150：（首次） → V26091802将更新的单（按状态分组）草稿 × 1以下料号仍有跌破预警线的比对列PERF0909-B00150（1 列）取 消确认通过并升版[27m"[39m
+    Timeout: 30000ms
+
+    Call log:
+    [2m  - Expect "toContainText" with timeout 30000ms[22m
+    [2m  - waiting for locator('.ant-modal:visible').filter({ hasText: '通过前影响面确认' })[22m
+    [2m    2 × locator resolved to <div role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="_r_1n_" class="ant-modal css-dev-only-do-not-override-ch9ese ant-zoom-appear ant-zoom-appear-start ant-zoom">…</div>[22m
+    [2m      - unexpected value "通过前影响面确认 · 共 1 个料号正在计算影响面…取 消确认通过并升版"[22m
+    [2m    - locator resolved to <div role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="_r_1n_" class="ant-modal css-dev-only-do-not-override-ch9ese ant-zoom-appear ant-zoom-appear-active ant-zoom">…</div>[22m
+    [2m    31 × unexpected value "通过前影响面确认 · 共 1 个料号料号数1将更新的单数1版本推进路径PERF0909-B00150：（首次） → V26091802将更新的单（按状态分组）草稿 × 1以下料号仍有跌破预警线的比对列PERF0909-B00150（1 列）取 消确认通过并升版"[22m
+    [2m       - locator resolved to <div role="dialog" tabindex="-1" aria-modal="true" aria-labelledby="_r_1n_" class="ant-modal css-dev-only-do-not-override-ch9ese">…</div>[22m
+    [2m    - unexpected value "通过前影响面确认 · 共 1 个料号料号数1将更新的单数1版本推进路径PERF0909-B00150：（首次） → V26091802将更新的单（按状态分组）草稿 × 1以下料号仍有跌破预警线的比对列PERF0909-B00150（1 列）取 消确认通过并升版"[22m
+
+
+      161 |     const modal = page.locator('.ant-modal:visible').filter({ hasText: '通过前影响面确认' });
+      162 |     await expect(modal).toBeVisible({ timeout: 30_000 });
+    > 163 |     await expect(modal).toContainText(`共 ${mats.length} 个料号`);
+          |                         ^
+      164 |     const okBtn = modal.getByRole('button', { name: /确认通过并升版/ });
+      165 |     await expect(okBtn).toBeEnabled({ timeout: 60_000 });
+      166 |     const respP = page.waitForResponse(r => r.url().includes('/api/cpq/price-adjust/reviews/approve'), { timeout: 60_000 });
+        at approve (/home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-frontend/e2e/mainline260918-verify.spec.ts:163:25)
+        at /home/joii/project/cpq/.claude/worktrees/repair-260918-price-adjust-large-quote/cpq-frontend/e2e/mainline260918-verify.spec.ts:192:15
+
+    [31mTest timeout of 900000ms exceeded.[39m
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/test-results/mainline260918/mainline260918-verify-repa-d071c-1-AC-16-·-1200-行单批量通过-7-个料号/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/test-results/mainline260918/mainline260918-verify-repa-d071c-1-AC-16-·-1200-行单批量通过-7-个料号/error-context.md
+
+  1 failed
+    e2e/mainline260918-verify.spec.ts:184:3 › repair-260918 主线亲验（写流程） › AC-9 / AC-11 / AC-16 · 1200 行单批量通过 7 个料号 
+  1 did not run
+  3 passed (16.4m)
+PW_EXIT=1

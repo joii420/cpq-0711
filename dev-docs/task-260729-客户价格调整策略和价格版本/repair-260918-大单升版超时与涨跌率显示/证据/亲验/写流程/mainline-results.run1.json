@@ -1,0 +1,96 @@
+{
+  "ac6": {
+    "reviewId": "22dccfa7-de86-4b4f-b946-69e687abd249",
+    "status": 200,
+    "apiMs": 742,
+    "uiMs": 791,
+    "basis": {
+      "quotationId": "5f641c55-8387-4eee-a7ff-a78f312bbf06",
+      "quotationNo": "QT-20260911-0842",
+      "createdAt": "2026-09-11T09:14:00.030641Z",
+      "status": "DRAFT",
+      "isBasis": true,
+      "quoteSubtotalCurrent": "0",
+      "quoteSubtotalAdjusted": "9118.2",
+      "adjustedComputed": true,
+      "comparisonViewUrl": "/quotations/5f641c55-8387-4eee-a7ff-a78f312bbf06/comparison"
+    },
+    "elementImpactTotal": "9118.2",
+    "rowText": "QT-20260911-0842 2026-09-11 DRAFT 0 9118.2 判断依据 直达比对视图",
+    "pass": true
+  },
+  "ac7": {
+    "before": {
+      "revs": [],
+      "md5": "bd84dfadfda96e67bc49352a9f24f70f"
+    },
+    "after": {
+      "revs": [],
+      "md5": "bd84dfadfda96e67bc49352a9f24f70f"
+    },
+    "pass": true
+  },
+  "ac8": {
+    "X": "9118.2",
+    "item": {
+      "status": "SUCCESS",
+      "error_code": null,
+      "retry_count": 0,
+      "error_message": "升版成功：版本明细 1 条（含无价），价格承载组件 1 个，snapshot_rows/row_data 共改写 2 行（COMP-2346=2），editRows 清理 0 条，subtotal 0E-12→9118.2，quotation.totalAmount=9118.200000000"
+    },
+    "retryMs": 1497,
+    "subtotalBefore": "0.000000000000",
+    "subtotalAfter": "9118.200000000000",
+    "subtotalEqX": true,
+    "agRowsWith28893_5": 1,
+    "itAfterReload": "SUCCESS"
+  },
+  "ac20": {
+    "revs": [
+      {
+        "nos": "[]",
+        "sealed": true,
+        "initial": true,
+        "updated": "2026-09-19 06:09:12.970497+00",
+        "version_no": null,
+        "revision_no": "R26091801"
+      },
+      {
+        "nos": "[\"PERF600-B00432\"]",
+        "sealed": true,
+        "initial": false,
+        "updated": "2026-09-19 06:09:13.420506+00",
+        "version_no": "V26091802",
+        "revision_no": "R26091802"
+      }
+    ],
+    "snap": [
+      {
+        "v": "null",
+        "cur_eq": false,
+        "initial": true
+      },
+      {
+        "v": "{\"tabs\": [{\"tabName\": \"产品\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"PERF600-B00432\", \"_物料_单重\": \"1\", \"_物料_品名\": \"批量件432\", \"_物料_尺寸\": \"1×1\", \"_物料_规格\": \"BULK\", \"_物料_旧料号\": null, \"_物料_生产料号\": \"PERF600-BP00432\", \"_物料_销售料号\": \"PERF600-B00432\", \"_客户料号_客户产品编号\": \"ZT600-00432\"}, \"basicDataValues\": {\"{$builder_221dc7668ab6._物料_单重}\": \"1\", \"{$builder_221dc7668ab6._物料_品名}\": \"批量件432\", \"{$builder_221dc7668ab6._物料_尺寸}\": \"1×1\", \"{$builder_221dc7668ab6._物料_规格}\": \"BULK\", \"{$builder_221dc7668ab6._物料_旧料号}\": null, \"{$builder_221dc7668ab6._物料_生产料号}\": \"PERF600-BP00432\", \"{$builder_221dc7668ab6._物料_销售料号}\": \"PERF600-B00432\", \"{$builder_221dc7668ab6._客户料号_客户产品编号}\": \"ZT600-00432\"}}], \"editRows\": [{\"rowKey\": \"0\", \"values\": {\"单重\": \"1\", \"品名\": \"批量件432\", \"尺寸\": \"1×1\", \"规格\": \"BULK\", \"生产料号\": \"PERF600-BP00432\", \"销售料号\": \"PERF600-B00432\", \"客户产品编号\": \"ZT600-00432\"}}], \"subtotal\": \"0\", \"componentId\": \"221dc766-8ab6-4d95-82c0-08cc03e6267d\", \"resolvedRows\": [{\"单重\": \"1\", \"品名\": \"批量件432\", \"尺寸\": \"1×1\", \"规格\": \"BULK\", \"生产料号\": \"PERF600-BP00432\", \"销售料号\": \"PERF600-B00432\", \"客户产品编号\": \"ZT600-00432\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"0\", \"values\": {}}]}, {\"tabName\": \"BOM\", \"baseRows\": [{\"__lvl\": 1, \"__nodeId\": \"PERF600-B00432\", \"driverRow\": {\"parent_no\": null, \"hf_part_no\": \"PERF600-B00432\", \"material_no\": \"PERF600-B00432\", \"_物料BOM_项次\": null, \"_物料_材料名\": null, \"_物料BOM_投入料号\": null, \"_物料BOM_材料净重\": null, \"_物料BOM_材料毛重\": null, \"_物料BOM_组成数量\": null, \"_物料BOM_重量单位\": null, \"_物料BOM_销售料号\": null, \"_物料BOM_损耗率（%）\": null}, \"__hfPartNo\": \"PERF600-B00432\", \"__nodeType\": null, \"__parentId\": null, \"__parentNo\": null, \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": null, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": null, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": null, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": null, \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": null, \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": null}}, {\"__lvl\": 2, \"__nodeId\": \"PERF600-B00432/T260907T-RM01\", \"driverRow\": {\"parent_no\": \"PERF600-B00432\", \"hf_part_no\": \"T260907T-RM01\", \"material_no\": \"T260907T-RM01\", \"_物料BOM_项次\": 1, \"_物料_材料名\": null, \"_物料BOM_投入料号\": \"T260907T-RM01\", \"_物料BOM_材料净重\": 0.78, \"_物料BOM_材料毛重\": 0.8, \"_物料BOM_组成数量\": 1, \"_物料BOM_重量单位\": \"g\", \"_物料BOM_销售料号\": \"PERF600-B00432\", \"_物料BOM_损耗率（%）\": 2}, \"__hfPartNo\": \"T260907T-RM01\", \"__nodeType\": null, \"__parentId\": \"PERF600-B00432\", \"__parentNo\": \"PERF600-B00432\", \"__bomVersion\": null, \"basicDataValues\": {\"{$builder_7f9a5bbf264f._物料BOM_项次}\": 1, \"{$builder_7f9a5bbf264f._物料_材料名}\": null, \"{$builder_7f9a5bbf264f._物料BOM_投入料号}\": \"T260907T-RM01\", \"{$builder_7f9a5bbf264f._物料BOM_材料净重}\": 0.78, \"{$builder_7f9a5bbf264f._物料BOM_材料毛重}\": 0.8, \"{$builder_7f9a5bbf264f._物料BOM_组成数量}\": 1, \"{$builder_7f9a5bbf264f._物料BOM_重量单位}\": \"g\", \"{$builder_7f9a5bbf264f._物料BOM_销售料号}\": \"PERF600-B00432\", \"{$builder_7f9a5bbf264f._物料BOM_损耗率（%）}\": 2}}], \"editRows\": [{\"rowKey\": \"PERF600-B00432/T260907T-RM01::1\", \"values\": {\"料号\": \"T260907T-RM01\", \"项次\": 1, \"材料净重\": 0.78, \"材料毛重\": 0.8, \"组成数量\": 1, \"重量单位\": \"g\", \"销售料号\": \"PERF600-B00432\", \"损耗率（%）\": 2}}], \"subtotal\": \"0\", \"componentId\": \"7f9a5bbf-264f-4b07-8dff-3118a9428a48\", \"resolvedRows\": [{\"层级\": 1, \"__nodeId\": \"PERF600-B00432\", \"是否根\": 1, \"是否叶子\": 0}, {\"层级\": 2, \"料号\": \"T260907T-RM01\", \"项次\": 1, \"__nodeId\": \"PERF600-B00432/T260907T-RM01\", \"是否根\": 0, \"是否叶子\": 1, \"材料净重\": \"0.78\", \"材料毛重\": \"0.8\", \"组成数量\": 1, \"重量单位\": \"g\", \"销售料号\": \"PERF600-B00432\", \"损耗率（%）\": 2}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"PERF600-B00432::0\", \"values\": {}}, {\"rowKey\": \"PERF600-B00432/T260907T-RM01::1\", \"values\": {}}]}, {\"tabName\": \"材质元素\", \"baseRows\": [{\"driverRow\": {\"hf_part_no\": \"PERF600-B00432\", \"元素单价\": \"28893.5\", \"__priceLocked\": true, \"__priceVersion\": \"V26091802\", \"_材质_材料名\": \"AgNi11#-Ⅰ\", \"_物料与元素BOM_元素\": \"Ag\", \"_物料与元素BOM_项次\": 1, \"_物料与元素BOM_净用量\": \"8.554\", \"_物料与元素BOM_毛用量\": \"8.684\", \"_物料与元素BOM_损耗率%\": \"1.5\", \"_物料与元素BOM_材质料号\": \"992\", \"_物料与元素BOM_销售料号\": \"PERF600-B00432\", \"_物料与元素BOM_回收折扣(%)\": \"5\", \"_物料与元素BOM_组成含量（%）\": \"70\"}, \"basicDataValues\": {\"{$builder_98ee51d1832e.元素单价}\": \"3000\", \"{$builder_98ee51d1832e._材质_材料名}\": \"AgNi11#-Ⅰ\", \"{$builder_98ee51d1832e._物料与元素BOM_元素}\": \"Ag\", \"{$builder_98ee51d1832e._物料与元素BOM_项次}\": 1, \"{$builder_98ee51d1832e._物料与元素BOM_净用量}\": \"8.554\", \"{$builder_98ee51d1832e._物料与元素BOM_毛用量}\": \"8.684\", \"{$builder_98ee51d1832e._物料与元素BOM_损耗率%}\": \"1.5\", \"{$builder_98ee51d1832e._物料与元素BOM_材质料号}\": \"992\", \"{$builder_98ee51d1832e._物料与元素BOM_销售料号}\": \"PERF600-B00432\", \"{$builder_98ee51d1832e._物料与元素BOM_回收折扣(%)}\": \"5\", \"{$builder_98ee51d1832e._物料与元素BOM_组成含量（%）}\": \"70\"}}], \"editRows\": [], \"subtotal\": \"911.82\", \"componentId\": \"98ee51d1-832e-4881-aa3d-e9512824cc14\", \"resolvedRows\": [{\"元素\": \"Ag\", \"料号\": \"992\", \"项次\": 1, \"净用量\": \"8.554\", \"材料名\": \"AgNi11#-Ⅰ\", \"毛用量\": \"8.684\", \"损耗率%\": \"1.5\", \"元素单价\": \"28893.5\", \"元素小计\": \"911.82\", \"销售料号\": \"PERF600-B00432\", \"__priceLocked\": true, \"__priceVersion\": \"V26091802\", \"回收折扣(%)\": \"5\", \"组成含量（%）\": \"70\"}], \"componentType\": \"NORMAL\", \"formulaResults\": [{\"rowKey\": \"0\", \"values\": {\"元素小计\": \"911.82\"}}], \"subtotalByColumn\": {\"元素小计\": \"911.82\"}}, {\"tabName\": \"产品单价\", \"baseRows\": [], \"editRows\": [], \"subtotal\": \"9118.2\", \"componentId\": \"2c539680-91c8-4afe-80d6-fa07e8b2bbb0\", \"resolvedRows\": [], \"componentType\": \"SUBTOTAL\", \"formulaResults\": []}]}",
+        "cur_eq": true,
+        "initial": false
+      }
+    ],
+    "qcvBeforeWasNull": true,
+    "pass": true
+  },
+  "t0": {
+    "jobId": "9e58afa3-6690-4aff-be1f-9f27eb75f278",
+    "job": {
+      "id": "9e58afa3-6690-4aff-be1f-9f27eb75f278",
+      "secs": 0.862159,
+      "status": "SUCCESS",
+      "finished_at": "2026-09-19 06:09:25.594583+00",
+      "total_count": 1,
+      "failed_count": 0,
+      "triggered_at": "2026-09-19 06:09:24.732424+00",
+      "success_count": 1
+    },
+    "T0secs": 0.862159
+  }
+}
