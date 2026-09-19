@@ -1,0 +1,54 @@
+## 采样时刻 2026-09-18 20:12:56 PDT；后端 8081（主工作区 master @ 446761b8）；库 cpq_db_0724
+
+## 1. GET /api/cpq/quotations/40fe7ae7-c6e1-403a-aa30-17989ec758e9/excel-view 原始响应
+{"code":200,"message":"success","data":{"columns":[{"tabs":[{"alias":"物料","tabKey":"b3445979-e3d6-4cdb-ab2d-53758b5f2eb2","rowKeyFields":["销售料号","料号"]}],"title":"材料成本","hidden":false,"col_key":"col_1","expression":"[物料.材料成本]","source_type":"TAB_JOIN_FORMULA"},{"tabs":[{"alias":"物料","tabKey":"b3445979-e3d6-4cdb-ab2d-53758b5f2eb2","rowKeyFields":["销售料号","料号"]}],"title":"回收价格","hidden":false,"col_key":"col_2","expression":"[物料.回收成本]","source_type":"TAB_JOIN_FORMULA"},{"tabs":[{"alias":"产品小计","tabKey":"310fedcf-8b55-4744-ace4-33d8a0ef9ee2","rowKeyFields":[]}],"title":"产品单价","hidden":false,"col_key":"col_3","expression":"[产品小计(总计)]","source_type":"TAB_JOIN_FORMULA"}],"rows":[{"col_1":"0.003407173","col_2":"0","col_3":"39.547708538","_lineItemId":"44954ae6-f5a1-4f0f-9847-d2e6ad23b800"}]}}
+
+## 2. 库存 quote_excel_values（页面存值）
+quote_excel_values
+{"rows": [{"col_1": "1.978941064", "col_2": "0.317766357", "col_3": "1.804589425"}]}
+(1 row)
+
+## 3. 正式账（quote_card_values）相关页签 subtotal / subtotalByColumn
+tab|cid|subtotal|by_col
+产品|9612f71d-a5e3-48ce-b1d7-7dfc456125a7|"1.148550954"|{"税率": "1.13", "管理费": "0.018550954"}
+物料|b3445979-e3d6-4cdb-ab2d-53758b5f2eb2|"767.382030838"|{"回收成本": "0.317766357", "材料成本": "1.978941064", "材料损耗成本": "0.085323417", "铆钉额外费用": "765"}
+其他费用|af497796-fd09-4975-b9e6-d4bb0cb59be7|"0"|
+组装加工费|d2272d54-0805-45b1-9315-3ad66caa3729|"0.03954034733"|{"加工费": "0.03954034733"}
+产品小计|310fedcf-8b55-4744-ace4-33d8a0ef9ee2|"1.804589425"|
+(5 rows)
+
+## 4. row_data（草稿纸）物料页签逐行 vs 正式账 formulaResults 逐行
+i|pn|rd_材料成本|rd_回收成本
+1||0|0
+2|S3110520422|0.000066807|0
+3|00144|0|0
+4|00255|0|0
+5|00256|0.000802284|0
+6|00257|0.002538082|0
+(6 rows)
+rk|card_材料成本|card_回收成本
+S3120011203::0|0|0
+S3120011203/S3110520422::S3120011203||S3110520422|0.059191597|0
+S3120011203/00144::S3120011203||00144|0.463735546|0.317766357
+S3120011203/S3110520422/00255::S3110520422||00255|1.437983994|0
+S3120011203/S3110520422/00256::S3110520422||00256|0.015491845|0
+S3120011203/S3110520422/00257::S3110520422||00257|0.002538082|0
+(6 rows)
+
+## 5. row_data 中被公式/合计引用列的 JSON 类型
+code|k|typ|val
+COMP-0001|税率|string|1.13
+COMP-0001|管理费|string|0.003954035
+COMP-0004|加工费|string|120
+COMP-0004|加工费|string|7.5
+COMP-0007|加工费|string|39.54034733
+COMP-0007|计价单位|string|KPCS
+(6 rows)
+
+## 6. 组装加工费「加工费」的单位换算配置（模板 v1.8 冻结快照）
+component_code|fname|unit_src|amt|sub
+COMP-0002|材料毛重|单位|false|false
+COMP-0002|材料净重|单位|false|false
+COMP-0003|毛用量|毛用量单位|false|false
+COMP-0007|加工费|计价单位|true|true
+(4 rows)
