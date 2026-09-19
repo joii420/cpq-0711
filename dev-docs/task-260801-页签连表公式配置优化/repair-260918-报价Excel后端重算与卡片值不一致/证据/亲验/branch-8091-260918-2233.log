@@ -1,0 +1,125 @@
+__  ____  __  _____   ___  __ ____  ______ 
+ --/ __ \/ / / / _ | / _ \/ //_/ / / / __/ 
+ -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \   
+--\___\_\____/_/ |_/_/|_/_/|_|\____/___/   
+2026-09-18 22:33:44.299 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-18 22:33:44.551 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-18 22:33:44.598 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-18 22:33:44.835 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-18 22:33:44.836 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-18 22:33:45.584 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-18 22:33:45.784 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 52 entries upserted
+2026-09-18 22:33:45.861 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-18 22:33:45.930 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-18 22:33:46.319 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-18 22:33:46.356 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-18 22:33:46.377 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:33:46.404 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:33:46.406 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-18 22:33:46.612 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-18 22:33:46.674 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.907s. Listening on: http://0.0.0.0:8091
+2026-09-18 22:33:46.674 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-09-18 22:33:46.674 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-09-18 22:34:04.348 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-18 22:34:04.400 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-09-18 22:36:19.088 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Copied quotation id=40fe7ae7-c6e1-403a-aa30-17989ec758e9 -> id=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 number=QT-20260918-0923 template=0ca31c74-4d5a-4b44-bd6f-7d4c5ddf1637 sameTemplate=true
+2026-09-18 22:36:19.570 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] created structure quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 kind=QUOTE_CARD
+2026-09-18 22:36:19.605 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] created structure quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 kind=QUOTE_EXCEL
+2026-09-18 22:36:19.654 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] created structure quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 kind=COSTING_CARD
+2026-09-18 22:36:19.677 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] created structure quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 kind=COSTING_EXCEL
+2026-09-18 22:36:21.556 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [task-0806 B18] driverComps via PublishedTemplateReader templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 status=PUBLISHED count=4
+2026-09-18 22:36:21.612 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-18 22:36:21.645 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=a515014e-6ed3-4c4c-a7b0-0b82e326a7e8 code=COMP-2298 dataDriverPath=$builder_a515014e6ed3 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:21.645 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_a515014e6ed3
+2026-09-18 22:36:21.650 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_a515014e6ed3
+2026-09-18 22:36:21.699 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_a515014e6ed3 rows=0
+2026-09-18 22:36:21.701 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=a515014e-6ed3-4c4c-a7b0-0b82e326a7e8 code=COMP-2298 rows=0 partVersion=null
+2026-09-18 22:36:21.724 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=32ab8212-df6c-4844-9721-ac7dc41d6cf2 code=COMP-2299 dataDriverPath=$builder_32ab8212df6c (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:21.725 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_32ab8212df6c
+2026-09-18 22:36:21.725 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_32ab8212df6c
+2026-09-18 22:36:21.739 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_32ab8212df6c rows=0
+2026-09-18 22:36:21.739 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=32ab8212-df6c-4844-9721-ac7dc41d6cf2 code=COMP-2299 rows=0 partVersion=null
+2026-09-18 22:36:21.751 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=9291b050-b6a9-42c7-8c56-d3066c3c2369 code=COMP-2300 dataDriverPath=$builder_9291b050b6a9 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:21.752 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9291b050b6a9
+2026-09-18 22:36:21.753 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_9291b050b6a9
+2026-09-18 22:36:21.775 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_9291b050b6a9 rows=0
+2026-09-18 22:36:21.776 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=9291b050-b6a9-42c7-8c56-d3066c3c2369 code=COMP-2300 rows=0 partVersion=null
+2026-09-18 22:36:21.786 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=4c40f5fe-ffa9-40f9-97b2-e8bfd6563228 code=COMP-2421 dataDriverPath=$builder_4c40f5feffa9 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:21.787 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_4c40f5feffa9
+2026-09-18 22:36:21.787 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_4c40f5feffa9
+2026-09-18 22:36:21.803 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_4c40f5feffa9 rows=0
+2026-09-18 22:36:21.804 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=4c40f5fe-ffa9-40f9-97b2-e8bfd6563228 code=COMP-2421 rows=0 partVersion=null
+2026-09-18 22:36:21.935 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [perf] ensure-cardvalues-write quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 rows=1 batches=10 updates=2
+2026-09-18 22:36:21.935 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [subtotal-single-source] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 覆盖生效：行总价 1 处、页签小计 3 处与前端提交值不同
+2026-09-18 22:36:21.935 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [cardvalues-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 集合化落库 1 行(单事务)
+2026-09-18 22:36:21.951 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-cardvalues-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 batch=1/1 rows=1 elapsed=135ms chunkSize=300
+2026-09-18 22:36:21.970 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-cardvalues] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 补算 1 行（分 1 批，chunk=300，总耗时=154ms，失败 0 批/0 行）
+2026-09-18 22:36:23.013 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [subtotal-single-source] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 覆盖生效：行总价 1 处、页签小计 2 处与前端提交值不同
+2026-09-18 22:36:25.126 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [perf] ensure-excel-write quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 rows=0 batches=0 updates=0
+2026-09-18 22:36:25.139 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-excel-values-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 batch=1/1 rows=1 elapsed=71ms chunkSize=300
+2026-09-18 22:36:25.139 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [lazy-excel] ensureExcelValues quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 补算 1 行（分 1 批，chunk=300，总耗时=71ms，失败 0 批/0 行）
+2026-09-18 22:36:26.032 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [task-0806 B18] driverComps via PublishedTemplateReader templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 status=PUBLISHED count=4
+2026-09-18 22:36:26.058 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-18 22:36:26.079 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=a515014e-6ed3-4c4c-a7b0-0b82e326a7e8 code=COMP-2298 dataDriverPath=$builder_a515014e6ed3 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:26.080 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_a515014e6ed3
+2026-09-18 22:36:26.080 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_a515014e6ed3
+2026-09-18 22:36:26.094 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_a515014e6ed3 rows=0
+2026-09-18 22:36:26.094 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=a515014e-6ed3-4c4c-a7b0-0b82e326a7e8 code=COMP-2298 rows=0 partVersion=null
+2026-09-18 22:36:26.102 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=32ab8212-df6c-4844-9721-ac7dc41d6cf2 code=COMP-2299 dataDriverPath=$builder_32ab8212df6c (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:26.102 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_32ab8212df6c
+2026-09-18 22:36:26.103 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_32ab8212df6c
+2026-09-18 22:36:26.115 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_32ab8212df6c rows=0
+2026-09-18 22:36:26.115 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=32ab8212-df6c-4844-9721-ac7dc41d6cf2 code=COMP-2299 rows=0 partVersion=null
+2026-09-18 22:36:26.129 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=9291b050-b6a9-42c7-8c56-d3066c3c2369 code=COMP-2300 dataDriverPath=$builder_9291b050b6a9 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:26.129 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9291b050b6a9
+2026-09-18 22:36:26.130 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_9291b050b6a9
+2026-09-18 22:36:26.145 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_9291b050b6a9 rows=0
+2026-09-18 22:36:26.145 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=9291b050-b6a9-42c7-8c56-d3066c3c2369 code=COMP-2300 rows=0 partVersion=null
+2026-09-18 22:36:26.157 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=4c40f5fe-ffa9-40f9-97b2-e8bfd6563228 code=COMP-2421 dataDriverPath=$builder_4c40f5feffa9 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:26.157 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_4c40f5feffa9
+2026-09-18 22:36:26.158 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_4c40f5feffa9
+2026-09-18 22:36:26.168 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_4c40f5feffa9 rows=0
+2026-09-18 22:36:26.169 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=4c40f5fe-ffa9-40f9-97b2-e8bfd6563228 code=COMP-2421 rows=0 partVersion=null
+2026-09-18 22:36:26.272 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [perf] ensure-cardvalues-write quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 rows=1 batches=10 updates=2
+2026-09-18 22:36:26.272 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [cardvalues-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 集合化落库 1 行(单事务)
+2026-09-18 22:36:26.285 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-cardvalues-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 batch=1/1 rows=1 elapsed=102ms chunkSize=300
+2026-09-18 22:36:26.298 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-cardvalues] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 补算 1 行（分 1 批，chunk=300，总耗时=115ms，失败 0 批/0 行）
+2026-09-18 22:36:26.801 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [perf] ensure-excel-write quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 rows=1 batches=1 updates=1
+2026-09-18 22:36:26.814 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-excel-values-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 batch=1/1 rows=1 elapsed=121ms chunkSize=300
+2026-09-18 22:36:26.814 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [lazy-excel] ensureExcelValues quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 补算 1 行（分 1 批，chunk=300，总耗时=121ms，失败 0 批/0 行）
+2026-09-19T05:36:27.689979868Z executor-thread-1 ERROR Log4j API could not find a logging provider.
+2026-09-18 22:36:30.246 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [task-0806 B18] driverComps via PublishedTemplateReader templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 status=PUBLISHED count=4
+2026-09-18 22:36:30.264 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (executor-thread-1) [costing-tree] bind :customerCode = CUST-0004（null = 无报价单上下文，递归将回落到 customer_no 最小的那家）
+2026-09-18 22:36:30.285 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=a515014e-6ed3-4c4c-a7b0-0b82e326a7e8 code=COMP-2298 dataDriverPath=$builder_a515014e6ed3 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:30.285 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_a515014e6ed3
+2026-09-18 22:36:30.286 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_a515014e6ed3
+2026-09-18 22:36:30.298 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_a515014e6ed3 rows=0
+2026-09-18 22:36:30.299 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=a515014e-6ed3-4c4c-a7b0-0b82e326a7e8 code=COMP-2298 rows=0 partVersion=null
+2026-09-18 22:36:30.309 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=32ab8212-df6c-4844-9721-ac7dc41d6cf2 code=COMP-2299 dataDriverPath=$builder_32ab8212df6c (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:30.309 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_32ab8212df6c
+2026-09-18 22:36:30.309 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_32ab8212df6c
+2026-09-18 22:36:30.321 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_32ab8212df6c rows=0
+2026-09-18 22:36:30.321 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=32ab8212-df6c-4844-9721-ac7dc41d6cf2 code=COMP-2299 rows=0 partVersion=null
+2026-09-18 22:36:30.327 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=9291b050-b6a9-42c7-8c56-d3066c3c2369 code=COMP-2300 dataDriverPath=$builder_9291b050b6a9 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:30.327 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_9291b050b6a9
+2026-09-18 22:36:30.327 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_9291b050b6a9
+2026-09-18 22:36:30.336 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_9291b050b6a9 rows=0
+2026-09-18 22:36:30.336 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=9291b050-b6a9-42c7-8c56-d3066c3c2369 code=COMP-2300 rows=0 partVersion=null
+2026-09-18 22:36:30.352 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] componentId=4c40f5fe-ffa9-40f9-97b2-e8bfd6563228 code=COMP-2421 dataDriverPath=$builder_4c40f5feffa9 (override=false) partNo=null customerId=1f5818d8-b934-44be-b1c3-47df7053cff4 partVersion=null lineItemId=null compositeType=null
+2026-09-18 22:36:30.352 DEBUG [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [expand-driver] lineItemId=null, no lineItem injection for path=$builder_4c40f5feffa9
+2026-09-18 22:36:30.353 DEBUG [com.cpq.com.ser.ComponentSqlViewService] (executor-thread-1) [lookupForResolver] hit template snapshot templateId=15eb5927-7ab4-4cfe-a999-617ca715c874 name=builder_4c40f5feffa9
+2026-09-18 22:36:30.379 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (executor-thread-1) [SqlViewExecutor] driver path=$builder_4c40f5feffa9 rows=0
+2026-09-18 22:36:30.380 INFO  [com.cpq.com.ser.ComponentDriverService] (executor-thread-1) [Y1.5 expand-driver] expanded: id=4c40f5fe-ffa9-40f9-97b2-e8bfd6563228 code=COMP-2421 rows=0 partVersion=null
+2026-09-18 22:36:30.511 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [perf] ensure-cardvalues-write quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 rows=1 batches=10 updates=2
+2026-09-18 22:36:30.511 DEBUG [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [cardvalues-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 集合化落库 1 行(单事务)
+2026-09-18 22:36:30.516 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-cardvalues-batch] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 batch=1/1 rows=1 elapsed=123ms chunkSize=300
+2026-09-18 22:36:30.529 INFO  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [ensure-cardvalues] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 补算 1 行（分 1 批，chunk=300，总耗时=136ms，失败 0 批/0 行）
+2026-09-18 22:36:31.521 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-18 22:36:31.579 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=eada9b39-99b5-4f1d-9ec6-5ffd5da586b3 number=QT-20260918-0923
+2026-09-18 22:44:43.235 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-09-18 22:44:43.266 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-09-18 22:44:44.320 DEBUG [com.cpq.cus.ser.CustomerService] (executor-thread-14) list customers page=0 size=20 total=74
+2026-09-18 22:44:44.436 DEBUG [com.cpq.cus.ser.CustomerService] (executor-thread-1) list customers page=0 size=20 total=74
+2026-09-18 22:44:51.095 DEBUG [com.cpq.cus.ser.CustomerService] (executor-thread-15) list customers page=0 size=20 total=74
+2026-09-18 22:44:51.191 DEBUG [com.cpq.cus.ser.CustomerService] (executor-thread-14) list customers page=0 size=20 total=74
+2026-09-18 22:45:54.064 INFO  [io.quarkus] (Shutdown thread) cpq-backend stopped in 0.024s

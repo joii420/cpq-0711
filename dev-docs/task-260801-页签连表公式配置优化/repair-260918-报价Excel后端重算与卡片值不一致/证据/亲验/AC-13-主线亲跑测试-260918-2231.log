@@ -1,0 +1,237 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 436 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 983 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 25 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 733 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.quotation.card.CostingExcelTreeTabKeyIT
+2026-09-18 22:32:15.907 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-18 22:32:15.933 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-18 22:32:16.085 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-18 22:32:16.578 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-18 22:32:16.672 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-18 22:32:16.927 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-18 22:32:17.037 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-18 22:32:17.472 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-18 22:32:17.779 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 428 migrations (execution time 00:00.168s)
+2026-09-18 22:32:18.000 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 445
+2026-09-18 22:32:18.001 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-18 22:32:18.018 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-18 22:32:18.106 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-18 22:32:18.106 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-18 22:32:18.696 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-18 22:32:18.844 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-18 22:32:18.922 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-18 22:32:18.989 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-18 22:32:19.293 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-18 22:32:19.397 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-18 22:32:19.433 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-18 22:32:19.461 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:32:19.482 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:32:19.483 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-18 22:32:19.688 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-18 22:32:19.761 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 13.496s. Listening on: http://localhost:54600
+2026-09-18 22:32:19.761 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-18 22:32:19.761 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.930 s -- in com.cpq.quotation.card.CostingExcelTreeTabKeyIT
+[INFO] Running com.cpq.quotation.card.ExcelDryRunIT
+2026-09-18 22:32:20.473 WARN  [com.cpq.for.dat.DataLoader] (main) DataLoader failed for path='不存在.小计': Cannot resolve table name for: '不存在'. Register it in SchemaContext or use an ASCII physical table name.
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.231 s -- in com.cpq.quotation.card.ExcelDryRunIT
+[INFO] Running com.cpq.quotation.card.GetExcelViewCostingIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.256 s -- in com.cpq.quotation.card.GetExcelViewCostingIT
+[INFO] Running com.cpq.quotation.service.CardSnapshotBatchWriteRoundTripTest
+2026-09-18 22:32:44.665 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:44.665 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 300 行(单事务)
+2026-09-18 22:32:44.685 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=1/7 rows=300 elapsed=246ms chunkSize=300
+2026-09-18 22:32:44.837 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:44.837 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 300 行(单事务)
+2026-09-18 22:32:44.852 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=2/7 rows=300 elapsed=167ms chunkSize=300
+2026-09-18 22:32:45.022 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:45.023 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 300 行(单事务)
+2026-09-18 22:32:45.036 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=3/7 rows=300 elapsed=184ms chunkSize=300
+2026-09-18 22:32:45.181 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:45.181 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 300 行(单事务)
+2026-09-18 22:32:45.188 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=4/7 rows=300 elapsed=152ms chunkSize=300
+2026-09-18 22:32:45.360 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:45.361 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 300 行(单事务)
+2026-09-18 22:32:45.374 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=5/7 rows=300 elapsed=185ms chunkSize=300
+2026-09-18 22:32:45.502 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:45.502 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 300 行(单事务)
+2026-09-18 22:32:45.510 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=6/7 rows=300 elapsed=136ms chunkSize=300
+2026-09-18 22:32:45.580 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=45 batches=45 updates=1
+2026-09-18 22:32:45.580 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 集合化落库 45 行(单事务)
+2026-09-18 22:32:45.593 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=7/7 rows=45 elapsed=82ms chunkSize=300
+2026-09-18 22:32:45.606 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 补算 1845 行（分 7 批，chunk=300，总耗时=1167ms，失败 0 批/0 行）
+2026-09-18 22:32:45.810 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:45.828 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=1/7 rows=300 elapsed=140ms chunkSize=300
+2026-09-18 22:32:45.982 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:45.994 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=2/7 rows=300 elapsed=166ms chunkSize=300
+2026-09-18 22:32:46.114 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:46.130 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=3/7 rows=300 elapsed=136ms chunkSize=300
+2026-09-18 22:32:46.250 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:46.266 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=4/7 rows=300 elapsed=136ms chunkSize=300
+2026-09-18 22:32:46.388 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:46.400 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=5/7 rows=300 elapsed=134ms chunkSize=300
+2026-09-18 22:32:46.546 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+2026-09-18 22:32:46.560 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=6/7 rows=300 elapsed=160ms chunkSize=300
+2026-09-18 22:32:46.639 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=45 batches=45 updates=1
+2026-09-18 22:32:46.649 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 batch=7/7 rows=45 elapsed=88ms chunkSize=300
+2026-09-18 22:32:46.649 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [lazy-excel] ensureExcelValues quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 补算 1845 行（分 7 批，chunk=300，总耗时=961ms，失败 0 批/0 行）
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-excel-write quotation=bfd16535-fc33-4b9a-8308-33b2d9bdf444 rows=45 batches=45 updates=1
+[T-2 AC-5] ensure-excel-write 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数=7
+2026-09-18 22:33:09.685 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+2026-09-18 22:33:09.685 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 300 行(单事务)
+2026-09-18 22:33:09.699 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=1/7 rows=300 elapsed=194ms chunkSize=300
+2026-09-18 22:33:09.875 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+2026-09-18 22:33:09.875 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 300 行(单事务)
+2026-09-18 22:33:09.894 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=2/7 rows=300 elapsed=195ms chunkSize=300
+2026-09-18 22:33:10.022 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+2026-09-18 22:33:10.023 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 300 行(单事务)
+2026-09-18 22:33:10.031 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=3/7 rows=300 elapsed=136ms chunkSize=300
+2026-09-18 22:33:10.166 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+2026-09-18 22:33:10.166 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 300 行(单事务)
+2026-09-18 22:33:10.187 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=4/7 rows=300 elapsed=155ms chunkSize=300
+2026-09-18 22:33:10.348 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+2026-09-18 22:33:10.348 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 300 行(单事务)
+2026-09-18 22:33:10.354 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=5/7 rows=300 elapsed=167ms chunkSize=300
+2026-09-18 22:33:10.492 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+2026-09-18 22:33:10.493 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 300 行(单事务)
+2026-09-18 22:33:10.506 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=6/7 rows=300 elapsed=152ms chunkSize=300
+2026-09-18 22:33:10.564 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=45 batches=45 updates=1
+2026-09-18 22:33:10.564 DEBUG [com.cpq.quo.ser.CardSnapshotService] (main) [cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a 集合化落库 45 行(单事务)
+2026-09-18 22:33:10.577 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues-batch] quotation=86231b65-9fa1-464f-acf1-3a584870280a batch=7/7 rows=45 elapsed=71ms chunkSize=300
+2026-09-18 22:33:10.590 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-cardvalues] quotation=86231b65-9fa1-464f-acf1-3a584870280a 补算 1845 行（分 7 批，chunk=300，总耗时=1085ms，失败 0 批/0 行）
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=300 batches=300 updates=1
+[T-2 captured] [perf] ensure-cardvalues-write quotation=86231b65-9fa1-464f-acf1-3a584870280a rows=45 batches=45 updates=1
+[T-2 AC-5] 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数(默认chunk=300)=7
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 50.01 s -- in com.cpq.quotation.service.CardSnapshotBatchWriteRoundTripTest
+[INFO] Running com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[repair-260918 lazy] after snapshotQuoteSideOnly: quote_card_values=null | quote_excel_values=null
+[repair-260918 lazy] legacy buildExcelValues(null card values) = {"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.536 s -- in com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[INFO] Running com.cpq.quotation.card.QuoteExcelCardValuesSourceIT
+2026-09-18 22:33:11.393 INFO  [io.quarkus] (main) cpq-backend stopped in 0.017s
+2026-09-18 22:33:12.588 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-18 22:33:12.824 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-18 22:33:12.900 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-18 22:33:13.098 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-18 22:33:13.338 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 428 migrations (execution time 00:00.116s)
+2026-09-18 22:33:13.581 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 445
+2026-09-18 22:33:13.581 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-18 22:33:13.595 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-18 22:33:13.694 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-18 22:33:13.695 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-18 22:33:14.174 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-18 22:33:14.308 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-18 22:33:14.406 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-18 22:33:14.494 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-18 22:33:14.835 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-18 22:33:14.868 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-18 22:33:14.899 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:33:14.919 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-18 22:33:14.920 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-18 22:33:15.110 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-18 22:33:15.142 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-18 22:33:15.186 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.613s. Listening on: http://localhost:55472
+2026-09-18 22:33:15.186 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-18 22:33:15.186 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-09-18 22:33:18.320 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=2816603d-ab69-4b23-8f26-cc61a7cdc8bc rows=1 batches=1 updates=1
+2026-09-18 22:33:18.333 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=2816603d-ab69-4b23-8f26-cc61a7cdc8bc batch=1/1 rows=4 elapsed=117ms chunkSize=300
+2026-09-18 22:33:18.333 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [lazy-excel] ensureExcelValues quotation=2816603d-ab69-4b23-8f26-cc61a7cdc8bc 补算 4 行（分 1 批，chunk=300，总耗时=117ms，失败 0 批/0 行）
+2026-09-18 22:33:18.512 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [perf] ensure-excel-write quotation=2816603d-ab69-4b23-8f26-cc61a7cdc8bc rows=1 batches=1 updates=1
+2026-09-18 22:33:18.529 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [ensure-excel-values-batch] quotation=2816603d-ab69-4b23-8f26-cc61a7cdc8bc batch=1/1 rows=3 elapsed=87ms chunkSize=300
+2026-09-18 22:33:18.529 INFO  [com.cpq.quo.ser.CardSnapshotService] (main) [lazy-excel] ensureExcelValues quotation=2816603d-ab69-4b23-8f26-cc61a7cdc8bc 补算 3 行（分 1 批，chunk=300，总耗时=87ms，失败 0 批/0 行）
+[perf] repair-260918 getExcelView N=1 sql=5 | N=5 sql=5 ; dryRun N=1 sql=5 | N=5 sql=5
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.736 s -- in com.cpq.quotation.card.QuoteExcelCardValuesSourceIT
+[INFO] Running com.cpq.quotation.card.CardValuesUsableTest
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.080 s -- in com.cpq.quotation.card.CardValuesUsableTest
+[INFO] Running com.cpq.quotation.card.EffectiveRowsKeyContractTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.061 s -- in com.cpq.quotation.card.EffectiveRowsKeyContractTest
+2026-09-18 22:33:20.268 INFO  [io.quarkus] (main) cpq-backend stopped in 0.013s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  01:31 min
+[INFO] Finished at: 2026-09-18T22:33:20-07:00
+[INFO] ------------------------------------------------------------------------

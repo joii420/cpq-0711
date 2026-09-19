@@ -1,0 +1,37 @@
+# T2.2 · AC-5 导出兜底按正式账
+# BASE=http://localhost:8081 MASTER=http://localhost:8081 开始 2026-09-18 21:48:49
+  [copy C1(0881,T2.2单跑)] BASE(http://localhost:8081) POST /quotations/40fe7ae7-c6e1-403a-aa30-17989ec758e9/copy -> 200 {"code": 200, "message": "success", "data": {"id": "4e451a13-e7a1-4d1d-80e9-abae9600bbcb", "quotationNumber": "QT-20260918-0913", "customerId": "1f5818d8-b934-44be-b1c3-47df7053cff4", "name": "正泰 报价单 (Copy)", "contactId": null, "contactName": null, "contactPhone": null, "contactEmail": null, "projectName": null, "opportunityId": null, "salesRepId": "d1e1147c-a639-4156-aeac-9f938a65ad05", "quoteTyp
+  [rename C1(0881,T2.2单跑)] UPDATE 1 -> name=RP0918-S2-正泰 报价单 (Copy)
+  [ensure-card-values] BASE(http://localhost:8081) 4e451a13-e7a1-4d1d-80e9-abae9600bbcb -> http=200 warming=False 各行可用=[('3b758627-e165-4be8-97ee-1508c57b95e2', True)]
+  [GET excel-view 取列] BASE(http://localhost:8081) -> 200
+    {"code": 200, "message": "success", "data": {"columns": [{"tabs": [{"alias": "物料", "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2", "rowKeyFields": ["销售料号", "料号"]}], "title": "材料成本", "hidden": false, "col_key": "col_1", "expression": "[物料.材料成本]", "source_type": "TAB_JOIN_FORMULA"}, {"tabs": [{"alias": "物料", "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2", "rowKeyFields": ["销售料号", "料号"]}], "title": "回收价格", "hidden": false, "col_key": "col_2", "expression": "[物料.回收成本]", "source_type": "TAB_JOIN_FORMULA"}, {"tabs": [{"alias": "产品小计", "tabKey": "310fedcf-8b55-4744-ace4-33d8a0ef9ee2", "rowKeyFields": []}], "title": "产品单价", "hidden": false, "col_key": "col_3", "expression": "[产品小计(总计)]", "source_type": "TAB_JOIN_FORMULA"}], "rows": [{"col_1": "0.003407173", "col_2": "0", "col_3": "39.547708538", "_lineItemId": "3b758627-e165-4be8-97ee-1508c57b95e2"}]}}
+  [PASS] 前置-C1 正式账已恢复非空 :: C1 行 3b758627 正式账可用=True
+  判定值 = ['1.978941064', '0.317766357', '1.804589425']
+  [guard] line=3b758627-e165-4be8-97ee-1508c57b95e2 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_excel_values = NULL where id='3b758627-e165-4be8-97ee-1508c57b95e2'
+  [SQL-out] UPDATE 1 
+  导出前 quote_excel_values = <NULL>
+  [GET export-excel-view] BASE(http://localhost:8081) -> 200 bytes=3537 存 T2.2-本分支-正式账可用.xlsx
+  导出后 quote_excel_values = <NULL>
+  本分支 xlsx 全部行 = [['col_1', 'col_2', 'col_3'], ['0.003407173', '0', '39.547708538']]
+  单元格类型 = [['s', 's', 's'], ['s', 's', 's']]
+  [guard] line=3b758627-e165-4be8-97ee-1508c57b95e2 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_excel_values = NULL where id='3b758627-e165-4be8-97ee-1508c57b95e2'
+  [SQL-out] UPDATE 1 
+  导出前 quote_excel_values = <NULL>
+  [GET export-excel-view] MASTER(http://localhost:8081) -> 200 bytes=3537 存 T2.2-master-正式账可用.xlsx
+  导出后 quote_excel_values = <NULL>
+  master xlsx 全部行 = [['col_1', 'col_2', 'col_3'], ['0.003407173', '0', '39.547708538']]
+  单元格类型 = [['s', 's', 's'], ['s', 's', 's']]
+  [PASS] 表头两份一致 :: 本分支表头=['col_1', 'col_2', 'col_3'] master表头=['col_1', 'col_2', 'col_3']
+  [FAIL] 本分支数据行=判定值(≤1e-9) :: HTTP=200 第2行=['<无此列>', '<无此列>', '<无此列>'] 判定=['1.978941064', '0.317766357', '1.804589425'] 差=[None, None, None]
+  [PASS] master 数据行≠判定值（草稿纸值，对照） :: HTTP=200 第2行=['<无此列>', '<无此列>', '<无此列>'] 判定=['1.978941064', '0.317766357', '1.804589425'] 差=[None, None, None]
+  [guard] line=3b758627-e165-4be8-97ee-1508c57b95e2 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_excel_values = NULL, quote_card_values = NULL where id='3b758627-e165-4be8-97ee-1508c57b95e2'
+  [SQL-out] UPDATE 1 
+  [GET export-excel-view] BASE(http://localhost:8081) -> 200 bytes=3537 存 T2.2-本分支-正式账也空.xlsx
+  导出后 quote_excel_values = <NULL> quote_card_values = <NULL>
+  本分支(正式账也空) xlsx 全部行 = [['col_1', 'col_2', 'col_3'], ['0.003407173', '0', '39.547708538']]
+  单元格类型 = [['s', 's', 's'], ['s', 's', 's']]
+  [FAIL] 正式账也空：本分支数据行三格为空单元格 :: HTTP=200 第2行=['<无此列>', '<无此列>', '<无此列>']
+  [ensure-card-values] BASE(http://localhost:8081) 4e451a13-e7a1-4d1d-80e9-abae9600bbcb -> http=200 warming=False 各行可用=[('3b758627-e165-4be8-97ee-1508c57b95e2', True)]

@@ -42,7 +42,9 @@
 | 一次性库 | **无**（本任务未建） |
 | 测试复制单（S2 共 14 张、主线亲验 1 张） | 均已 `DELETE`，按 id 与名称前缀 `RP0918-` 复查计数为 0 |
 | 临时服务（8318 / 8319 / 8328 / 8338 / 5338 / 8091 / 5090） | 均已停止 |
-| 主线 A/B 用只读副本 `.claude/worktrees/rp0918-master-ab`（detached `ca950dfc`） | 收尾时 `git worktree remove` |
+| 主线 A/B 用只读副本 `.claude/worktrees/rp0918-master-ab`（detached `ca950dfc`） | 已 `git worktree remove`（2026-09-18 23:0x） |
+| 特性 worktree `.claude/worktrees/repair-260918-quote-excel-card-source` | 已 `git worktree remove`；其中被 `.gitignore` 忽略的 30 份 `.log` 证据已先复制回主工作区并强制提交 |
+| 特性分支 `fix/repair-260918-quote-excel-card-source`（tip `244a9d67`，已并入 master） | **待用户执行 `git branch -d fix/repair-260918-quote-excel-card-source`** |
 
 ## 5. 契约回写
 

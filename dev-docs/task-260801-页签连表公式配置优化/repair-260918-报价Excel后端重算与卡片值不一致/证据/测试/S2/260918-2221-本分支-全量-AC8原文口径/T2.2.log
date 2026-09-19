@@ -1,0 +1,32 @@
+# T2.2 · AC-5 导出兜底按正式账
+# BASE=http://localhost:8328 MASTER=http://localhost:8081 开始 2026-09-18 22:22:06
+  [PASS] 前置-C1 正式账已恢复非空 :: C1 行 bd1c33da 正式账可用=True
+  判定值 = ['1.726122101', '0.14567008', '1.705315785']
+  [guard] line=bd1c33da-e9ea-4715-9f40-a58176344f63 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_excel_values = NULL where id='bd1c33da-e9ea-4715-9f40-a58176344f63'
+  [SQL-out] UPDATE 1 
+  导出前 quote_excel_values = <NULL>
+  [GET export-excel-view] BASE(http://localhost:8328) -> 200 bytes=3531 存 T2.2-本分支-正式账可用.xlsx
+  导出后 quote_excel_values = <NULL>
+  本分支 xlsx 全部行 = [['col_1', 'col_2', 'col_3'], ['1.726122101', '0.14567008', '1.705315785']]
+  单元格类型 = [['s', 's', 's'], ['s', 's', 's']]
+  [guard] line=bd1c33da-e9ea-4715-9f40-a58176344f63 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_excel_values = NULL where id='bd1c33da-e9ea-4715-9f40-a58176344f63'
+  [SQL-out] UPDATE 1 
+  导出前 quote_excel_values = <NULL>
+  [GET export-excel-view] MASTER(http://localhost:8081) -> 200 bytes=3536 存 T2.2-master-正式账可用.xlsx
+  导出后 quote_excel_values = <NULL>
+  master xlsx 全部行 = [['col_1', 'col_2', 'col_3'], ['0.003407173', '0', '39.547708538']]
+  单元格类型 = [['s', 's', 's'], ['s', 's', 's']]
+  [PASS] 表头两份一致 :: 本分支表头=['col_1', 'col_2', 'col_3'] master表头=['col_1', 'col_2', 'col_3']
+  [PASS] 本分支数据行=判定值(≤1e-9) :: HTTP=200 第2行=['1.726122101', '0.14567008', '1.705315785'] 判定=['1.726122101', '0.14567008', '1.705315785'] 差=[Decimal('0E-9'), Decimal('0E-8'), Decimal('0E-9')]
+  [PASS] master 数据行≠判定值（草稿纸值，对照） :: HTTP=200 第2行=['0.003407173', '0', '39.547708538'] 判定=['1.726122101', '0.14567008', '1.705315785'] 差=[Decimal('1.722714928'), Decimal('0.14567008'), Decimal('37.842392753')]
+  [guard] line=bd1c33da-e9ea-4715-9f40-a58176344f63 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_excel_values = NULL, quote_card_values = NULL where id='bd1c33da-e9ea-4715-9f40-a58176344f63'
+  [SQL-out] UPDATE 1 
+  [GET export-excel-view] BASE(http://localhost:8328) -> 200 bytes=3494 存 T2.2-本分支-正式账也空.xlsx
+  导出后 quote_excel_values = <NULL> quote_card_values = <NULL>
+  本分支(正式账也空) xlsx 全部行 = [['col_1', 'col_2', 'col_3'], [None, None, None]]
+  单元格类型 = [['s', 's', 's'], ['n', 'n', 'n']]
+  [PASS] 正式账也空：本分支数据行三格为空单元格 :: HTTP=200 第2行=[None, None, None]
+  [ensure-card-values] BASE(http://localhost:8328) f37062c4-fdea-4b2a-93c2-b6544c7fe453 -> http=200 warming=False 各行可用=[('bd1c33da-e9ea-4715-9f40-a58176344f63', True)]

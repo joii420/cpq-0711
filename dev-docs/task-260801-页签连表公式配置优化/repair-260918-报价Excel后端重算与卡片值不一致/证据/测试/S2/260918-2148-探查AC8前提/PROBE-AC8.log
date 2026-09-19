@@ -1,0 +1,15 @@
+  [copy P(0881,AC-8前提探查)] BASE(http://localhost:8081) POST /quotations/40fe7ae7-c6e1-403a-aa30-17989ec758e9/copy -> 200 {"code": 200, "message": "success", "data": {"id": "e85fbd59-ba07-4036-9fe2-40b3b95dfefb", "quotationNumber": "QT-20260918-0912", "customerId": "1f5818d8-b934-44be-b1c3-47df7053cff4", "name": "正泰 报价单 (Copy)", "contactId": null, "contactName": null, "contactPhone": null, "contactEmail": null, "projectName": null, "opportunityId": null, "salesRepId": "d1e1147c-a639-4156-aeac-9f938a65ad05", "quoteTyp
+  [rename P(0881,AC-8前提探查)] UPDATE 1 -> name=RP0918-S2-正泰 报价单 (Copy)
+  [ensure-card-values] BASE(http://localhost:8081) e85fbd59-ba07-4036-9fe2-40b3b95dfefb -> http=200 warming=False 各行可用=[('4dc3e236-98f2-43c5-b49e-06ba5685fcf8', True)]
+  [GET excel-view 取列] BASE(http://localhost:8081) -> 200
+    {"code": 200, "message": "success", "data": {"columns": [{"tabs": [{"alias": "物料", "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2", "rowKeyFields": ["销售料号", "料号"]}], "title": "材料成本", "hidden": false, "col_key": "col_1", "expression": "[物料.材料成本]", "source_type": "TAB_JOIN_FORMULA"}, {"tabs": [{"alias": "物料", "tabKey": "b3445979-e3d6-4cdb-ab2d-53758b5f2eb2", "rowKeyFields": ["销售料号", "料号"]}], "title": "回收价格", "hidden": false, "col_key": "col_2", "expression": "[物料.回收成本]", "source_type": "TAB_JOIN_FORMULA"}, {"tabs": [{"alias": "产品小计", "tabKey": "310fedcf-8b55-4744-ace4-33d8a0ef9ee2", "rowKeyFields": []}], "title": "产品单价", "hidden": false, "col_key": "col_3", "expression": "[产品小计(总计)]", "source_type": "TAB_JOIN_FORMULA"}], "rows": [{"col_1": "0.003407173", "col_2": "0", "col_3": "39.547708538", "_lineItemId": "4dc3e236-98f2-43c5-b49e-06ba5685fcf8"}]}}
+  A 复制带来的正式账判定值 = ['1.978941064', '0.317766357', '1.804589425']
+  [guard] line=4dc3e236-98f2-43c5-b49e-06ba5685fcf8 属本片单且已标记=1 行数=1
+  [SQL] update quotation_line_item set quote_card_values = NULL where id='4dc3e236-98f2-43c5-b49e-06ba5685fcf8'
+  [SQL-out] UPDATE 1 
+  [ensure-card-values] BASE(http://localhost:8081) e85fbd59-ba07-4036-9fe2-40b3b95dfefb -> http=200 warming=False 各行可用=[('4dc3e236-98f2-43c5-b49e-06ba5685fcf8', True)]
+  B 置空后重算的判定值 = ['1.726122101', '0.14567008', '1.705315785']
+  [PUT quote-card-edit] {"componentId": "d2272d54-0805-45b1-9315-3ad66caa3729", "rowKey": "S3120011203||Z101", "fieldName": "加工费", "value": "39.54034733"} -> 200
+  C 加工费=原值39.54034733 判定值 = ['1.726122101', '0.14567008', '1.705315785']
+  [PUT quote-card-edit] {"componentId": "d2272d54-0805-45b1-9315-3ad66caa3729", "rowKey": "S3120011203||Z101", "fieldName": "加工费", "value": "50"} -> 200
+  D 加工费=50 判定值 = ['1.726122101', '0.14567008', '1.715775438']
