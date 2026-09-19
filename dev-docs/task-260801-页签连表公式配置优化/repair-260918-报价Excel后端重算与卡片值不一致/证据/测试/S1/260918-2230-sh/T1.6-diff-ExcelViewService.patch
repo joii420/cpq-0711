@@ -1,0 +1,347 @@
+diff --git a/cpq-backend/src/main/java/com/cpq/quotation/service/ExcelViewService.java b/cpq-backend/src/main/java/com/cpq/quotation/service/ExcelViewService.java
+index 2f63ac14..f80f445e 100644
+--- a/cpq-backend/src/main/java/com/cpq/quotation/service/ExcelViewService.java
++++ b/cpq-backend/src/main/java/com/cpq/quotation/service/ExcelViewService.java
+@@ -161,6 +161,20 @@ public class ExcelViewService {
+         // （effectiveRows==null → buildTabJoinEffectiveRows 读 componentData）tabKey 一个都命不中 ⇒ 四列恒 0。
+         boolean costingSide = templateIdOverride != null && quotation != null
+                 && templateIdOverride.equals(quotation.costingCardTemplateId);
++
++        // repair-260918 B-2: quote side reads each line's own quote_card_values (the authoritative
++        // card values), same parsing as the costing side. Lines whose card values are unusable
++        // (CardEffectiveRows.isCardValuesUsable) get null for TAB_JOIN_FORMULA / CARD_FORMULA
++        // columns — never a fallback to row_data (user decision D-2). The costing branch below is
++        // untouched.
++        if (!costingSide) {
++            Map<String, Object> quoteResult = new LinkedHashMap<>();
++            quoteResult.put("columns", columns);
++            quoteResult.put("rows", buildQuoteSideRows(
++                    lineItems, columns, templateId, formulaByName, quotationCustomerId));
++            return quoteResult;
++        }
++
+         // 整单只解析一次模板 componentsSnapshot（避免逐行重复 readTree —— 行数 N 与解析次数解耦）。
+         EffRowsCtx effRowsCtx = costingSide ? loadEffRowsCtx(templateId) : null;
+ 
+@@ -200,13 +214,125 @@ public class ExcelViewService {
+         Map<String, TemplateFormulaDTO> byName = new LinkedHashMap<>();
+         for (TemplateFormulaDTO t : tfs) byName.put(t.name, t);
+ 
++        // repair-260918 B-3: same source as getExcelView's quote side — each line's quote_card_values;
++        // the request templateId is only used for template formulas (FORMULA columns).
++        List<Map<String, Object>> rows = buildQuoteSideRows(lineItems, columns, templateId, byName, customerId);
++        return Map.of("columns", columns, "rows", rows);
++    }
++
++    /**
++     * repair-260918 B-2 / B-3 / B-6: quote-side rows for {@code getExcelView} and {@code dryRun}.
++     *
++     * <p>Source of TAB_JOIN_FORMULA / CARD_FORMULA values = each line's own {@code quote_card_values},
++     * parsed exactly like the costing side ({@link #parseEffectiveRows(String, EffRowsCtx)}).
++     * A line whose card values are unusable ({@link com.cpq.quotation.service.card.CardEffectiveRows#isCardValuesUsable})
++     * or cannot be parsed gets {@code null} for those two column types; other column types keep
++     * their original logic. Never falls back to {@code row_data}.
++     *
++     * <p>Query count is independent of the number of lines (backend.md §1):
++     * one IN query for the templates used by the lines (EffRowsCtx), one IN query for all lines'
++     * component data (served to {@link #buildRowData} through {@link com.cpq.formula.dataloader.ExcelCompDataContext});
++     * the loop body itself is pure in-memory work.
++     *
++     * @param formulaTemplateId template used for FORMULA-column template formulas (unchanged semantics)
++     */
++    private List<Map<String, Object>> buildQuoteSideRows(List<QuotationLineItem> lineItems,
++                                                         List<Map<String, Object>> columns,
++                                                         UUID formulaTemplateId,
++                                                         Map<String, TemplateFormulaDTO> formulaByName,
++                                                         UUID customerId) {
+         List<Map<String, Object>> rows = new ArrayList<>();
++        if (lineItems == null || lineItems.isEmpty()) return rows;
++
++        // ① EffRowsCtx per template, one IN query (lines of one quotation may span template versions).
++        Set<UUID> ctxTemplateIds = new LinkedHashSet<>();
+         for (QuotationLineItem li : lineItems) {
+-            Map<String, Object> row = buildRowData(li, columns, templateId, byName, customerId);
+-            row.put("_lineItemId", li.id.toString());
+-            rows.add(row);
++            UUID t = effRowsTemplateOf(li, formulaTemplateId);
++            if (t != null) ctxTemplateIds.add(t);
+         }
+-        return Map.of("columns", columns, "rows", rows);
++        Map<UUID, EffRowsCtx> ctxByTemplate = loadEffRowsCtxBatch(ctxTemplateIds);
++
++        // ② component data of the whole quotation, one IN query; every line gets an entry
++        //    (empty list when it has none) so buildRowData never falls back to a per-line query.
++        List<UUID> lineIds = new ArrayList<>(lineItems.size());
++        for (QuotationLineItem li : lineItems) lineIds.add(li.id);
++        boolean ownsCompDataCtx = !com.cpq.formula.dataloader.ExcelCompDataContext.isSet();
++        if (ownsCompDataCtx) {
++            com.cpq.formula.dataloader.ExcelCompDataContext.set(preloadComponentDataByLine(lineIds));
++        }
++        try {
++            for (QuotationLineItem li : lineItems) {
++                UUID ctxTemplateId = effRowsTemplateOf(li, formulaTemplateId);
++                EffRowsCtx ctx = ctxTemplateId != null ? ctxByTemplate.get(ctxTemplateId) : null;
++                Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
++                    resolveQuoteEffectiveRows(li.quoteCardValues, ctx, li.id, ctxTemplateId);
++                Map<String, Object> row = buildRowData(
++                    li, columns, formulaTemplateId, formulaByName, customerId, eff, eff == null);
++                row.put("_lineItemId", li.id.toString());
++                rows.add(row);
++            }
++        } finally {
++            if (ownsCompDataCtx) com.cpq.formula.dataloader.ExcelCompDataContext.clear();
++        }
++        return rows;
++    }
++
++    /** Template whose components_snapshot describes the line's card values: the line's own template, else the fallback. */
++    private static UUID effRowsTemplateOf(QuotationLineItem li, UUID fallbackTemplateId) {
++        return li.templateId != null ? li.templateId : fallbackTemplateId;
++    }
++
++    /**
++     * repair-260918: parse a line's quote_card_values into effective rows, or {@code null} when
++     * they are unusable (B-1 predicate), the template context is unavailable, or parsing fails.
++     * {@code null} means "blank the TAB_JOIN_FORMULA / CARD_FORMULA cells" — never "use row_data".
++     */
++    private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
++            resolveQuoteEffectiveRows(String cardValuesJson, EffRowsCtx ctx, UUID lineItemId, UUID ctxTemplateId) {
++        if (!com.cpq.quotation.service.card.CardEffectiveRows.isCardValuesUsable(cardValuesJson)) return null;
++        if (ctx == null) {
++            LOG.warnf("[ExcelView] quote card values treated as unusable: template context unavailable "
++                + "(li=%s tmpl=%s)", lineItemId, ctxTemplateId);
++            return null;
++        }
++        Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
++            parseEffectiveRows(cardValuesJson, ctx);
++        if (eff == null) {
++            LOG.warnf("[ExcelView] quote card values treated as unusable: parse failed (li=%s tmpl=%s)",
++                lineItemId, ctxTemplateId);
++        }
++        return eff;
++    }
++
++    /** One IN query → templateId → EffRowsCtx. Missing templates / broken snapshots are absent (callers treat as unusable). */
++    private Map<UUID, EffRowsCtx> loadEffRowsCtxBatch(Collection<UUID> templateIds) {
++        Map<UUID, EffRowsCtx> out = new HashMap<>();
++        if (templateIds == null || templateIds.isEmpty()) return out;
++        List<Template> templates = Template.list("id IN ?1", new ArrayList<>(templateIds));
++        for (Template t : templates) {
++            try {
++                out.put(t.id, effRowsCtxOf(t));
++            } catch (Exception e) {
++                LOG.warnf("[ExcelView] components_snapshot unreadable tmpl=%s: %s", t.id, e.getMessage());
++            }
++        }
++        return out;
++    }
++
++    /**
++     * One IN query → lineItemId → component data (ordered by sortOrder within a line, same order as
++     * the per-line fallback query in {@link #buildRowData}); every requested line gets an entry.
++     */
++    private Map<UUID, List<QuotationLineComponentData>> preloadComponentDataByLine(List<UUID> lineIds) {
++        Map<UUID, List<QuotationLineComponentData>> byLine = new HashMap<>();
++        if (lineIds == null || lineIds.isEmpty()) return byLine;
++        List<QuotationLineComponentData> all = QuotationLineComponentData.list(
++            "lineItemId IN ?1 ORDER BY lineItemId, sortOrder, id", lineIds);
++        for (QuotationLineComponentData cd : all) {
++            byLine.computeIfAbsent(cd.lineItemId, k -> new ArrayList<>()).add(cd);
++        }
++        for (UUID id : lineIds) byLine.putIfAbsent(id, List.of());
++        return byLine;
+     }
+ 
+     /**
+@@ -224,7 +350,36 @@ public class ExcelViewService {
+      */
+     public Map<String, Object> buildLineRowData(QuotationLineItem li, UUID templateId,
+                                                 UUID customerId, String cardValuesJson) {
++        return buildLineRowData(li, templateId, customerId, cardValuesJson, false);
++    }
++
++    /**
++     * repair-260918 B-5: quote-side strict variant used by the backend Excel-value bootstrap
++     * ({@code CardSnapshotService} lazy path and {@code ensureExcelValuesBatch}).
++     *
++     * @return {@code null} when {@code cardValuesJson} is unusable
++     *         ({@link com.cpq.quotation.service.card.CardEffectiveRows#isCardValuesUsable}) or cannot be
++     *         parsed into effective rows — the caller must then NOT write {@code quote_excel_values}
++     *         (keep NULL so the next bootstrap retries). Never falls back to row_data.
++     *         Otherwise identical to {@link #buildLineRowData(QuotationLineItem, UUID, UUID, String)}.
++     */
++    public Map<String, Object> buildQuoteLineRowDataStrict(QuotationLineItem li, UUID templateId,
++                                                           UUID customerId, String cardValuesJson) {
++        return buildLineRowData(li, templateId, customerId, cardValuesJson, true);
++    }
++
++    /**
++     * {@code strictCardValues=false}: original behaviour (unparseable card values → row_data path) —
++     * kept for the costing side and legacy callers, unchanged.
++     */
++    private Map<String, Object> buildLineRowData(QuotationLineItem li, UUID templateId,
++                                                 UUID customerId, String cardValuesJson,
++                                                 boolean strictCardValues) {
+         if (li == null || templateId == null) return new LinkedHashMap<>();
++        if (strictCardValues
++                && !com.cpq.quotation.service.card.CardEffectiveRows.isCardValuesUsable(cardValuesJson)) {
++            return null;
++        }
+         try {
+             Template template = Template.findById(templateId);
+             if (template == null || template.excelViewConfig == null || template.excelViewConfig.isBlank()) {
+@@ -238,6 +393,11 @@ public class ExcelViewService {
+ 
+             Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
+                 parseEffectiveRows(cardValuesJson, templateId);
++            if (strictCardValues && eff == null) {
++                LOG.warnf("[ExcelView] quote card values treated as unusable: template context unavailable "
++                    + "or parse failed (li=%s tmpl=%s) — quote_excel_values not written", li.id, templateId);
++                return null;
++            }
+             return buildRowData(li, columns, templateId, formulaByName, customerId, eff);
+         } catch (Exception e) {
+             LOG.warnf("[ExcelView] buildLineRowData failed li=%s tmpl=%s: %s", li.id, templateId, e.getMessage());
+@@ -397,23 +557,28 @@ public class ExcelViewService {
+     private EffRowsCtx loadEffRowsCtx(UUID templateId) {
+         try {
+             Template t = Template.findById(templateId);
+-            com.fasterxml.jackson.databind.JsonNode componentsSnapshot =
+-                (t != null && t.componentsSnapshot != null)
+-                    ? MAPPER.readTree(t.componentsSnapshot) : null;
+-            java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> fieldsByCid = new java.util.HashMap<>();
+-            if (componentsSnapshot != null && componentsSnapshot.isArray()) {
+-                for (com.fasterxml.jackson.databind.JsonNode c : componentsSnapshot) {
+-                    String cid = c.path("componentId").asText("");
+-                    if (!cid.isBlank()) fieldsByCid.put(cid, c.path("fields"));
+-                }
+-            }
+-            return new EffRowsCtx(componentsSnapshot, fieldsByCid);
++            return effRowsCtxOf(t);
+         } catch (Exception e) {
+             LOG.debugf("[ExcelView] loadEffRowsCtx failed tmpl=%s: %s", templateId, e.getMessage());
+             return null;
+         }
+     }
+ 
++    /** Build the EffRowsCtx from an already-loaded template (null template → empty context, as before). */
++    private EffRowsCtx effRowsCtxOf(Template t) throws Exception {
++        com.fasterxml.jackson.databind.JsonNode componentsSnapshot =
++            (t != null && t.componentsSnapshot != null)
++                ? MAPPER.readTree(t.componentsSnapshot) : null;
++        java.util.Map<String, com.fasterxml.jackson.databind.JsonNode> fieldsByCid = new java.util.HashMap<>();
++        if (componentsSnapshot != null && componentsSnapshot.isArray()) {
++            for (com.fasterxml.jackson.databind.JsonNode c : componentsSnapshot) {
++                String cid = c.path("componentId").asText("");
++                if (!cid.isBlank()) fieldsByCid.put(cid, c.path("fields"));
++            }
++        }
++        return new EffRowsCtx(componentsSnapshot, fieldsByCid);
++    }
++
+     /** 用已解析好的模板上下文解析单行卡片值快照 → 有效行 Map；空/异常 → null（降级旧路径）。 */
+     private Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows>
+             parseEffectiveRows(String cardValuesJson, EffRowsCtx ctx) {
+@@ -450,6 +615,22 @@ public class ExcelViewService {
+                                               Map<String, TemplateFormulaDTO> formulaByName,
+                                               UUID quotationCustomerId,
+                                               Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> effectiveRows) {
++        return buildRowData(li, columns, templateId, formulaByName, quotationCustomerId, effectiveRows, false);
++    }
++
++    /**
++     * repair-260918：{@code cardValuesUnavailable=true} = the quote side determined this line's
++     * card values are unusable ⇒ TAB_JOIN_FORMULA / CARD_FORMULA cells are {@code null} and the
++     * row_data-based recompute ({@link #buildTabJoinEffectiveRows}) is NOT invoked. Other column
++     * types keep their original logic. {@code false} = original behaviour (costing side & legacy callers).
++     */
++    private Map<String, Object> buildRowData(QuotationLineItem li,
++                                              List<Map<String, Object>> columns,
++                                              UUID templateId,
++                                              Map<String, TemplateFormulaDTO> formulaByName,
++                                              UUID quotationCustomerId,
++                                              Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> effectiveRows,
++                                              boolean cardValuesUnavailable) {
+         // V6: 把本行的 part_version_locked 推入 ThreadLocal，深层 DataLoader.loadByPath
+         // 自动注入 AND part_version=N 谓词，避免拉取所有历史版本数据导致 BOM 等表"X 项 (共N项)" 重复显示。
+         // partVersion=null 时行为与旧逻辑完全一致。
+@@ -481,7 +662,7 @@ public class ExcelViewService {
+         List<Map<String, Object>> cardCols = new ArrayList<>();
+         for (Map<String, Object> col : columns)
+             if ("CARD_FORMULA".equals(col.get("source_type"))) cardCols.add(col);
+-        if (!cardCols.isEmpty()) {
++        if (!cardCols.isEmpty() && !cardValuesUnavailable) {
+             if (effectiveRows != null) {
+                 com.cpq.quotation.service.card.CardDataProvider provider =
+                     com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows);
+@@ -500,8 +681,11 @@ public class ExcelViewService {
+         //   无 TAB_JOIN 列时给空 provider，避免对每行做无谓的 Component.findById（性能守卫）。
+         boolean hasTabJoin = columns.stream()
+             .anyMatch(c -> "TAB_JOIN_FORMULA".equals(c.get("source_type")));
++        // repair-260918：cardValuesUnavailable ⇒ no provider at all (cells become null below);
++        // in particular the row_data recompute must not run for such lines.
+         com.cpq.quotation.service.card.CardDataProvider tabJoinProvider =
+-            (effectiveRows != null)
++            cardValuesUnavailable ? null
++            : (effectiveRows != null)
+                 ? com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(effectiveRows)
+                 : com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(
+                       hasTabJoin ? buildTabJoinEffectiveRows(componentDataList, templateId) : java.util.Map.of());
+@@ -542,8 +726,9 @@ public class ExcelViewService {
+                     yield col.get("formula");
+                 }
+                 case "FIXED_VALUE" -> col.get("fixed_value");
+-                case "CARD_FORMULA" -> cardFormulaValues.get(colKey);
++                case "CARD_FORMULA" -> cardValuesUnavailable ? null : cardFormulaValues.get(colKey);
+                 case "TAB_JOIN_FORMULA" -> {
++                    if (cardValuesUnavailable) yield null;
+                     try { yield tabJoinPlanEvaluator.evaluateColumn(col, tabJoinProvider); }
+                     catch (Exception e) {
+                         LOG.warnf("[ExcelView] TAB_JOIN_FORMULA col '%s' eval failed: %s", colKey, e.getMessage());
+@@ -1130,9 +1315,13 @@ public class ExcelViewService {
+ 
+     // ---- TAB_JOIN_FORMULA builder support endpoints ----
+ 
++    /** repair-260918 (api.md): fixed error text when neither request nor line card values are usable. Do not reword. */
++    public static final String SAMPLE_CARD_VALUES_UNAVAILABLE = "样本卡片的卡片值不可用（尚未计算或计算失败），无法试算";
++
+     /**
+      * 试算：给样本 lineItem + 列配置（TAB_JOIN_FORMULA col Map），返回单值。
+-     * 走持久化 componentData 路径（cardValuesJson 可空，忽略）。
++     * 取数（repair-260918）：请求 cardValuesJson 可用 → 用它；否则该行 quote_card_values 可用 → 用它；
++     * 都不可用 → {"value": null, "errors": [SAMPLE_CARD_VALUES_UNAVAILABLE]}。不再读 row_data。
+      * 返回 {"value": BigDecimal|null, "errors": []}。
+      */
+     @SuppressWarnings("unchecked")
+@@ -1145,17 +1334,22 @@ public class ExcelViewService {
+                 out.put("errors", List.of("样本卡片不存在: " + lineItemId));
+                 return out;
+             }
+-            // 优先尝试 cardValuesJson 解析路径；失败或为空时降级持久化路径
+-            com.cpq.quotation.service.card.CardDataProvider provider;
++            // repair-260918 B-4: source priority ① request cardValuesJson if usable ② the line's own
++            // quote_card_values if usable ③ otherwise no value + fixed error text. The former fallback
++            // to component data (new CardDataProvider(cdList), i.e. row_data) is removed.
++            String source =
++                com.cpq.quotation.service.card.CardEffectiveRows.isCardValuesUsable(cardValuesJson) ? cardValuesJson
++                : com.cpq.quotation.service.card.CardEffectiveRows.isCardValuesUsable(li.quoteCardValues) ? li.quoteCardValues
++                : null;
+             Map<String, com.cpq.quotation.service.card.CardEffectiveRows.TabRows> eff =
+-                parseEffectiveRows(cardValuesJson, li.templateId);
+-            if (eff != null && !eff.isEmpty()) {
+-                provider = com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(eff);
+-            } else {
+-                List<QuotationLineComponentData> cdList =
+-                    QuotationLineComponentData.list("lineItemId = ?1 ORDER BY sortOrder ASC", li.id);
+-                provider = new com.cpq.quotation.service.card.CardDataProvider(cdList);
++                source != null ? parseEffectiveRows(source, li.templateId) : null;
++            if (eff == null) {
++                out.put("value", null);
++                out.put("errors", List.of(SAMPLE_CARD_VALUES_UNAVAILABLE));
++                return out;
+             }
++            com.cpq.quotation.service.card.CardDataProvider provider =
++                com.cpq.quotation.service.card.CardDataProvider.fromEffectiveRows(eff);
+             java.math.BigDecimal v = tabJoinPlanEvaluator.evaluateColumn(column, provider);
+             out.put("value", v);
+             out.put("errors", List.of());

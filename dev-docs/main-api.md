@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-17（task-260916 元素价格支持 9 位小数：§12.5b 新增元素价格维护 / 客户策略端点组，两个历史端点快照数字改为十进制字符串）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-18（repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -1766,6 +1766,8 @@
 | cardValuesJson | String | 否 | 卡片值 JSON（预置渲染上下文），转字符串使用 |
 
 - **响应内容**: `ApiResponse<Map<String,Object>>` —— **动态结构**。Service 返回 Map，典型键 `value`（试算单值，不可用时 null）/ `errors`（List\<String\> 错误提示）。
+- **取数（repair-260918）**：与模板级 `dry-run-tab-formula` 同一内核 —— ① 入参 `cardValuesJson` 可用 → 用它；② 否则用该行 `quote_card_values`；③ 都不可用 → `{"value":null,"errors":["样本卡片的卡片值不可用（尚未计算或计算失败），无法试算"]}`（文案固定）。不再读 `row_data`。卡片值「不可用」= `quote_card_values` 为 NULL / 空白 / 解析失败 / 含 `"__cardValueFailed": true` / `tabs` 缺失或为空（`CardEffectiveRows.isCardValuesUsable`）。
+> 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
 #### 组件级 token 试算（NORMAL/SUBTOTAL 连表公式）
 - **功能**: 走 token 引擎、复用真实卡片渲染装配，使「试算逐行值 == 渲染逐行值」。无 lineItemId / 无样本 / 内部异常均返回 `{rows:[], errors:[...]}`（非 500）。
@@ -2427,6 +2429,8 @@
 | cardValuesJson | String | 否 | 可选卡片值 JSON |
 
 - **响应内容**: `ApiResponse<Map<String,Object>>`，含 `{ value: BigDecimal|null, errors: [...] }`
+- **取数（repair-260918）**：① 入参 `cardValuesJson` 可用 → 用它；② 否则用该行 `quote_card_values`；③ 都不可用 → `value=null`、`errors=["样本卡片的卡片值不可用（尚未计算或计算失败），无法试算"]`（文案固定，HTTP 200）。改前未传 `cardValuesJson` 时读组件数据（`row_data`），已移除。卡片值「不可用」= `quote_card_values` 为 NULL / 空白 / 解析失败 / 含 `"__cardValueFailed": true` / `tabs` 缺失或为空（`CardEffectiveRows.isCardValuesUsable`）。
+> 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
 #### 页签定义
 - **功能**: 返回各组件的 alias/tabKey/rowKeyFields/detailFields/subtotalCols，供 TAB_JOIN_FORMULA 构建器初始化
@@ -3185,6 +3189,8 @@
 - **鉴权**: 需登录
 - **路径参数**: `id` UUID — 报价单 ID
 - **响应内容**: `ApiResponse<QuotationDTO>`（补算后最新 DTO，含 Excel 值）
+- **报价侧补算口径（repair-260918）**：`quote_excel_values` 为 NULL 的行按该行 `quote_card_values` 计算；该行卡片值不可用 → **跳过、不写**（保持 NULL，下次补算自愈；不写 `{"rows":[]}`，不退回 `row_data`）。核价侧（`costing_excel_values`）不变。`POST /{id}/submit` 内部的同一补算同此口径。
+> 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
 #### 4.1.9 懒算整单卡片值
 - **功能**: 懒算并落库整单卡片值（quote/costing card values），warm 与打开兜底复用；若单飞锁被占返回 warming 状态不阻塞
@@ -3432,6 +3438,8 @@
 - **路径参数**: `id` UUID — 报价单 ID
 - **查询参数**: `templateId` UUID（可选，求值上下文模板）
 - **响应内容**: `ApiResponse<Map<String,Object>>`（Excel 视图结构 + 行数据）
+- **行值取数（repair-260918，报价侧）**：`TAB_JOIN_FORMULA` / `CARD_FORMULA` 列按**该行 `quote_card_values`** 求值（与核价侧、服务端生成 Excel 值同源）；该行卡片值不可用 → 这两类列为 `null`（不退回 `row_data`）；其他列类型不变。行所用模板 `components_snapshot` 为空（DRAFT / 已发布未冻结）时照样求值、不做单位换算；模板不存在或快照损坏 → 按不可用处理。**错误语义变化**：改前报价侧遇「已发布未冻结」且含连表公式列的模板返回 409，改后 200。核价侧（`templateId` = 本单核价模板）不变。报价页面只取本端点的 `columns`，行值由前端计算。
+> 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
 #### 4.1.30 Excel 视图公式试算（dry-run）
 - **功能**: 用临时列配置（不读模板/不落库）对某报价单逐行试算
@@ -3447,6 +3455,8 @@
 | columns | List<Map> | 否 | 临时列配置（含 CARD_FORMULA 的 formula/refs） |
 
 - **响应内容**: `ApiResponse<Map<String,Object>>`（试算结果）
+- **行值取数（repair-260918）**：同 `GET /{id}/excel-view` 报价侧 —— 逐行读该行 `quote_card_values`；不可用 → `TAB_JOIN_FORMULA` / `CARD_FORMULA` 列为 `null`。`templateId` 只用于取模板公式。响应无 `errors` 字段。
+> 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
 #### 4.1.31 更新 Excel 视图单元格
 - **功能**: 编辑回写某行某列的 Excel 视图单元格值
@@ -3472,6 +3482,8 @@
 - **产出**: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`（直返 `Response`）
 - **路径参数**: `id` UUID — 报价单 ID
 - **响应内容**: Excel 字节流（filename=`{quotationNumber}-view.xlsx`）
+- **兜底取数（repair-260918）**：优先 `quote_excel_values`；该行存值为空时整行用 `GET /{id}/excel-view` 的行兜底 —— 兜底值随之改为按该行卡片值计算，卡片值也不可用时对应单元格为空。
+> 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
 #### 4.1.33 延长有效期
 - **功能**: 延长报价单有效期

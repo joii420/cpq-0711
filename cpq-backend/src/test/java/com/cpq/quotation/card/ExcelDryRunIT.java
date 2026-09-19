@@ -19,8 +19,12 @@ import static org.junit.jupiter.api.Assertions.*;
  * 用传入临时 columns（不读模板/不落库）对报价单逐行试算，返回 {columns, rows}。
  *
  * <p>造数策略（参照 GetExcelViewCostingIT）：
- *   customer → "user" → quotation → line_item → componentData(subtotal=7, sort_order=0)
+ *   customer → "user" → quotation → line_item(quote_card_values: 元素 subtotal="7")
+ *   → componentData(subtotal=3, sort_order=0)
  *   不建模板（columns 全部由调用方传入），templateId 传 null。
+ *
+ * <p>repair-260918：报价侧 dryRun 改读该行 quote_card_values（正式账），不再读 componentData。
+ *   夹具让两者不同（卡片值小计 "7" vs componentData.subtotal 3），断言 7 ⇒ 证明读的是卡片值。
  *
  * <p>断言：
  *   1. 传 CARD_FORMULA 列 formula="=[元素.小计]"，refs 指向 sortOrder=0 的 componentData.__subtotal__
@@ -114,11 +118,26 @@ class ExcelDryRunIT {
           .setParameter(3, placeholderTemplateId)
           .executeUpdate();
 
-        // ── 6. quotation_line_component_data（subtotal=7, sort_order=0）
+        // ── 5b. repair-260918：该行正式账（quote_card_values），结构照线上（十进制为字符串）。
+        //   元素页签 subtotal="7"；componentData.subtotal 故意写 3，与之不同。
+        String cardValues = """
+                {"tabs":[{"tabName":"元素","componentId":"%s","componentType":"NORMAL",
+                  "baseRows":[{"driverRow":{"qty":"1"},"basicDataValues":{}}],
+                  "editRows":[],
+                  "formulaResults":[{"rowKey":"0","values":{}}],
+                  "resolvedRows":[{"qty":"1"}],
+                  "subtotal":"7","subtotalByColumn":{}}]}
+                """.formatted(COMP_ID).strip();
+        em.createNativeQuery("UPDATE quotation_line_item SET quote_card_values = CAST(?1 AS jsonb) WHERE id = ?2")
+          .setParameter(1, cardValues)
+          .setParameter(2, lineItemId)
+          .executeUpdate();
+
+        // ── 6. quotation_line_component_data（subtotal=3，与正式账的 7 故意不同, sort_order=0）
         em.createNativeQuery("""
                 INSERT INTO quotation_line_component_data
                   (id, line_item_id, component_id, tab_name, row_data, subtotal, sort_order, created_at)
-                VALUES (?1, ?2, ?3, '元素', CAST('[{"qty":1}]' AS jsonb), 7, 0, now())
+                VALUES (?1, ?2, ?3, '元素', CAST('[{"qty":1}]' AS jsonb), 3, 0, now())
                 """)
           .setParameter(1, UUID.randomUUID())
           .setParameter(2, lineItemId)
@@ -161,7 +180,7 @@ class ExcelDryRunIT {
         assertNotNull(aVal, "Column A (CARD_FORMULA) should have a computed value, got null");
         assertEquals(0,
                 new BigDecimal("7").compareTo(new BigDecimal(aVal.toString())),
-                "A should equal 7 (subtotal from componentData), got: " + aVal);
+                "A should equal 7 (subtotal from quote_card_values, NOT componentData's 3), got: " + aVal);
 
         // _lineItemId 已注入
         Object lineItemIdInRow = outRows.get(0).get("_lineItemId");

@@ -1,0 +1,23 @@
+===== T1.1 开始 2026-09-18T21:47:40-07:00 =====
+  [PASS] 前置：0881 行 44954ae6 quote_card_values 可用（ok，长度 28752）
+  A=http://localhost:8081 HTTP 200 @ 2026-09-18T21:47:41-07:00；B=http://localhost:8081 HTTP 200 @ 2026-09-18T21:47:41-07:00
+  [PASS] A/B 同一分钟内发出（相差 0.4s）
+  [PASS] A 响应 200 且 rows 非空
+  [PASS] B 响应 200 且 rows 非空
+  [PASS] A columns 为 3 列（实际 3）
+  A columns (col_key,title) = [('col_1', '材料成本'), ('col_2', '回收价格'), ('col_3', '产品单价')]
+  B columns (col_key,title) = [('col_1', '材料成本'), ('col_2', '回收价格'), ('col_3', '产品单价')]
+  [PASS] A 与 B 的 col_key/title 一致
+  [PASS] title = 材料成本 / 回收价格 / 产品单价
+  [PASS] A rows[0]._lineItemId = 44954ae6-f5a1-4f0f-9847-d2e6ad23b800
+  col_1 [物料.材料成本]: A(本分支)='0.003407173'  B(master)='0.003407173'  判定值(subtotalByColumn[材料成本])='1.978941064'  立项判定=1.978941064
+  [PASS] col_1 判定值非空
+  [FAIL] col_1 A 逐位等于判定值（Decimal 差为 0；字符串不同）
+  col_2 [物料.回收成本]: A(本分支)='0'  B(master)='0'  判定值(subtotalByColumn[回收成本])='0.317766357'  立项判定=0.317766357
+  [PASS] col_2 判定值非空
+  [FAIL] col_2 A 逐位等于判定值（Decimal 差为 0；字符串不同）
+  col_3 [产品小计(总计)]: A(本分支)='39.547708538'  B(master)='39.547708538'  判定值(subtotal)='1.804589425'  立项判定=1.804589425
+  [PASS] col_3 判定值非空
+  [FAIL] col_3 A 逐位等于判定值（Decimal 差为 0；字符串不同）
+  [FAIL] master 返回值与本分支不同：A=['0.003407173', '0', '39.547708538'] B=['0.003407173', '0', '39.547708538']（证明变化来自本次改动）
+===== T1.1 结论：FAIL（4 项） =====

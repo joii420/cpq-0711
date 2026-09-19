@@ -1,0 +1,71 @@
+# 本分支 批 1（点名 14 类 + 新增 2 类），2026-09-18 ~22:05 PDT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.913 s -- in com.cpq.quotation.card.CostingExcelTreeTabKeyIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.209 s -- in com.cpq.quotation.card.ExcelDryRunIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.121 s -- in com.cpq.quotation.card.ExcelViewCardFormulaIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.170 s -- in com.cpq.quotation.card.ExcelViewTabJoinFormulaIT
+[ERROR] Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.193 s <<< FAILURE! -- in com.cpq.quotation.card.GetExcelViewCostingIT
+[ERROR] Tests run: 9, Failures: 9, Errors: 0, Skipped: 0, Time elapsed: 0.683 s <<< FAILURE! -- in com.cpq.quotation.resource.QuotationOutputResourceTest
+[ERROR] Tests run: 4, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.036 s <<< FAILURE! -- in com.cpq.quotation.service.CardSnapshotAmountTotalTest
+[WARNING] Tests run: 3, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 1.498 s -- in ExportFromSnapshotTest — Phase4 exportExcelView 改读前端快照
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 15.72 s -- in SubmitFreezeSnapshotTest — Phase5 submit 冻结前端 quoteExcelValues 无漂移
+[perf] repair-260918 getExcelView N=1 sql=5 | N=5 sql=5 ; dryRun N=1 sql=5 | N=5 sql=5
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 15.11 s -- in com.cpq.quotation.card.QuoteExcelCardValuesSourceIT
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.66 s -- in com.cpq.quotation.resource.QuotationOutputPrecisionHttpContractTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.736 s -- in com.cpq.quotation.service.ExcelViewRawSourcePrecisionIT
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.089 s -- in com.cpq.quotation.card.CardValuesUsableTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.024 s -- in com.cpq.quotation.card.ComponentDataEffectiveRowsTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.039 s -- in com.cpq.quotation.card.EffectiveRowsKeyContractTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in com.cpq.quotation.service.RowDataMaterializerTest
+[ERROR]   GetExcelViewCostingIT.getExcelView_with_costingTemplateId_uses_costing_columns:176 Column A (CARD_FORMULA) in costing view should have a computed value, got null ==> expected: not <null>
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   QuotationOutputResourceTest.setup:48 1 expectation failed.
+[ERROR]   CardSnapshotAmountTotalTest.amountTotalSentinelPreservesTwelveDigitsThroughPass1AndBackfill:134 expected: <0.083825536789> but was: <0.083825537>
+[ERROR] Tests run: 60, Failures: 11, Errors: 0, Skipped: 1
+[INFO] BUILD FAILURE
+
+# 本分支 批 2（同 18 类），~22:07 PDT —— CardSnapshotBatchWriteRoundTripTest 改前置之前
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 18.01 s -- in com.cpq.basicdata.v6.service.CreateQuotationMaterializeWarningsPropagationTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.038 s -- in com.cpq.quotation.QuotationSubmitFreezeTest
+[T-2 AC-5] 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数(默认chunk=300)=7
+[ERROR] Tests run: 2, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 53.30 s <<< FAILURE! -- in com.cpq.quotation.service.CardSnapshotBatchWriteRoundTripTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.953 s -- in com.cpq.quotation.service.CardSnapshotEmptyAndSingleLineBoundaryTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.602 s -- in com.cpq.quotation.service.CostingExcelFlatShapeSelfCheckIT
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.039 s -- in com.cpq.quotation.service.ExcelCompDataFusionEquivTest
+[WARNING] Tests run: 1, Failures: 0, Errors: 0, Skipped: 1, Time elapsed: 0.016 s -- in com.cpq.quotation.service.LazyExcelValuesEquivTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.077 s -- in com.cpq.quotation.service.Repair260828ValueEquivalenceSnapshotTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.725 s -- in com.cpq.quotation.service.Repair260829OtherPathsByteIdenticalTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.900 s -- in SaveDraftExcelSnapshotTest — Phase3 前端 Excel 快照原样落库
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 26.98 s -- in com.cpq.quotation.CostingOrderPrecisionHttpContractTest
+[ERROR] Tests run: 6, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 32.87 s <<< FAILURE! -- in com.cpq.quotation.DraftPrecisionLifecycleHttpTest
+[ERROR] Tests run: 9, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 19.46 s <<< FAILURE! -- in com.cpq.quotation.QuotationPrecisionHttpContractTest
+[ERROR] Tests run: 2, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 10.18 s <<< FAILURE! -- in com.cpq.quotation.Tc059ConcurrentSubmitHttpTest
+[ERROR] Tests run: 5, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 20.80 s <<< FAILURE! -- in com.cpq.quotation.service.NonDraftPrecisionReadOnlyTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 13.22 s -- in task-260901 版本指纹（AC-11/12/13/14）
+[ERROR] Tests run: 3, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.045 s <<< FAILURE! -- in com.cpq.datasource.sqlview.QuotePendingScopeOpenWhitelistTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.086 s -- in com.cpq.quotation.ExcelColumnResolverTest
+[ERROR]   QuotePendingScopeOpenWhitelistTest.cardSnapshotService_quoteSideMethods_containOpenCall:130 方法 ensureExcelValues（报价侧权威 set 点之一，见 backtask T3）的全部 1 个重载体内均未找到 QuotePendingScope.open(——T3 的接线丢失或被回退。 ==> expected: <true> but was: <false>
+[ERROR]   QuotePendingScopeOpenWhitelistTest.openCallSites_fileLevelWhitelist_exactMatch:99 调用 QuotePendingScope.open( 的文件集合必须精确等于白名单。实际命中（文件→次数）：{com/cpq/component/resource/ComponentResource.java=3, com/cpq/configure/service/ConfigureSnapshotService.java=1, com/cpq/quotation/service/CardSnapshotService.java=3, com/cpq/quotation/service/Quo
+[ERROR]   DraftPrecisionLifecycleHttpTest.tc058_canonicalDraftSaveEnsureRefreshAndReopenRemainExactAndStable:125->assertResponseDecimals:770 subtotal must be string/null: {"code":200,"message":"success","data":{"id":"ff4c456f-905e-4830-9ac5-890abb8d29d5","quotationNumber":"TC058-2129ec08-e3bb-4968-83d9-2368dcb61d73","customerId":"1db9102e-21dd-4720-a443-98e00c71142f","name":"TC-058 canonical lifec
+[ERROR]   QuotationPrecisionHttpContractTest.p1_04_draftAcceptsStringsAndRejectsEveryNumericPrecisionCarrierWithoutWrites:239->assertRejectedWithoutWrites:797 Error body must contain field path 'rowData[0].数量': {"code":400,"message":"lineItems[0].componentData[0] has no frozen field metadata for templateId=null, componentId=null"} ==> expected: <true> but was: <false>
+[ERROR]   QuotationPrecisionHttpContractTest.p1_15And16_costingPreviewAndApproveUseTheSameStringContract:417 Unexpected JSON number at $.data.dsBackfill.summary.tables: 0
+[ERROR]   QuotationPrecisionHttpContractTest.p1_18aTo18e_treeAndDriverDtosHaveNoPrecisionInputsAndReachRealRoutes:472->assertHandledSuccess:810 Expected 2xx, status=400 body={"code":400,"message":"料号「2101110225」在物料表(ds_quote_material)与材质库(material_recipe)中都不存在，不能作为叶子挂入。请先在物料表或材质库中为该料号建档后重试。","data":{"co
+[ERROR]   Tc059ConcurrentSubmitHttpTest.tc059_concurrentSubmitHasSingleInternalWinnerAndMatchesSerialControl:172->assertFinalState:619->assertDecimal:742 quotation.original_amount ==> expected: <98765431.123456789012> but was: <98765431.123456789000>
+[ERROR]   Tc059ConcurrentSubmitHttpTest.tc059_sameValueSaveAndRecalculateThreeTimesRemainLogicallyStable:121->assertDraftResponse:532 save round 1 originalAmount ==> expected: <98765431.123456789012> but was: <98765431.123456789>
+[ERROR]   CardSnapshotBatchWriteRoundTripTest.excelWrite_updatesEqualsBatchCount_notRowCount:235 各批次日志的 rows 之和应等于总行数 1845(非空验证) ==> expected: <1845> but was: <0>
+[ERROR]   NonDraftPrecisionReadOnlyTest.tc057_recalculatePreservesHistoricalNumericAndWritesOnlyCanonicalDerivedString:221 Multiple Failures (2 failures)
+[ERROR] Tests run: 58, Failures: 10, Errors: 0, Skipped: 3
+[INFO] BUILD FAILURE
+
+# 本分支 CardSnapshotBatchWriteRoundTripTest 改前置之后单跑
+[T-2 AC-5] ensure-excel-write 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数=7
+[T-2 AC-5] 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数(默认chunk=300)=7
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 58.05 s -- in com.cpq.quotation.service.CardSnapshotBatchWriteRoundTripTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
