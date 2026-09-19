@@ -1,0 +1,55 @@
+# 第二轮 · 原始输出（mvnw test -Dquarkus.http.test-port=0，测试库 cpq_db_test）
+
+## Run1 本分支：GetExcelViewCostingIT(夹具已修) + QuoteLazyExcelGuardIT，22:23:09 PDT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.237 s -- in com.cpq.quotation.card.GetExcelViewCostingIT
+[repair-260918 lazy] after snapshotQuoteSideOnly: quote_card_values=null | quote_excel_values=null
+[repair-260918 lazy] legacy buildExcelValues(null card values) = {"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.661 s -- in com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+## Run2 A/B：main 三文件 = git show master:<path>（master=ca950dfc），CardValuesUsableTest/QuoteLazyExcelGuardIT 临时移出（依赖新方法），只跑 GetExcelViewCostingIT(夹具已修)，22:23:54 PDT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.391 s -- in com.cpq.quotation.card.GetExcelViewCostingIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+## E1 证伪：只去掉懒算守卫，22:24:51 PDT
+[repair-260918 lazy] after snapshotQuoteSideOnly: quote_card_values=null | quote_excel_values=null
+[repair-260918 lazy] legacy buildExcelValues(null card values) = {"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.431 s -- in com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+
+## E2 证伪：去掉守卫 + 第二层 strict 改非 strict，22:25:22 PDT
+[repair-260918 lazy] after snapshotQuoteSideOnly: quote_card_values=null | quote_excel_values={"rows": [{"c_field": "0.000066807", "c_fixed": "F"}]}
+[repair-260918 lazy] legacy buildExcelValues(null card values) = {"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}
+[ERROR] Tests run: 2, Failures: 1, Errors: 1, Skipped: 0, Time elapsed: 5.491 s <<< FAILURE! -- in com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[ERROR]   QuoteLazyExcelGuardIT.lazyPath_unusableCardValues_keepsQuoteExcelValuesNull:152 unusable card values → quote_excel_values must stay NULL (no row_data values), got {"rows": [{"c_field": "0.000066807", "c_fixed": "F"}]} ==> expected: <null> but was: <{"rows": [{"c_field": "0.000066807", "c_fixed": "F"}]}>
+[ERROR]   QuoteLazyExcelGuardIT.strictBuilder_returnsNull_forEveryUnusableForm:157 » QuarkusTransaction org.opentest4j.AssertionFailedError: strict builder must return null for unusable card values: null ==> expected: <null> but was: <{"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}>
+[ERROR] Tests run: 2, Failures: 1, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE
+
+## E3 证伪：保留守卫，只把第二层 strict 改非 strict，22:25:53 PDT
+[repair-260918 lazy] after snapshotQuoteSideOnly: quote_card_values=null | quote_excel_values=null
+[repair-260918 lazy] legacy buildExcelValues(null card values) = {"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}
+[ERROR] Tests run: 2, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 5.543 s <<< FAILURE! -- in com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[ERROR]   QuoteLazyExcelGuardIT.strictBuilder_returnsNull_forEveryUnusableForm:157 » QuarkusTransaction org.opentest4j.AssertionFailedError: strict builder must return null for unusable card values: null ==> expected: <null> but was: <{"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}>
+[ERROR] Tests run: 2, Failures: 0, Errors: 1, Skipped: 0
+[INFO] BUILD FAILURE
+
+## 终态确认（全部还原后，本分支），22:26:32~22:28:04 PDT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.747 s -- in com.cpq.quotation.card.CostingExcelTreeTabKeyIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.219 s -- in com.cpq.quotation.card.ExcelDryRunIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.195 s -- in com.cpq.quotation.card.GetExcelViewCostingIT
+[T-2 AC-5] ensure-excel-write 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数=7
+[T-2 AC-5] 捕获到 7 条写日志,rows 之和=1845,updates 之和=7,期望批数(默认chunk=300)=7
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 52.05 s -- in com.cpq.quotation.service.CardSnapshotBatchWriteRoundTripTest
+[repair-260918 lazy] after snapshotQuoteSideOnly: quote_card_values=null | quote_excel_values=null
+[repair-260918 lazy] legacy buildExcelValues(null card values) = {"rows":[{"c_fixed":"F","c_field":"0.000066807"}]}
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.582 s -- in com.cpq.quotation.service.QuoteLazyExcelGuardIT
+[perf] repair-260918 getExcelView N=1 sql=5 | N=5 sql=5 ; dryRun N=1 sql=5 | N=5 sql=5
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.471 s -- in com.cpq.quotation.card.QuoteExcelCardValuesSourceIT
+[INFO] Tests run: 5, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.077 s -- in com.cpq.quotation.card.CardValuesUsableTest
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.053 s -- in com.cpq.quotation.card.EffectiveRowsKeyContractTest
+[INFO] Tests run: 24, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS

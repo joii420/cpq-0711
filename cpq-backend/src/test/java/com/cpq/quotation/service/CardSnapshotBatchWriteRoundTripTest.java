@@ -214,6 +214,11 @@ class CardSnapshotBatchWriteRoundTripTest {
     @DisplayName("T-2(AC-5): ensure-excel-write 的 updates 之和 == 批数,不是行数")
     void excelWrite_updatesEqualsBatchCount_notRowCount() {
         UUID qid = buildQuotation(1845, "T260828T2EX");
+        // repair-260918 B-5 (AC-12)：报价侧 Excel 补算只对「正式账（quote_card_values）可用」的行写值，
+        // 正式账为 NULL 的行跳过、保持 NULL。本夹具的行建出来 quote_card_values 为 NULL ⇒ 先按生产顺序
+        // （先 ensure-card-values 再 ensure-excel-values）补齐卡片值，本测试要验的「写库往返 = 批数」才有行可写。
+        assertEquals(1845, cardSnapshotService.ensureCardValues(qid),
+                "前置:先补齐 1845 行卡片值(否则 Excel 补算按 repair-260918 会整批跳过,写日志 rows=0)");
         List<String> logs = captureLogsDuring(() -> {
             int filled = cardSnapshotService.ensureExcelValues(qid);
             assertEquals(1845, filled, "前置数据非空:应补算 1845 行 Excel 值(不是空跑)");

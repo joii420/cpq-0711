@@ -1,0 +1,6 @@
+运行目录 /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/证据/测试/S1/260918-2149-2
+时刻 2026-09-18T21:49:28-07:00  BASE(A)=http://localhost:8081  BASE_B=http://localhost:8081  cases=T1.3  note=自检 perturb-b（只改内存）
+命令行：s1_cases.py --base http://localhost:8081 --base-b http://localhost:8081 --cases T1.3 --perturb-b --note 自检 perturb-b（只改内存）
+[身份] A http://localhost:8081: HTTP 200 totalElements=208  cpq_db_0724.quotation count=208
+[身份] B http://localhost:8081: HTTP 200 totalElements=208  cpq_db_0724.quotation count=209
+[身份] B http://localhost:8081: HTTP 200 totalElements=209  cpq_db_0724.quotation count=209

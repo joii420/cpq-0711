@@ -1166,9 +1166,13 @@ public class CardSnapshotService {
                 safeCall(() -> buildCardValues(managed, q.customerTemplateId, prefetch)), q.id);
             // 报价侧 Excel 值：前端权威（saveDraft）；仅从未 saveDraft 的新行 bootstrap 一次。
             // P3:computeExcel=false(首存)时跳过 bootstrap,留 NULL → ensureExcelValues 懒算。
-            if (computeExcel && managed.quoteExcelValues == null) {
-                managed.quoteExcelValues = safeCall(() ->
-                    buildExcelValues(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+            // repair-260918 B-5: card values unusable → skip (keep NULL, next bootstrap self-heals);
+            // never compute from row_data, never write {"rows":[]}.
+            if (computeExcel && managed.quoteExcelValues == null
+                    && com.cpq.quotation.service.card.CardEffectiveRows.isCardValuesUsable(managed.quoteCardValues)) {
+                String quoteExcel = safeCall(() ->
+                    buildQuoteExcelValuesStrict(managed, q.customerTemplateId, q.customerId, managed.quoteCardValues));
+                if (quoteExcel != null) managed.quoteExcelValues = quoteExcel;
             }
             managed.quoteValuesAt = OffsetDateTime.now();
         } catch (Exception e) {
@@ -1389,18 +1393,26 @@ public class CardSnapshotService {
         try {
             for (QuotationLineItem managed : lines) {
                 boolean changed = false;
-                if (managed.quoteExcelValues == null && customerTemplateId != null) {
+                // repair-260918 B-5: card values unusable → skip this line's quote side (keep NULL,
+                // the IS NULL predicate re-selects it once card values are computed). Never compute
+                // from row_data, never write {"rows":[]} (that would block the bootstrap forever).
+                if (managed.quoteExcelValues == null && customerTemplateId != null
+                        && com.cpq.quotation.service.card.CardEffectiveRows.isCardValuesUsable(managed.quoteCardValues)) {
                     // C-3：QuotePendingScope 只在报价分支内 open/restore，不得整方法/整批循环
                     // 包裹，否则核价分支（costingCardTemplateId）会被污染（破 AC-17）——与改动前
                     // ensureExcelValues 同一条不变式，只是循环体从"整单 lines"换成"本批 lines"。
                     UUID _pqPrev = QuotePendingScope.open(quotationId, status);
+                    String quoteExcel;
                     try {
-                        managed.quoteExcelValues = safeCall(() ->
-                            buildExcelValues(managed, customerTemplateId, customerId, managed.quoteCardValues));
+                        quoteExcel = safeCall(() ->
+                            buildQuoteExcelValuesStrict(managed, customerTemplateId, customerId, managed.quoteCardValues));
                     } finally {
                         QuotePendingScope.restore(_pqPrev);
                     }
-                    changed = true;
+                    if (quoteExcel != null) {
+                        managed.quoteExcelValues = quoteExcel;
+                        changed = true;
+                    }
                 }
                 if (managed.costingExcelValues == null && costingCardTemplateId != null) {
                     managed.costingExcelValues = safeCall(() ->
@@ -2847,6 +2859,31 @@ public class CardSnapshotService {
                 root.putArray("rows");
                 return MAPPER.writeValueAsString(root);
             } catch (Exception ex) { return null; }
+        }
+    }
+
+    /**
+     * repair-260918 B-5: quote-side backend Excel-value bootstrap. Same output shape as
+     * {@link #buildExcelValues(QuotationLineItem, UUID, UUID, String)}, but reads only the card
+     * values: returns {@code null} when they are unusable or cannot be parsed
+     * ({@link ExcelViewService#buildQuoteLineRowDataStrict}) — the caller must then leave
+     * {@code quote_excel_values} NULL. Costing side keeps using {@code buildExcelValues}.
+     */
+    String buildQuoteExcelValuesStrict(QuotationLineItem li, UUID templateId, UUID customerId, String cardValuesJson) {
+        if (li == null || templateId == null) return null;
+        Map<String, Object> rowData = excelViewService.buildQuoteLineRowDataStrict(li, templateId, customerId, cardValuesJson);
+        if (rowData == null) return null;
+        try {
+            ObjectNode root = MAPPER.createObjectNode();
+            ArrayNode rowsNode = root.putArray("rows");
+            if (!rowData.isEmpty()) {
+                rowsNode.add(MAPPER.valueToTree(rowData));
+            }
+            return MAPPER.writeValueAsString(root);
+        } catch (Exception e) {
+            LOG.warnf("[card-snapshot] buildQuoteExcelValuesStrict failed li=%s tmpl=%s: %s",
+                li.id, templateId, e.getMessage());
+            return null;
         }
     }
 

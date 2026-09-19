@@ -36,6 +36,42 @@ public final class CardEffectiveRows {
         }
     }
 
+    /** Key of the failure sentinel written by CardSnapshotService (same literal as CARD_VALUE_FAILED_MARK). */
+    private static final String CARD_VALUE_FAILED_KEY = "__cardValueFailed";
+
+    private static final com.fasterxml.jackson.databind.ObjectMapper USABLE_CHECK_MAPPER =
+            new com.fasterxml.jackson.databind.ObjectMapper();
+
+    /**
+     * repair-260918 B-1: the single, project-wide definition of "card values (quote_card_values)
+     * are usable as the authoritative source for backend Excel evaluation".
+     *
+     * <p>Unusable when ANY of the following holds:
+     * <ul>
+     *   <li>null or blank</li>
+     *   <li>not parseable as JSON, or the root is not an object</li>
+     *   <li>root carries {@code "__cardValueFailed": true} (failure sentinel)</li>
+     *   <li>{@code tabs} is missing, not an array, or an empty array</li>
+     * </ul>
+     *
+     * <p>Callers must treat "unusable" as "no value" (null cell / do not persist), and must NOT fall
+     * back to {@code quotation_line_component_data.row_data} (user decision D-2).
+     * Do not duplicate this predicate elsewhere.
+     */
+    public static boolean isCardValuesUsable(String cardValuesJson) {
+        if (cardValuesJson == null || cardValuesJson.isBlank()) return false;
+        JsonNode root;
+        try {
+            root = USABLE_CHECK_MAPPER.readTree(cardValuesJson);
+        } catch (Exception e) {
+            return false;
+        }
+        if (root == null || !root.isObject()) return false;
+        if (root.path(CARD_VALUE_FAILED_KEY).asBoolean(false)) return false;
+        JsonNode tabs = root.path("tabs");
+        return tabs.isArray() && tabs.size() > 0;
+    }
+
     /**
      * @param cardValues         卡片值快照根（{tabs:[...]}）
      * @param componentsSnapshot 模板 components_snapshot 数组（用于 componentId→sortOrder）

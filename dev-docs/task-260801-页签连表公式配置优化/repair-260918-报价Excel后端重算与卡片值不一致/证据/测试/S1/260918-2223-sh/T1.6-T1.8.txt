@@ -1,0 +1,26 @@
+运行目录 /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/证据/测试/S1/260918-2223-sh；时刻 2026-09-18T22:23:23-07:00；BASE=http://localhost:8318；worktree HEAD=ca950dfc；master=ca950dfc
+分支 fix/repair-260918-quote-excel-card-source
+merge-base=ca950dfc6e467dff60699e8c5421ae88d4e3cc3f（以下 diff 均为 merge-base ↔ 工作区，含未提交改动）
+===== T1.8 开始 =====
+  迁移目录 diff：[]
+  [PASS] 无迁移（diff 为空）
+  前端 src diff：[]
+  [PASS] 前端零改动（diff 为空）
+  工作区未提交（迁移目录+前端 src）：[]
+  [PASS] 工作区无未提交的迁移/前端改动
+  （参考）本分支相对 master 全部改动文件：
+cpq-backend/src/main/java/com/cpq/quotation/service/CardSnapshotService.java
+cpq-backend/src/main/java/com/cpq/quotation/service/ExcelViewService.java
+cpq-backend/src/main/java/com/cpq/quotation/service/card/CardEffectiveRows.java
+cpq-backend/src/test/java/com/cpq/quotation/card/ExcelDryRunIT.java
+cpq-backend/src/test/java/com/cpq/quotation/card/GetExcelViewCostingIT.java
+cpq-backend/src/test/java/com/cpq/quotation/service/CardSnapshotBatchWriteRoundTripTest.java
+dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/backtask.md
+dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/test.md
+dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/问题说明.md
+  启动日志 ../../测试/S1/260918-2221-backend/backend-8318.log 含 ERROR 行：0
+2026-09-18 22:21:28.201 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.136s. Listening on: http://0.0.0.0:8318
+  [PASS] 启动无 ERROR
+  GET http://localhost:8318/api/cpq/components（无 cookie）→ 401
+  [PASS] 401 探活
+===== 结束：FAIL 项 0 =====

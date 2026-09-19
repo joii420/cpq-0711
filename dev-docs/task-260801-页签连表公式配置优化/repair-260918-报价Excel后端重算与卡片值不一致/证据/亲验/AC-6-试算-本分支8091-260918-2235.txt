@@ -1,0 +1,9 @@
+# 2026-09-18 22:35:31 PDT 本分支 8091；0881 行 44954ae6；判定值见 AC-1-2 对账（1.978941064 / 0.317766357 / 1.804589425）
+## ① /excel-view/dry-run
+rows= [{'col_1': '1.978941064', 'col_2': '0.317766357', 'col_3': '1.804589425', '_lineItemId': '44954ae6-f5a1-4f0f-9847-d2e6ad23b800'}] has_errors_field= False
+## ② 模板级 col0: {"code":200,"message":"success","data":{"value":"1.978941064","errors":[]}}
+## ③ 组件级 col0: {"code":200,"message":"success","data":{"value":"1.978941064","errors":[]}}
+## ② 模板级 col1: {"code":200,"message":"success","data":{"value":"0.317766357","errors":[]}}
+## ③ 组件级 col1: {"code":200,"message":"success","data":{"value":"0.317766357","errors":[]}}
+## ② 模板级 col2: {"code":200,"message":"success","data":{"value":"1.804589425","errors":[]}}
+## ③ 组件级 col2: {"code":200,"message":"success","data":{"value":"1.804589425","errors":[]}}

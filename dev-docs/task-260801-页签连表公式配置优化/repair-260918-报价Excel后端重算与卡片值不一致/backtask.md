@@ -26,9 +26,9 @@
 
 - **夹具纪律（AP-59）**：新增测试的 `quote_card_values` 夹具必须忠实复刻线上结构 —— 十进制值是**字符串**、含 `resolvedRows` / `formulaResults` / `subtotal` / `subtotalByColumn`；缺字段不许自己补全，否则红用例会变假绿。
 - **判定基准**：`[页签(总计)]` → 该页签 `subtotal`；`[页签.列]` / `[页签.列(小计)]` → 该页签 `subtotalByColumn[列]`。立项期已实测：这两个基准与「按正式账试算」在开发库 135 格上**逐位相等**（`证据/输出/三方对账-260918-2012.txt`）。
-- **单位换算**：正式账路径的换算由 `CardEffectiveRows.parse` → `UnitConversion.convertObjectRow` 完成，依赖 `EffRowsCtx` 里的 `fields`；`loadEffRowsCtx` 读 `template.components_snapshot`（立项实查：20 个带 Excel 配置的模板该字段全部非空且与冻结行一致）。ctx 拿不到时不要静默继续 —— 按 B-1 当「不可用」处理并记一行 WARN。
+- **单位换算**：正式账路径的换算由 `CardEffectiveRows.parse` → `UnitConversion.convertObjectRow` 完成，依赖 `EffRowsCtx` 里的 `fields`；`loadEffRowsCtx` 读 `template.components_snapshot`（立项实查：20 个带 Excel 配置的模板该字段全部非空且与冻结行一致）。ctx 拿不到时不要静默继续 —— 按 B-1 当「不可用」处理并记一行 WARN。**（`D-7` 修订）**：「拿不到」限于模板不存在或快照损坏；快照为空（DRAFT / 已发布未冻结）时照样求值、不做单位换算（同核价侧）。
 - **测试库**：`mvnw test` 默认连 `cpq_db_test`（决策台账 `application-test.properties`）。🚫 **不要跑全量 `mvnw test`** —— `mat_*` 表在本库从未创建（决策台账 `mat_part`），全量永远不可能全绿；只跑上面点名的测试类。
 - **`GoldenCardValuesEquivTest` 恒跳过**（决策台账 `DEC-0007`），🚫 不可拿它的 `BUILD SUCCESS` 当无回归证据。
-- **worktree 自检**：共享 8081 是主工作区 master，拿它验证自己的改动 = 假绿。自检用**临时端口**起本分支实例：`./mvnw -q package -DskipTests` 后 `java -jar target/quarkus-app/quarkus-run.jar -Dquarkus.http.port=8319`（`%prod` 下 `flyway.migrate-at-start=false`，不会动任何库结构；默认连 `cpq_db_0724`，本任务只读该库）。🚫 端口 `8081`/`5174` 留给主线与用户，`8318`/`8328`/`8338`/`5338` 留给测试片，你只用 `8319`。
+- **worktree 自检**：共享 8081 是主工作区 master，拿它验证自己的改动 = 假绿。自检用**临时端口**起本分支实例：`./mvnw -q package -DskipTests` 后 `java -Dquarkus.http.port=8319 -jar target/quarkus-app/quarkus-run.jar`（🚨 `-D` 必须写在 `-jar` 之前，写在后面不生效、会去抢 8081 —— 2026-09-18 后端工程师实测更正）（`%prod` 下 `flyway.migrate-at-start=false`，不会动任何库结构；默认连 `cpq_db_0724`，本任务只读该库）。🚫 端口 `8081`/`5174` 留给主线与用户，`8318`/`8328`/`8338`/`5338` 留给测试片，你只用 `8319`。
 - **交付物**：完成时执行一次 `./mvnw -q package -DskipTests`，把 `target/quarkus-app/` 留在 worktree 里并在回报中写明构建时间 —— 测试片直接 `java -jar` 用它，不再自己构建（`testing.md §4.2.5`：同一 worktree 内不要与别人并发构建）。
 - 🚫 你不要执行 `git commit`，提交由主线统一做。

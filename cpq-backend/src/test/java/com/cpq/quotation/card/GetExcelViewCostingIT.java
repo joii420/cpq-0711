@@ -126,6 +126,16 @@ class GetExcelViewCostingIT {
           .setParameter(3, costingConfig)
           .executeUpdate();
 
+        // ── 4c. repair-260918：把核价模板挂到本单 costing_card_template_id 上。
+        //   getExcelView 的核价分支判据是 templateIdOverride == quotation.costingCardTemplateId
+        //   （repair-260912 B-2）。原夹具漏了这一列 ⇒ 实际一直走的是报价分支，并没有测到核价侧。
+        //   前端也只会拿本单自己的核价模板来调（QuotationStep2 → LinkedExcelView templateId=costingCardTemplateId）。
+        //   有 FK（quotation_costing_card_template_fk），所以放在模板 INSERT 之后再 UPDATE。
+        em.createNativeQuery("UPDATE quotation SET costing_card_template_id = ?1 WHERE id = ?2")
+          .setParameter(1, costingTemplateId)
+          .setParameter(2, quotationId)
+          .executeUpdate();
+
         // ── 5. quotation_line_item（template_id = 报价模板）
         UUID lineItemId = UUID.randomUUID();
         em.createNativeQuery("""

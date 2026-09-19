@@ -1,0 +1,29 @@
+运行目录 /home/joii/project/cpq/.claude/worktrees/repair-260918-quote-excel-card-source/dev-docs/task-260801-页签连表公式配置优化/repair-260918-报价Excel后端重算与卡片值不一致/证据/测试/S1/260918-2230-sh；时刻 2026-09-18T22:30:16-07:00；BASE=http://localhost:8081；worktree HEAD=ca950dfc；master=ca950dfc
+分支 fix/repair-260918-quote-excel-card-source
+merge-base=ca950dfc6e467dff60699e8c5421ae88d4e3cc3f（以下 diff 均为 merge-base ↔ 工作区，含未提交改动）
+===== T1.6 开始 =====
+  [PASS] git diff ExcelViewService 执行成功（rc=0）
+  diff 行数 347（0 行 = 该文件无改动；AC-1 等要求它有改动，0 行本身要报主线）
+  CardSnapshotService 真实路径：cpq-backend/src/main/java/com/cpq/quotation/service/CardSnapshotService.java
+  ExcelViewService 改动行含 costingSide：1 条；CardSnapshotService 改动行含 costingExcelValues：0
+NA 条
+  [FAIL] ExcelViewService 有 1 条含 costingSide 的改动行（须逐行核是否触及核价侧分支）
+  [FAIL] CardSnapshotService costingExcelValues 改动行=0
+NA
+  mvnw test（测试库 cpq_db_test；只跑点名三类）开始 2026-09-18T22:30:16-07:00
+27:#    ⚠️ 需要临时打回共享库时用环境变量覆盖：DB_NAME=cpq_db_0724 ./mvnw test（不要改回本文件）。
+28:# Defaults preserve local dev behavior; override in Docker via env vars (DB_HOST, DB_PORT, DB_NAME, DB_USERNAME, DB_PASSWORD).
+32:quarkus.datasource.jdbc.url=jdbc:postgresql://${DB_HOST:10.177.152.12}:${DB_PORT:5432}/${DB_NAME:cpq_db_test}?sslmode=disable
+41:quarkus.datasource."datasource-readonly".jdbc.url=jdbc:postgresql://${DB_HOST:10.177.152.12}:${DB_PORT:5432}/${DB_NAME:cpq_db_test}?sslmode=disable
+  mvnw rc=0 结束 2026-09-18T22:30:39-07:00
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.109 s -- in com.cpq.quotation.card.CostingExcelTreeTabKeyIT
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.269 s -- in com.cpq.quotation.card.GetExcelViewCostingIT
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.142 s -- in com.cpq.quotation.card.EffectiveRowsKeyContractTest
+[INFO] Tests run: 8, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+  com.cpq.quotation.card.GetExcelViewCostingIT.txt: Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.269 s -- in com.cpq.quotation.card.GetExcelViewCostingIT
+  com.cpq.quotation.card.CostingExcelTreeTabKeyIT.txt: Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.109 s -- in com.cpq.quotation.card.CostingExcelTreeTabKeyIT
+  com.cpq.quotation.card.EffectiveRowsKeyContractTest.txt: Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.142 s -- in com.cpq.quotation.card.EffectiveRowsKeyContractTest
+  [PASS] 三个核价测试类 mvnw rc=0
+  ⚠ Tests run 与 master 基线（后端工程师 B-7① 回报）逐类对照须人工填入回报
+===== 结束：FAIL 项 2 =====
