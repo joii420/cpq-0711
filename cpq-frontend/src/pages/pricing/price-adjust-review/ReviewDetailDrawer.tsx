@@ -9,6 +9,7 @@ import type {
 } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
 import {
+  DISPLAY_SCALE,
   ELEMENT_PRICE_SCALE,
   formatChangeRate,
   normalizeDecimalString,
@@ -24,7 +25,16 @@ export interface ReviewDetailDrawerProps {
   onClose: () => void;
 }
 
-function fmt(v: DecimalString | null | undefined, digits = 2): string {
+/**
+ * 本抽屉全部金额的唯一展示口径：最多 DISPLAY_SCALE(9) 位，尾零由
+ * formatDisplayDecimal -> trimFixed 自动去掉（'1.717061326000' -> '1.717061326'，
+ * '0.500000000' -> '0.5'）。
+ *
+ * 🔒 默认位数曾写死为 2，把 numeric(26,12) 存下的值截成 '1.72'（比对列 7 位有效数字
+ * 全部看不见）。task-260916 当时只把上版价/本版价接到 ELEMENT_PRICE_SCALE，其余金额列漏了。
+ * 🚫 不要再往调用点传字面量位数——要调整口径请改 precision.ts 的常量，保持前后端同值。
+ */
+function fmt(v: DecimalString | null | undefined, digits = DISPLAY_SCALE): string {
   return formatNumber(v, { isComputed: true, decimals: digits }) ?? '—';
 }
 

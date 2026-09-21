@@ -12,7 +12,7 @@ import RejectReasonDrawer from './RejectReasonDrawer';
 import JobProgressDrawer from '../price-adjust-jobs/JobProgressDrawer';
 import type { ReviewRowDTO, ReviewStatus } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
-import { toDecimal, type DecimalString } from '../../../utils/precision';
+import { DISPLAY_SCALE, toDecimal, type DecimalString } from '../../../utils/precision';
 
 const PAGE_SIZE = 20;
 
@@ -23,8 +23,13 @@ const REVIEW_STATUS_OPTIONS: { value: ReviewStatus; label: string }[] = [
   { value: 'VOIDED', label: '已作废' },
 ];
 
+/**
+ * 列表金额的唯一展示口径：最多 DISPLAY_SCALE(9) 位，尾零自动去掉。
+ * 🔒 与 ReviewDetailDrawer 的 fmt 同口径——同一个数在列表与抽屉里必须显示成同一个样子。
+ * 🚫 不要改回字面量位数（曾写死 2，把 '1.717061326' 截成 '1.72'）。
+ */
 function fmt(v: DecimalString | null | undefined): string {
-  return formatNumber(v, { isComputed: true, decimals: 2 }) ?? '—';
+  return formatNumber(v, { isComputed: true, decimals: DISPLAY_SCALE }) ?? '—';
 }
 
 /** 🔒 全部数据列都挂同一个 onCell，实现"整行标红"——rowRed 由服务端权威给出，
