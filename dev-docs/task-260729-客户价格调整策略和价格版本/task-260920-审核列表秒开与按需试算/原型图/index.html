@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型导航 · task-260920</title>
+<style>
+  body{margin:0;background:#f5f5f5;font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:rgba(0,0,0,.88)}
+  .page{max-width:820px;margin:32px auto;padding:0 16px}
+  .card{background:#fff;border-radius:8px;padding:20px 24px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  h1{font-size:20px;margin:0 0 4px} h2{font-size:15px;margin:0 0 8px}
+  a{color:#1677ff;text-decoration:none}
+  .muted{color:rgba(0,0,0,.45);font-size:12.5px}
+  ul{margin:6px 0 0;padding-left:20px} li{margin:3px 0}
+  code{background:#f5f5f5;padding:0 4px;border-radius:3px;font-size:12.5px}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:6px}
+  th,td{border-bottom:1px solid #f0f0f0;padding:6px 8px;text-align:left;vertical-align:top}
+  th{background:#fafafa}
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>原型导航 · 审核列表秒开与按需试算</h1>
+  <p class="muted"><code>dev-docs/task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算/原型图/</code> · 2026-09-20</p>
+
+  <div class="card" style="border-left:4px solid #1677ff">
+    <h2>📌 当前基准（2026-09-20 起 · v2）</h2>
+    <p style="margin:0 0 8px;color:#874d00;background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:8px 12px"><b>v2 修订（评审 cpq-de 后）</b>：
+    ① 列表状态 2 的「驳回」改为置灰（裁决 <code>D-6</code>）；② 撤掉 v1 自定义的两种空态（无 AC 认领，N-10）；③ 列表新增状态 6「已作废」筛选（<code>AC-27</code>）；
+    ④ 抽屉改为<b>先算、后取详情</b>，不再让「一」先显示（避免同一行被同时试算两次）；⑤ 确认框里缺核价侧的行<b>照常显示报价侧的值</b>（v1 画成全空是错的）；
+    ⑥ 批量计算改为逐条依次调用（取消批量接口，<code>J-2</code>）。v1 版本未单独保存截图，差异以本段为准。</p>
+    <p style="margin:0">下面三份是对应界面此刻的视觉标准，<b>照这三份做</b>。闸门 A 定稿后即为验收基准 —— <b>改原型 = 改 AC</b>，须走 <code>task-docs.md §4</code> 四步。</p>
+    <p style="margin:8px 0 0">全部数据取自开发库 <code>cpq_db_0724</code> 真实行（客户 正泰 <code>CUST-0004</code> / 版本 <code>V26092003</code>）；金额按 <code>DISPLAY_SCALE</code>(9) 去尾零（2026-09-20 路径 B 已修，<code>6f770d10</code>）。</p>
+  </div>
+
+  <div class="card">
+    <h2>1. 价格调整审核列表 <span class="muted">· F-1 / F-3 / F-4 / F-6</span></h2>
+    <ul>
+      <li><a href="审核列表-未计算态.html">审核列表-未计算态.html</a> —— 五种状态：生成后 15 秒内的秒开态（AC-1）· 勾选含未计算行（AC-8）· 只看标红的口径提示（AC-4）· 两种空态（文案必须不同）· 极值与最长文案</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>2. 料号审核抽屉 <span class="muted">· F-2</span></h2>
+    <ul>
+      <li><a href="审核抽屉-触发计算.html">审核抽屉-触发计算.html</a> —— 四种状态：点开未计算的料号先算（AC-5，骨架只盖「二」）· 算完写回（AC-5 ②）· 算失败（AC-7）· 已计算的不重算</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h2>3. 通过并升版 <span class="muted">· F-4 / F-5</span></h2>
+    <ul>
+      <li><a href="批量通过-试算与确认.html">批量通过-试算与确认.html</a> —— 四步：先批量算（AC-8，此时无 job）· 影响面确认（AC-10，<b>绿框 = 本次新增，其余是现网原样</b>）· 含失败项（AC-11）· 取消后算出的金额保留（AC-9）</li>
+    </ul>
+  </div>
+
+  <div class="card" style="border-left:4px solid #faad14">
+    <h2>🕰️ 上一份改标「历史快照」：父任务 <code>../价格调整策略-原型图.html</code> 的屏 3 / 屏 4 / 屏 5</h2>
+    <p style="margin:0">那三屏在 <code>task-260729</code> 交付当时是对的；之后实现演进，已不再是基准。<b>不回改它的内容</b>（它是那次验收的记录），偏差如下：</p>
+    <table>
+      <thead><tr><th style="width:92px">屏</th><th>与现网实现的偏差</th><th style="width:150px">改动来源</th></tr></thead>
+      <tbody>
+        <tr><td><b>屏 3</b><br>料号待办池</td><td>
+          ① 屏 3「核价侧 现→调整后」→ 现网只有「核价侧成本」单值<br>
+          ② 屏 3「成本差额（调整后）」「涉及单」两列 → 现网没有<br>
+          ③ 屏 3「待处理」列 → 现网「审核状态」四态 Tag（待处理/已通过/已驳回/已作废）<br>
+          ④ 屏 3「判断依据单（最近）」在比对状态之后 → 现网「依据单号 / 日期」在版本列之后<br>
+          ⑤ 金额位数：现网曾写死 2 位 → 本任务期间改为 9 位去尾零<br>
+          ⑥ <b>本任务</b>：「比对状态」拆出静态「未计算」态 + 行内「计算」链接</td>
+          <td>实现期演进（未留单一来源）；⑤ <code>6f770d10</code>；⑥ 本任务</td></tr>
+        <tr><td><b>屏 4</b><br>料号审核抽屉</td><td>
+          ① 「一」元素表：现网比屏 4 多「命中规则 / 对单价影响 / 标记」三列<br>
+          ② 「二」比对表：屏 4 的「报价侧 现→调整后」合并列 → 现网拆成「报价·现 / 报价·调整后 / 核价·现 / 核价·调整后」四列；屏 4 的「差异（现）」与「状态」列 → 现网并入「差异」单元格的三态渲染（数值 / 缺数据 / 已失效）<br>
+          ③ 「三」屏 4「逐单明细」9 列（含销售、成本差额、操作）→ 现网「下钻」6 列（单号 / 创建日期 / 状态 / 现小计 / 调整后小计 / 标记），调整后小计有「未试算」三态<br>
+          ④ <b>本任务</b>：打开未计算料号时先算再显示</td>
+          <td>① ③ <code>repair-260807</code>（FR-5 / FR-6）；④ 本任务</td></tr>
+        <tr><td><b>屏 5</b><br>影响面确认</td><td>
+          ① 屏 5 有逐料号表（料号 / 名称 / 版本升级 / 调整后成本差额 / 影响单数 / 状态）→ 现网<b>没有逐料号表</b>，改为「版本推进路径」逐行文本 + 「按状态分组」Tag<br>
+          ② <b>本任务</b>：在现网基础上新增「各料号金额」表（列：料号 / 报价侧·现 / 报价侧·调整后 / 差异 —— 与屏 5 的列不同）+ 「计算失败不参与本次升版」区块</td>
+          <td>① 实现期演进；② 本任务</td></tr>
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top:8px">⚠️ 偏差清单基于<b>表头与区块标题逐项比对</b>（屏 3/4/5 取自该文件 639-1003 行；现网取自 <code>PriceAdjustReviewPage.tsx</code> / <code>ReviewDetailDrawer.tsx</code> / <code>ApproveImpactModal.tsx</code>，2026-09-20 实读），未逐像素核对样式。<br>
+    父任务的屏 6（更新执行进度）已由 <code>../repair-260918-大单升版超时与涨跌率显示/原型图/进度抽屉.html</code> 接管为 📌，本任务不涉及。</p>
+  </div>
+</div>
+</body>
+</html>

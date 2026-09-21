@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型 · 通过并升版（含未计算行）</title>
+<style>
+  :root{--t1:rgba(0,0,0,.88);--t2:rgba(0,0,0,.65);--t3:rgba(0,0,0,.45);--bd:#f0f0f0;--blue:#1677ff;--red:#cf1322;--orange:#d46b08;--bg:#f5f5f5}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font:14px/1.5715 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--t1)}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px 16px 60px}
+  .note{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin:0 0 16px;font-size:13px;color:#003a8c}
+  h2{font-size:16px;margin:28px 0 10px;padding-left:9px;border-left:3px solid var(--blue)}
+  .sub{color:var(--t3);font-size:12.5px;margin:0 0 10px}
+  .stage{background:rgba(0,0,0,.45);border-radius:8px;padding:34px 16px;display:flex;justify-content:center}
+  .modal{width:720px;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.12);overflow:hidden}
+  .mh{padding:16px 24px;border-bottom:1px solid var(--bd);font-size:16px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .mh .x{color:var(--t3);font-weight:400;font-size:16px}
+  .mb{padding:20px 24px}
+  .mf{padding:10px 16px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;gap:8px}
+  .btn{height:32px;padding:0 15px;border-radius:6px;border:1px solid #d9d9d9;background:#fff;display:inline-flex;align-items:center;font-size:14px;cursor:default}
+  .btn.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+  .btn.dis{color:rgba(0,0,0,.25);background:rgba(0,0,0,.04)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafafa;font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:8px;border-bottom:1px solid var(--bd)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace}
+  .muted{color:var(--t3)}
+  .tag{display:inline-block;padding:0 7px;height:22px;line-height:20px;border-radius:4px;font-size:12px;border:1px solid}
+  .tag.grey{background:#fafafa;border-color:#d9d9d9;color:var(--t2)}
+  .tag.red{background:#fff1f0;border-color:#ffa39e;color:var(--red)}
+  .tag.green{background:#f6ffed;border-color:#b7eb8f;color:#389e0d}
+  .alert{border-radius:6px;padding:9px 13px;font-size:13px;margin-bottom:14px}
+  .alert.warn{background:#fffbe6;border:1px solid #ffe58f;color:#874d00}
+  .alert.info{background:#e6f4ff;border:1px solid #91caff;color:#003a8c}
+  .alert.err{background:#fff1f0;border:1px solid #ffa39e;color:#a8071a}
+  .bar{height:8px;border-radius:4px;background:#f0f0f0;overflow:hidden;margin:10px 0 6px}
+  .bar>i{display:block;height:100%;background:var(--blue);width:60%}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-1px;margin-right:5px}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .cap{font-size:12.5px;color:var(--t3);margin-top:10px}
+  .desc{display:grid;grid-template-columns:120px 1fr 120px 1fr;border:1px solid var(--bd);border-radius:6px;overflow:hidden;font-size:13px;margin-bottom:16px}
+  .desc>div{padding:7px 12px;border-bottom:1px solid var(--bd)}
+  .desc .k{background:#fafafa;color:var(--t2)}
+  .sec{font-weight:600;font-size:13px;margin:0 0 6px}
+  .tag.blue{background:#e6f4ff;border-color:#91caff;color:#0958d9}
+  .new{outline:2px dashed #52c41a;outline-offset:6px;border-radius:4px;position:relative;margin:22px 0 18px}
+  .new::before{content:"🆕 本次新增";position:absolute;top:-19px;left:0;font-size:11.5px;color:#389e0d;font-weight:600}
+  dl{margin:0;display:grid;grid-template-columns:120px 1fr;row-gap:8px;font-size:13.5px}
+  dt{color:var(--t2)}dd{margin:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="note">
+  <b>📌 当前基准（v2）</b> · 通过并升版（含未计算行的守门流程）· <code>ApproveImpactModal.tsx</code> + 列表工具栏 · 任务 <code>task-260920</code><br>
+  🔒 <b>本页唯一允许的 Modal</b>（父任务既有裁决：720px 影响面确认框）。<b>绿色虚线框 = 本次新增</b>，其余均为现网既有区块、照原样保留。其余交互一律走抽屉。金额按 DISPLAY_SCALE(9) 去尾零。
+</div>
+
+<h2>第 1 步 · 先批量算（AC-8）—— 点「通过并升版」后立刻出现</h2>
+<p class="sub">勾了 5 行、其中 3 行未计算。<b>不是直接弹确认框</b>，而是先把这 3 行算出来 —— 否则用户会在看不到金额的情况下批准调价。<br>v2：前端<b>逐条依次</b>调「点击即算」并轮询结果（裁决 <code>J-2</code>，取消了 v1 的批量试算接口）；🚫 一次全发（<code>runBatch</code> 默认是并发的）。</p>
+<div class="stage">
+  <div class="modal">
+    <div class="mh"><span>正在计算选中料号的影响</span><span class="x">✕</span></div>
+    <div class="mb">
+      <div class="alert info">共 5 个料号，其中 <b>3 个</b>尚未计算金额。正在计算，完成后会显示影响面供你确认。</div>
+      <div><span class="spin"></span>正在计算 <b>2 / 3</b>　<span class="muted">· 已用 3 秒</span></div>
+      <div class="bar"><i style="width:66%"></i></div>
+      <table style="margin-top:12px">
+        <thead><tr><th>料号</th><th>名称</th><th>结果</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">S3120011203</td><td>料号1</td><td><span class="tag green">已完成</span></td></tr>
+          <tr><td class="mono">PERF600-B00525</td><td>性能测试件-525</td><td><span class="spin"></span>计算中</td></tr>
+          <tr><td class="mono">PERFHOT-B00052</td><td>性能测试件-热点-52</td><td><span class="tag grey">等待</span></td></tr>
+        </tbody>
+      </table>
+      <p class="cap">单条实测 0.4~0.9 秒（`[perf] upgrade` 埋点），勾 10 条约 5~9 秒。<br>
+      🚫 本步<b>只算不升版</b> —— 此刻查 <code>material_price_update_job</code> 必须没有新记录（AC-9 验这条）。</p>
+    </div>
+    <div class="mf"><div class="btn">取消</div><div class="btn pri dis">下一步</div></div>
+  </div>
+</div>
+
+<h2>第 2 步 · 影响面确认（AC-8 / AC-10）—— 算完才弹，<b>在现网确认框上只加一块</b></h2>
+<p class="sub">🔒 <b>以现网 <code>ApproveImpactModal.tsx</code> 为底</b>：标题、料号数/单数、版本推进路径、按状态分组、「不会被更新的单」、「跌破预警线」这些既有区块<b>一个不删、顺序不变</b>。
+唯一新增的是绿色虚线框里的「各料号金额」—— 现网没有这块，而守门的意义正在于「批准前看得到金额」。<br>
+🔒 这里的「调整后」就是升版后写进报价单的值，<b>AC-10 会逐位比对</b>；数由后端 <code>impact</code> 的 <code>materials[]</code> 给（<code>api.md §3</code>），🚫 前端不得二次运算、不得改位数。</p>
+<div class="stage">
+  <div class="modal">
+    <div class="mh"><span>通过前影响面确认 · 共 5 个料号</span><span class="x">✕</span></div>
+    <div class="mb">
+      <div class="desc"><div class="k">料号数</div><div>5</div><div class="k">将更新的单数</div><div>3</div></div>
+      <div class="sec">版本推进路径</div>
+      <div style="font-size:12.5px;margin-bottom:16px;line-height:1.8">
+        <div><span class="mono">S3120011203</span>：（首次） → <b>V26092003</b></div>
+        <div><span class="mono">PERF600-B00525</span>：（首次） → <b>V26092003</b></div>
+        <div><span class="mono">PERFHOT-B00052</span>：（首次） → <b>V26092003</b></div>
+        <div><span class="mono">T260907T-B01468</span>：（首次） → <b>V26092003</b></div>
+        <div><span class="mono">T260907T-B01678</span>：（首次） → <b>V26092003</b></div>
+      </div>
+      <div class="sec">将更新的单（按状态分组）</div>
+      <div style="margin-bottom:4px"><span class="tag blue">草稿 × 3</span></div>
+
+      <div class="new">
+        <div class="sec">各料号金额（判断依据单 · 报价侧）</div>
+        <table>
+          <thead><tr><th>料号</th><th class="num">报价侧·现</th><th class="num">报价侧·调整后</th><th class="num">差异</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">S3120011203</td><td class="num">0.324083231</td><td class="num"><b>1.717061326</b></td><td class="num" style="color:var(--red)">1.717061326</td></tr>
+            <tr><td class="mono">PERF600-B00525</td><td class="num">9118.2</td><td class="num"><b>9118.2</b></td><td class="num muted">0</td></tr>
+            <tr><td class="mono">PERFHOT-B00052</td><td class="num">0.5</td><td class="num"><b>0.512500004</b></td><td class="num" style="color:var(--red)">0.012500004</td></tr>
+            <tr><td class="mono">T260907T-B01468</td><td class="num">0.324083231</td><td class="num"><b>1.717061326</b></td><td class="num" style="color:var(--red)">1.717061326</td></tr>
+            <tr><td class="mono">T260907T-B01678</td><td class="num muted">—</td><td class="num"><b>9118.2</b></td><td class="num muted">—（缺数据：核价侧）</td></tr>
+          </tbody>
+        </table>
+        <p class="cap" style="margin-top:6px">末行是<b>算完了但缺核价侧数据</b>（<code>status=MISSING, missingSide=COSTING</code>）—— 与「未计算」是两回事。🔒 <b>缺哪一侧只空哪一侧</b>：报价侧的调整后照常显示（实查 <code>V26092003</code> 的 1202 条缺核价侧行，全部有「报价·调整后」；其中 36 条也有「报价·现」）。v1 这里画成三格全空，是错的。</p>
+      </div>
+
+      <div class="alert warn">⚠️ <b>另有 2 张单不会被更新</b><div style="margin-top:2px">已提交 2 —— 这些单将保持旧价。</div></div>
+      <div class="alert err" style="margin-bottom:0">⛔ <b>以下料号仍有跌破预警线的比对列</b><div style="margin-top:2px">S3120011203（1 列）、PERFHOT-B00052（1 列）、T260907T-B01468（1 列）</div></div>
+    </div>
+    <div class="mf"><div class="btn">取消</div><div class="btn pri">确认通过并升版</div></div>
+  </div>
+</div>
+
+<h2>第 3 步 · 有算失败的（AC-11）—— 再加一块「不参与本次升版」</h2>
+<p class="sub">失败的行<b>不能</b>悄悄跟着升版，也<b>不能</b>因为它一条就把整批拦死。在第 2 步的基础上<b>再加一块</b>，放在最上面（它改变了「本次到底批了几个」，必须第一眼看到）。其余区块同第 2 步、只统计成功的那 3 个。</p>
+<div class="stage">
+  <div class="modal">
+    <div class="mh"><span>通过前影响面确认 · 共 3 个料号</span><span class="x">✕</span></div>
+    <div class="mb">
+      <div class="new" style="margin-top:18px">
+        <div class="alert err" style="margin-bottom:0">
+          <b>2 个料号计算失败，不参与本次升版</b>
+          <ul style="margin:6px 0 0 18px;padding:0">
+            <li><span class="mono">PERF600-B00432</span> —— 预算试算超时（超过 60 秒）</li>
+            <li><span class="mono">PERFHOT-B01442</span> —— 判断依据单已不在活单范围内</li>
+          </ul>
+          <div style="margin-top:6px">它们仍留在待办池，可稍后在列表点「重算」。本次勾选 5 个，实际升版 <b>3</b> 个。</div><div style="margin-top:4px;font-size:12px;opacity:.85">失败清单来自第 1 步逐条计算的结果（前端持有），🚫 不经影响面接口；点确认时提交的 <code>reviewIds</code> <b>只含 3 个已算好的</b>（后端对任何未算好的行本来就会整批拒绝）。</div>
+        </div>
+      </div>
+      <div class="desc"><div class="k">料号数</div><div>3</div><div class="k">将更新的单数</div><div>2</div></div>
+      <div class="sec">版本推进路径</div>
+      <div style="font-size:12.5px;margin-bottom:16px;line-height:1.8">
+        <div><span class="mono">S3120011203</span>：（首次） → <b>V26092003</b></div>
+        <div><span class="mono">PERF600-B00525</span>：（首次） → <b>V26092003</b></div>
+        <div><span class="mono">T260907T-B01468</span>：（首次） → <b>V26092003</b></div>
+      </div>
+      <div class="sec">将更新的单（按状态分组）</div>
+      <div style="margin-bottom:4px"><span class="tag blue">草稿 × 2</span></div>
+      <div class="new">
+        <div class="sec">各料号金额（判断依据单 · 报价侧）</div>
+        <table>
+          <thead><tr><th>料号</th><th class="num">报价侧·现</th><th class="num">报价侧·调整后</th><th class="num">差异</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">S3120011203</td><td class="num">0.324083231</td><td class="num"><b>1.717061326</b></td><td class="num" style="color:var(--red)">1.717061326</td></tr>
+            <tr><td class="mono">PERF600-B00525</td><td class="num">9118.2</td><td class="num"><b>9118.2</b></td><td class="num muted">0</td></tr>
+            <tr><td class="mono">T260907T-B01468</td><td class="num">0.324083231</td><td class="num"><b>1.717061326</b></td><td class="num" style="color:var(--red)">1.717061326</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="alert err" style="margin-bottom:0">⛔ <b>以下料号仍有跌破预警线的比对列</b><div style="margin-top:2px">S3120011203（1 列）、T260907T-B01468（1 列）</div></div>
+    </div>
+    <div class="mf"><div class="btn">取消</div><div class="btn pri">确认通过并升版</div></div>
+  </div>
+</div>
+
+<h2>第 4 步 · 点「取消」之后（AC-9）—— 算出来的金额<b>要留下</b></h2>
+<p class="sub">取消的是「升版」，不是「计算」。刚算出来的 3 行必须留在 READY 状态，🚫 不许退回「未计算」让用户白等一次。</p>
+<div class="stage" style="background:#fff;border:1px solid var(--bd)">
+  <div style="width:100%;max-width:860px">
+    <div class="alert info" style="margin-bottom:12px">已取消升版。<b>刚才计算的 3 个料号结果已保留</b>，可直接再次勾选提交。</div>
+    <table>
+      <thead><tr><th style="width:36px"></th><th>料号</th><th class="num">报价侧成本(现→调整后)</th><th class="num">差异</th><th>比对状态</th><th>审核状态</th></tr></thead>
+      <tbody>
+        <tr><td></td><td class="mono">S3120011203</td><td class="num">0.324083231 → <b>1.717061326</b></td><td class="num" style="color:var(--red)">1.717061326</td><td><span style="font-weight:600">🔴1 🟠0 / 1列</span></td><td><span class="tag" style="background:#fff7e6;border-color:#ffd591;color:var(--orange)">待处理</span></td></tr>
+        <tr><td></td><td class="mono">PERF600-B00525</td><td class="num">9118.2 → <b>9118.2</b></td><td class="num muted">0</td><td><span class="muted">✓ 1 列全通过</span></td><td><span class="tag" style="background:#fff7e6;border-color:#ffd591;color:var(--orange)">待处理</span></td></tr>
+        <tr><td></td><td class="mono">PERFHOT-B00052</td><td class="num">0.5 → <b>0.512500004</b></td><td class="num" style="color:var(--red)">0.012500004</td><td><span style="font-weight:600">🔴1 🟠0 / 1列</span></td><td><span class="tag" style="background:#fff7e6;border-color:#ffd591;color:var(--orange)">待处理</span></td></tr>
+      </tbody>
+    </table>
+    <p class="cap">AC-9 的三处查库断言：无新 <code>material_price_update_job</code> · 审核行仍 <code>PENDING</code> · <code>material_price_version_ref</code> 指针未推进。</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

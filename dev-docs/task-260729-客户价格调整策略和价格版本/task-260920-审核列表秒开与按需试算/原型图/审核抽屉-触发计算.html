@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>原型 · 料号审核抽屉（点开即算）</title>
+<style>
+  :root{--t1:rgba(0,0,0,.88);--t2:rgba(0,0,0,.65);--t3:rgba(0,0,0,.45);--bd:#f0f0f0;--blue:#1677ff;--red:#cf1322;--orange:#d46b08;--bg:#f5f5f5}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);font:14px/1.5715 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;color:var(--t1)}
+  .wrap{max-width:1180px;margin:0 auto;padding:20px 16px 60px}
+  .note{background:#e6f4ff;border:1px solid #91caff;border-radius:6px;padding:10px 14px;margin:0 0 16px;font-size:13px;color:#003a8c}
+  h2{font-size:16px;margin:28px 0 10px;padding-left:9px;border-left:3px solid var(--blue)}
+  .sub{color:var(--t3);font-size:12.5px;margin:0 0 10px}
+  .drawer{background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08);overflow:hidden;border:1px solid var(--bd)}
+  .dh{padding:14px 22px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:12px;font-size:15px;font-weight:600}
+  .dh .x{color:var(--t3);font-weight:400}
+  .db{padding:18px 22px 22px}
+  h3{font-size:14px;margin:18px 0 8px;font-weight:600}
+  h3:first-child{margin-top:0}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{background:#fafafa;font-weight:600;text-align:left;padding:8px;border-bottom:1px solid var(--bd);white-space:nowrap}
+  td{padding:8px;border-bottom:1px solid var(--bd)}
+  .num{text-align:right;font-variant-numeric:tabular-nums}
+  .mono{font-family:"SFMono-Regular",Consolas,"Liberation Mono",monospace}
+  .muted{color:var(--t3)}
+  .tag{display:inline-block;padding:0 7px;height:22px;line-height:20px;border-radius:4px;font-size:12px;border:1px solid}
+  .tag.grey{background:#fafafa;border-color:#d9d9d9;color:var(--t2)}
+  .tag.red{background:#fff1f0;border-color:#ffa39e;color:var(--red)}
+  .alert{border-radius:6px;padding:9px 13px;font-size:13px;margin-bottom:12px}
+  .alert.info{background:#e6f4ff;border:1px solid #91caff;color:#003a8c}
+  .alert.err{background:#fff1f0;border:1px solid #ffa39e;color:#a8071a}
+  .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--blue);border-top-color:transparent;border-radius:50%;animation:s .8s linear infinite;vertical-align:-1px;margin-right:5px}
+  .spin.lg{width:22px;height:22px;border-width:3px;margin:0 auto 10px;display:block}
+  @keyframes s{to{transform:rotate(360deg)}}
+  .skel{height:13px;border-radius:3px;background:linear-gradient(90deg,#f5f5f5 25%,#eee 37%,#f5f5f5 63%);background-size:400% 100%;animation:sk 1.4s ease infinite}
+  @keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}
+  .cap{font-size:12.5px;color:var(--t3);margin-top:10px}
+  .selfchk{font-size:12.5px;color:#389e0d;margin:6px 0 0}
+  .btn{height:28px;padding:0 12px;border-radius:6px;border:1px solid #d9d9d9;background:#fff;display:inline-flex;align-items:center;font-size:13px;cursor:default}
+  .btn.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+  .loading-center{padding:40px 0;text-align:center;color:var(--t2)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="note">
+  <b>📌 当前基准（v2）</b> · 料号审核抽屉的<b>触发计算</b>态 · <code>ReviewDetailDrawer.tsx</code> · 任务 <code>task-260920</code><br>
+  🔒 本次<b>不改抽屉的布局与分区</b>（一、为什么变 / 二、能不能接受 / 三、下钻照旧），只加「打开时该行未计算 → 先算再显示」这条交互。<br>
+  v2 相对 v1：状态 1 改为<b>先算、后取详情，不并发</b>（v1 让「一」先显示，实际会导致详情接口与点击即算对同一行同时试算两次，见评审【2】）；状态 3 的原因来自详情接口新增的 <code>budgetError</code>。<br>数据取自开发库真实行：料号 <span class="mono">S3120011203</span>「料号1」/ 版本 <span class="mono">V26092003</span> / 元素 Ag 银。金额为 <b>DISPLAY_SCALE(9) 去尾零</b>（2026-09-20 已修，<code>6f770d10</code>）。
+</div>
+
+<h2>状态 1 · 点开一个「未计算」的料号 —— <b>先算、后取详情</b>（AC-5）</h2>
+<p class="sub">打开即调点击即算（受理后轮询结果），算完<b>再</b>取详情。期间整个抽屉显示「正在计算」。<br>
+为什么不让「一、为什么变」先显示：「一」的数据来自详情接口，而详情接口自己会跑一次元素影响试算 —— 若与点击即算同时发出，就是<b>对同一行同时试算两次</b>（评审【2】），还会让打开一次抽屉跑三次试算。整体等一下（高负载下约 2~3 秒，AC-5 预算 ≤5 秒）换来的是零并发。</p>
+<div class="drawer">
+  <div class="dh"><span class="x">✕</span><span>料号审核 · S3120011203 料号1</span><span class="tag grey" style="font-weight:400">未计算</span></div>
+  <div class="db">
+    <div class="loading-center">
+      <span class="spin lg"></span>
+      正在计算该料号的影响…
+      <div class="muted" style="font-size:12.5px;margin-top:6px">后台正在计算同一张单时，需要先等它算完当前这一个料号（通常不到 1 秒）</div>
+    </div>
+    <p class="cap">🚫 计算期间不发详情请求；🚫 不转圈超过 90 秒 —— 超过即停止等待并提示「计算较慢，可稍后刷新」（<code>F-2</code> ①）。</p>
+  </div>
+</div>
+
+<h2>状态 2 · 算完（AC-5 ②）—— 数值出来，<b>并且写回了审核行</b></h2>
+<p class="sub">🔒 本状态的要害不在抽屉里，而在<b>关掉抽屉之后</b>：列表那一行必须从「未计算」变成有金额。只在抽屉里算一次就丢 = AC-5 不通过。</p>
+<div class="drawer">
+  <div class="dh"><span class="x">✕</span><span>料号审核 · S3120011203 料号1</span></div>
+  <div class="db">
+    <h3>一、为什么变</h3>
+    <table>
+      <thead><tr><th>元素</th><th>命中规则</th><th class="num">上版价</th><th class="num">本版价</th><th class="num">涨跌</th><th class="num">该料号用量</th><th class="num">对单价影响</th><th>标记</th></tr></thead>
+      <tbody><tr><td><b>Ag</b> 银</td><td>客户调价策略</td><td class="num">28892.5</td><td class="num">28892.5</td><td class="num">0%</td><td class="num muted">—</td><td class="num">0</td><td></td></tr></tbody>
+    </table>
+    <p class="selfchk">合计对单价影响：<b>0</b>　（财务自检：调整后报价 − 现报价 = 0，对得上 ✓）</p>
+    <h3>二、能不能接受</h3>
+    <p class="sub" style="margin-top:-2px">按该料号所属模板系列「施耐德5.4模板」的配置逐列展开（比对列唯一完整体现处，只读；改配置请到定价策略 Tab）</p>
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>比对列</th><th class="num">阈值</th><th class="num">报价·现</th><th class="num">报价·调整后</th><th class="num">核价·现</th><th class="num">核价·调整后</th><th class="num">差异</th></tr></thead>
+      <tbody><tr>
+        <td>1</td><td>产品总价</td><td class="num">0</td>
+        <td class="num">0.324083231</td><td class="num">1.717061326</td>
+        <td class="num">0</td><td class="num">0</td>
+        <td class="num"><b style="color:var(--red)">1.717061326</b></td>
+      </tr></tbody>
+    </table>
+    <p class="cap">
+      ⬆️ <b>这就是本次精度修复的直接效果</b>：改前这三格显示 <code>0.32</code> / <code>1.72</code> / <code>1.72</code>（用户 2026-09-20 截图），7 位有效数字看不见。<br>
+      ⚠️ <b>数据本身的一处存疑，本次不查</b>：元素价上版=本版（涨跌 0%、对单价影响 0），比对列却有 1.717 的差异。取自真实行（<span class="mono">V26092003</span>），不是原型编的；属另一条线索，不在本任务范围。
+    </p>
+    <h3>三、下钻</h3>
+    <table>
+      <thead><tr><th>单号</th><th>创建日期</th><th>状态</th><th class="num">现小计</th><th class="num">调整后小计</th><th>标记</th></tr></thead>
+      <tbody>
+        <tr><td><a class="mono" style="color:var(--blue)">QT-20260911-0842</a></td><td>2026-09-11</td><td>DRAFT</td><td class="num">0.324083231</td><td class="num">1.717061326</td><td><span class="tag grey">判断依据</span></td></tr>
+        <tr><td><a class="mono" style="color:var(--blue)">QT-20260908-0628</a></td><td>2026-09-08</td><td>DRAFT</td><td class="num">0.324083231</td><td class="num muted">未试算</td><td></td></tr>
+      </tbody>
+    </table>
+    <p class="cap">「未试算」是既有的三态设计（只对判断依据单试算，其余仅作参考）—— 🚫 <b>不要</b>和本次新增的「未计算」混为一谈，两者含义不同、文案必须保持区分。</p>
+  </div>
+</div>
+
+<h2>状态 3 · 算失败（AC-7）—— 给人看得懂的原因</h2>
+<p class="sub">🚫 不许出现 <code>Error invoking subclass method</code>（CDI 外壳文案）；🚫 不许白屏、不许 500。</p>
+<div class="drawer">
+  <div class="dh"><span class="x">✕</span><span>料号审核 · PERF600-B00432 性能测试件-432</span><span class="tag red" style="font-weight:400">预算失败</span></div>
+  <div class="db">
+    <div class="alert err"><b>该料号的影响计算失败</b>：判断依据单已不在活单范围内<div style="margin-top:4px">原因取自详情接口的 <code>budgetError</code>。另一种常见原因是「预算试算超时（超过 60 秒）」。<br>🔒 计算失败的行<b>打开抽屉不自动重算</b>，点「重新计算」才会再算（<code>F-2</code> ③）。依据单失效时重算仍会失败，且<b>不会</b>自动推进版本指针（裁决 <code>D-5</code>）。</div></div>
+    <h3>一、为什么变</h3>
+    <table>
+      <thead><tr><th>元素</th><th>命中规则</th><th class="num">上版价</th><th class="num">本版价</th><th class="num">涨跌</th><th class="num">该料号用量</th><th class="num">对单价影响</th><th>标记</th></tr></thead>
+      <tbody><tr><td><b>Ag</b> 银</td><td>客户调价策略</td><td class="num">28892.5</td><td class="num">28892.5</td><td class="num">0%</td><td class="num muted">—</td><td class="num muted">—</td><td></td></tr></tbody>
+    </table>
+    <h3>二、能不能接受</h3>
+    <div class="loading-center" style="padding:28px 0">
+      <div style="font-size:26px;opacity:.25">⚠️</div>
+      计算未完成，暂无法判断是否可接受
+      <div style="margin-top:10px"><span class="btn pri">重新计算</span></div>
+    </div>
+    <p class="cap">元素价部分仍然照常显示 —— 它不依赖试算。🚫 不要因为「二」失败就把「一」也藏掉。</p>
+  </div>
+</div>
+
+<h2>状态 4 · 点开一个<b>已计算</b>的料号 —— 不触发计算，直接显示</h2>
+<p class="sub">判据是该行 <code>budgetStatus === 'READY'</code>。🚫 已 READY 的行重复触发计算 = 白烧一次试算，且会让列表闪烁。</p>
+<div class="drawer">
+  <div class="dh"><span class="x">✕</span><span>料号审核 · T260907T-B01468 测试件-1468</span></div>
+  <div class="db">
+    <h3>二、能不能接受</h3>
+    <table>
+      <thead><tr><th style="width:40px">#</th><th>比对列</th><th class="num">阈值</th><th class="num">报价·现</th><th class="num">报价·调整后</th><th class="num">核价·现</th><th class="num">核价·调整后</th><th class="num">差异</th></tr></thead>
+      <tbody>
+        <tr><td>1</td><td>产品总价</td><td class="num">0</td><td class="num">0.324083231</td><td class="num">1.717061326</td><td class="num">0</td><td class="num">0</td><td class="num"><b style="color:var(--red)">1.717061326</b></td></tr>
+        <tr><td>2</td><td>材料成本</td><td class="num">0.05</td><td class="num muted" colspan="5" style="text-align:left">—（缺数据：核价侧）</td></tr>
+      </tbody>
+    </table>
+    <p class="cap">第 2 行是 <code>status=MISSING</code> 的既有形态（「—（缺数据：报价侧/核价侧/两侧）」），本次不动。<br>
+    ⚠️ 实测开发库该客户 4527 行里 <b>4520 行的比对列是 MISSING</b>、仅 7 行 NORMAL —— 这是常态，原型必须画到。</p>
+  </div>
+</div>
+
+</div>
+</body>
+</html>
