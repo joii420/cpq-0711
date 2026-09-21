@@ -304,6 +304,24 @@ export interface ReviewRowDTO {
   rowRed: boolean;
 }
 
+/**
+ * task-260920 (api.md v2.2 §1.1): list response = standard PageResult + two counters.
+ * Both are server-authoritative; the frontend must never compute them from the current page.
+ * Optional so an older backend (fields absent) degrades to "no hint".
+ */
+export interface ReviewPageResult extends PageResult<ReviewRowDTO> {
+  /** PENDING rows (whole filter, not this page) whose budgetStatus is QUEUED or COMPUTING */
+  notComputedTotal?: number;
+  /** breachedOnly=true only: PENDING rows excluded from the filter because not computed yet */
+  excludedByNotComputed?: number;
+}
+
+/** task-260920 (api.md §2.1): POST /reviews/{id}/compute-now always answers 202 with this body. */
+export interface ComputeNowResponse {
+  reviewId: string;
+  budgetStatus: BudgetStatus;
+}
+
 export interface ReviewsQueryParams {
   page: number;
   size: number;
@@ -386,6 +404,8 @@ export interface ReviewDetailDTO {
   currentVersionNo: string | null;
   targetVersionNo: string;
   budgetStatus: BudgetStatus;
+  /** task-260920 (api.md §4, B-19): failure reason when budgetStatus=FAILED; null otherwise */
+  budgetError?: string | null;
   reviewStatus: ReviewStatus;
 
   // 一、为什么变
@@ -415,6 +435,16 @@ export interface ImpactBreachedMaterialDTO {
   breachedCount: number;
 }
 
+/** task-260920 (api.md §3): one row per READY material, col-default comparison column. */
+export interface ImpactMaterialDTO {
+  materialNo: string;
+  quoteCostCurrent: DecimalString | null;
+  quoteCostAdjusted: DecimalString | null;
+  diffAdjusted: DecimalString | null;
+  status: 'NORMAL' | 'MISSING' | 'STALE';
+  missingSide: ComparisonMissingSide | null;
+}
+
 export interface ImpactPreviewDTO {
   materialCount: number;
   versionPaths: ImpactVersionPathDTO[];
@@ -425,6 +455,8 @@ export interface ImpactPreviewDTO {
   excludedQuotationCount: number;
   /** 🔒 必须显式列出被排除的单（SENT/ACCEPTED/EXPIRED/CANCELLED） */
   excludedByStatus: Record<string, number>;
+  /** task-260920 (api.md §3): optional so an older backend simply hides the block */
+  materials?: ImpactMaterialDTO[];
 }
 
 // ───────────────────────── §2.4~§2.6 通过 / 驳回 / 重算预算 ─────────────────────────
@@ -438,10 +470,12 @@ export interface ApproveResponse {
 
 /** 409 REVIEW_BUDGET_NOT_READY / REVIEW_STATUS_CHANGED（api.md §2.4）。 */
 export interface ReviewBatchRejectPayload {
-  code: 'REVIEW_BUDGET_NOT_READY' | 'REVIEW_STATUS_CHANGED';
+  code: 'REVIEW_BUDGET_NOT_READY' | 'REVIEW_STATUS_CHANGED' | 'REVIEW_NOT_PENDING';
   message?: string;
   /** 不合格项列表，字段名未在 api.md 逐字给出，防御性可选 */
   invalidReviewIds?: string[];
+  /** GlobalExceptionMapper envelope: data.invalidItems = [{reviewId, materialNo, reason}] */
+  invalidItems?: { reviewId?: string; materialNo?: string; reason?: string }[];
 }
 
 // ═════════════════════════ §3 更新任务（屏 6 + 常驻页） ═════════════════════════

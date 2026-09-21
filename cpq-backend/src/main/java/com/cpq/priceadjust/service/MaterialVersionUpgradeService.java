@@ -26,6 +26,8 @@ import org.jboss.logging.Logger;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -959,6 +961,182 @@ public class MaterialVersionUpgradeService {
                 String ec = resolveDataRowElementCode(rd, pbc.elementCodeField);
                 if (ec != null && !ec.isBlank()) out.add(ec);
             }
+        }
+        return out;
+    }
+
+
+    /**
+     * task-260920 B-1⑦ · 只读批量版 {@link #collectMaterialElementCodes}：一次拿到多条 line item 的「相关元素」集合。
+     *
+     * <p>🔒 口径与单条版逐步相同（冻结结构 → 价格承载组件 → {@code snapshot_rows} 走
+     * {@link #resolveDriverRowElementCode} / {@code row_data} 走 {@link #resolveDataRowElementCode}），只把「数据怎么取」
+     * 改成批量：line item 1 条、冻结结构按单据 {@code ANY} 1 条、角色字段按组件 {@code ANY} 1 条、
+     * {@code quotation_line_component_data} 按 {@code (line_item_id, component_id)} 元组 1 条、组件字段按 {@code ANY} 1 条
+     * —— <b>共 5 条，与 line item 数无关</b>。全部走 {@code EntityManager}（Hibernate 可计数，AC-3）。
+     *
+     * <p>🚫 不改 {@code upgrade()} 及其调用路径（D-3）：{@link #locatePriceBearingComponents} 是 S2 的方法，这里
+     * 用 {@link #locatePriceBearingComponentsPreloaded} 复刻同一判定（只把角色字段换成预加载的 map）；两者一致性由
+     * AC-2 的逐个对照测试守住。
+     *
+     * @return lineItemId → 相关元素编码（不存在的 line item 映射为空集，与单条版一致）
+     */
+    public Map<UUID, Set<String>> collectMaterialElementCodesBatch(Collection<UUID> lineItemIds) {
+        Map<UUID, Set<String>> out = new LinkedHashMap<>();
+        if (lineItemIds == null || lineItemIds.isEmpty()) return out;
+        List<UUID> ids = new ArrayList<>(new LinkedHashSet<>(lineItemIds));
+        for (UUID id : ids) out.put(id, new LinkedHashSet<>());
+
+        // ① line item → quotation
+        @SuppressWarnings("unchecked")
+        List<Object[]> liRows = em.createNativeQuery(
+                "SELECT id, quotation_id FROM quotation_line_item WHERE id = ANY(:ids)")
+            .setParameter("ids", ids.toArray(new UUID[0]))
+            .getResultList();
+        Map<UUID, UUID> quotationByLine = new LinkedHashMap<>();
+        for (Object[] r : liRows) quotationByLine.put((UUID) r[0], (UUID) r[1]);
+        if (quotationByLine.isEmpty()) return out;
+
+        // ② 冻结结构（按单据一次）
+        Set<UUID> quotationIds = new LinkedHashSet<>(quotationByLine.values());
+        quotationIds.remove(null);
+        Map<UUID, JsonNode> tabsByQuotation = new HashMap<>();
+        if (!quotationIds.isEmpty()) {
+            @SuppressWarnings("unchecked")
+            List<Object[]> sRows = em.createNativeQuery(
+                    "SELECT quotation_id, structure FROM quotation_view_structure " +
+                    "WHERE quotation_id = ANY(:qids) AND view_kind = 'QUOTE_CARD'")
+                .setParameter("qids", quotationIds.toArray(new UUID[0]))
+                .getResultList();
+            for (Object[] r : sRows) { // pure in-memory parsing
+                if (r[1] == null) continue;
+                try {
+                    JsonNode tabs = MAPPER.readTree(r[1].toString()).path("tabs");
+                    if (tabs.isArray()) tabsByQuotation.put((UUID) r[0], tabs);
+                } catch (Exception e) {
+                    LOG.warnf("[b0-upgrade] collectBatch parse frozen structure failed q=%s: %s", r[0], e.getMessage());
+                }
+            }
+        }
+
+        // ③ 角色字段（全部冻结结构里出现的组件一次）
+        List<UUID> allComponentIds = new ArrayList<>();
+        for (JsonNode tabs : tabsByQuotation.values()) { // pure in-memory
+            for (JsonNode tab : tabs) {
+                String cidStr = tab.path("componentId").asText("");
+                if (cidStr.isBlank()) continue;
+                try { allComponentIds.add(UUID.fromString(cidStr)); } catch (IllegalArgumentException ignore) { /* skip */ }
+            }
+        }
+        Map<UUID, String[]> roleFieldsByComp = allComponentIds.isEmpty()
+            ? Map.of() : loadRoleFields(new ArrayList<>(new LinkedHashSet<>(allComponentIds)));
+        Map<UUID, List<UpgradeResult.PriceBearingComponent>> pbcByQuotation = new HashMap<>();
+        for (Map.Entry<UUID, JsonNode> e : tabsByQuotation.entrySet()) { // pure in-memory
+            pbcByQuotation.put(e.getKey(), locatePriceBearingComponentsPreloaded(e.getValue(), roleFieldsByComp));
+        }
+
+        // ④ (line_item_id, component_id) 元组一次取 component_data
+        List<UUID> tupleLines = new ArrayList<>();
+        List<UUID> tupleComps = new ArrayList<>();
+        Set<List<UUID>> seenTuples = new HashSet<>();
+        for (UUID lid : ids) { // pure in-memory
+            UUID qid = quotationByLine.get(lid);
+            for (UpgradeResult.PriceBearingComponent pbc : pbcByQuotation.getOrDefault(qid, List.of())) {
+                UUID cid;
+                try { cid = UUID.fromString(pbc.componentId); } catch (IllegalArgumentException e) { continue; }
+                if (seenTuples.add(List.of(lid, cid))) {
+                    tupleLines.add(lid);
+                    tupleComps.add(cid);
+                }
+            }
+        }
+        if (tupleLines.isEmpty()) return out;
+        @SuppressWarnings("unchecked")
+        List<Object[]> cdRows = em.createNativeQuery(
+                "SELECT line_item_id, component_id, snapshot_rows, row_data FROM quotation_line_component_data " +
+                "WHERE (line_item_id, component_id) IN " +
+                "      (SELECT t.l, t.c FROM unnest(CAST(:lids AS uuid[]), CAST(:cids AS uuid[])) AS t(l, c))")
+            .setParameter("lids", tupleLines.toArray(new UUID[0]))
+            .setParameter("cids", tupleComps.toArray(new UUID[0]))
+            .getResultList();
+        Map<List<UUID>, Object[]> cdByTuple = new HashMap<>();
+        Set<UUID> usedComponents = new LinkedHashSet<>();
+        for (Object[] r : cdRows) { // pure in-memory
+            cdByTuple.put(List.of((UUID) r[0], (UUID) r[1]), r);
+            usedComponents.add((UUID) r[1]);
+        }
+
+        // ⑤ 组件字段（用到的组件一次）
+        Map<UUID, JsonNode> fieldsByComp = new HashMap<>();
+        if (!usedComponents.isEmpty()) {
+            @SuppressWarnings("unchecked")
+            List<Object[]> fRows = em.createNativeQuery("SELECT id, fields FROM component WHERE id = ANY(:ids)")
+                .setParameter("ids", usedComponents.toArray(new UUID[0]))
+                .getResultList();
+            for (Object[] r : fRows) { // pure in-memory parsing
+                JsonNode fields;
+                try {
+                    fields = r[1] == null ? MAPPER.createArrayNode() : MAPPER.readTree(r[1].toString());
+                } catch (Exception e) {
+                    LOG.warnf("[b0-upgrade] collectBatch loadComponentFields failed component=%s: %s", r[0], e.getMessage());
+                    fields = MAPPER.createArrayNode();
+                }
+                fieldsByComp.put((UUID) r[0], fields);
+            }
+        }
+
+        // 纯内存：逐 line item 按价格承载组件扫编码（与单条版同序同口径）
+        for (UUID lid : ids) {
+            UUID qid = quotationByLine.get(lid);
+            Set<String> codes = out.get(lid);
+            for (UpgradeResult.PriceBearingComponent pbc : pbcByQuotation.getOrDefault(qid, List.of())) {
+                UUID cid;
+                try { cid = UUID.fromString(pbc.componentId); } catch (IllegalArgumentException e) { continue; }
+                Object[] row = cdByTuple.get(List.of(lid, cid));
+                if (row == null) continue; // 该页签从未物化过 component_data，无行可扫
+                ArrayNode snapshotRows = parseArray(row[2] == null ? null : row[2].toString());
+                ArrayNode rowData = parseArray(row[3] == null ? null : row[3].toString());
+                JsonNode fieldsNode = fieldsByComp.getOrDefault(cid, MAPPER.createArrayNode());
+                for (JsonNode rowNode : snapshotRows) {
+                    String ec = resolveDriverRowElementCode(fieldsNode, rowNode, pbc.elementCodeField);
+                    if (ec != null && !ec.isBlank()) codes.add(ec);
+                }
+                for (JsonNode rd : rowData) {
+                    String ec = resolveDataRowElementCode(rd, pbc.elementCodeField);
+                    if (ec != null && !ec.isBlank()) codes.add(ec);
+                }
+            }
+        }
+        return out;
+    }
+
+    /**
+     * task-260920 · {@link #locatePriceBearingComponents} 的预加载版（角色字段由调用方一次批量取好）。判定规则逐字相同：
+     * 按 tabs 顺序，「元素列」「元素单价列」都配齐才算价格承载组件，币种列可空。🚫 不另立口径。
+     */
+    List<UpgradeResult.PriceBearingComponent> locatePriceBearingComponentsPreloaded(
+            JsonNode frozenTabs, Map<UUID, String[]> roleFieldsByComp) {
+        List<UpgradeResult.PriceBearingComponent> out = new ArrayList<>();
+        if (frozenTabs == null || !frozenTabs.isArray()) return out;
+        for (JsonNode tab : frozenTabs) {
+            String cidStr = tab.path("componentId").asText("");
+            if (cidStr.isBlank()) continue;
+            UUID cid;
+            try { cid = UUID.fromString(cidStr); } catch (IllegalArgumentException e) { continue; }
+            String[] roles = roleFieldsByComp.get(cid);
+            if (roles == null) continue;
+            String elementCodeField = roles[0];
+            String elementPriceField = roles[1];
+            String elementCurrencyField = roles[2]; // 可空
+            if (elementCodeField == null || elementCodeField.isBlank()
+                || elementPriceField == null || elementPriceField.isBlank()) {
+                continue;
+            }
+            out.add(new UpgradeResult.PriceBearingComponent(
+                cidStr,
+                tab.path("componentCode").asText(null),
+                tab.path("tabName").asText(""),
+                elementCodeField, elementPriceField, elementCurrencyField));
         }
         return out;
     }

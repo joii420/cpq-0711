@@ -19,6 +19,8 @@ import type {
   VersionDTO,
   VersionItemDTO,
   ReviewRowDTO,
+  ReviewPageResult,
+  ComputeNowResponse,
   ReviewsQueryParams,
   ReviewDetailDTO,
   ImpactPreviewDTO,
@@ -135,8 +137,8 @@ export const priceAdjustService = {
 
   // ── §2.1 待办池（屏 3） ──
 
-  async getReviews(params: ReviewsQueryParams): Promise<PageResult<ReviewRowDTO>> {
-    return (await api.get(`${BASE}/reviews`, { params })) as unknown as PageResult<ReviewRowDTO>;
+  async getReviews(params: ReviewsQueryParams): Promise<ReviewPageResult> {
+    return (await api.get(`${BASE}/reviews`, { params })) as unknown as ReviewPageResult;
   },
 
   // ── §2.2 料号审核抽屉（屏 4） ──
@@ -161,6 +163,16 @@ export const priceAdjustService = {
 
   async rejectReviews(reviewIds: string[], reason: string): Promise<void> {
     await api.post(`${BASE}/reviews/reject`, { reviewIds, reason });
+  },
+
+  // ── task-260920 · api.md §2.1 点击即算（一律 202，结果经 getReviewRow 轮询） ──
+  async computeNow(reviewId: string): Promise<ComputeNowResponse> {
+    return (await api.post(`${BASE}/reviews/${encodeURIComponent(reviewId)}/compute-now`)) as unknown as ComputeNowResponse;
+  },
+
+  // ── task-260920 · api.md §2.2 单行状态（不触发任何试算，供轮询） ──
+  async getReviewRow(reviewId: string): Promise<ReviewRowDTO> {
+    return (await api.get(`${BASE}/reviews/${encodeURIComponent(reviewId)}/row`)) as unknown as ReviewRowDTO;
   },
 
   // ── §2.6 单条预算重试（budgetStatus=FAILED 时） ──

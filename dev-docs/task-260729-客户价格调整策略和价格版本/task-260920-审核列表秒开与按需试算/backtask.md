@@ -13,7 +13,7 @@
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
-| **B-1** | AC-1, AC-2, AC-3 | **进池判定批量化**。一次性取全集，**条数与料号数无关**：① 范围料号（`resolveScopeMaterials`，两种模式各 1 条）；② 每个料号的依据行 —— 一条窗口函数，次序按 `J-3`（`q.created_at DESC, li.sort_order ASC NULLS LAST, li.id ASC`，🔒 末级必须是唯一列），同时 `JOIN template` 带出 `template_series_id`（🚫 逐个 `Template.findById`）；③ 驳回史 —— 一条 `SELECT DISTINCT material_no … WHERE customer_no=? AND status='REJECTED'`（🔒 必须带 `customer_no`）；④ 已有审核行、⑤ 已有指针（现成两条批量查询）；⑥ 目标版本与**全部指针版本**的元素价 —— 一条 `version_id IN (...)`；⑦ 有指针料号的「相关元素编码」—— 在 `MaterialVersionUpgradeService` **新增只读批量方法**（冻结结构按单据 `IN` 一次、`quotation_line_component_data` 按 `(line_item_id, component_id)` 元组 `IN` 一次、组件字段按 `id IN` 一次），🚫 循环调 `collectMaterialElementCodes`。<br>🔒 **判定口径一字不改**：`processMaterial` 里的三个边界与裁决 39 的保守方向逐条保留，只改「数据怎么取」。<br>🔒 **现有逐料号函数原样保留、不许改动**（`findBasisLine` / `hasEverRejected` / `MaterialPriceVersionRef.findRef` / `hasRelevantPriceChange`）—— `AC-2` 要原样调用它们做对照。<br>🔒 **进池路径的全部查询走 `EntityManager`（Hibernate 可计数）**，🚫 调 `SqlViewExecutor` 或其它裸 JDBC（`AC-3` 的计数看不到它们）。 |
+| **B-1** | AC-1, AC-2, AC-3 | **进池判定批量化**。一次性取全集，**条数与料号数无关**：① 范围料号（`resolveScopeMaterials`，两种模式各 1 条）；② 每个料号的依据行 —— 一条窗口函数，次序按 `J-3`（`q.created_at DESC, li.sort_order ASC NULLS LAST, li.id ASC`，🔒 末级必须是唯一列），同时 `JOIN template` 带出 `template_series_id`（🚫 逐个 `Template.findById`）；③ 驳回史 —— 一条 `SELECT DISTINCT material_no … WHERE customer_no=? AND status='REJECTED'`（🔒 必须带 `customer_no`）；④ 已有审核行、⑤ 已有指针（现成两条批量查询）；⑥ 目标版本与**全部指针版本**的元素价 —— 一条 `version_id IN (...)`；⑦ 有指针料号的「相关元素编码」—— 在 `MaterialVersionUpgradeService` **新增只读批量方法**（冻结结构按单据 `IN` 一次、`quotation_line_component_data` 按 `(line_item_id, component_id)` 元组 `IN` 一次、组件字段按 `id IN` 一次），🚫 循环调 `collectMaterialElementCodes`。<br>🔒 **判定口径一字不改**：`processMaterial` 里的三个边界与裁决 39 的保守方向逐条保留，只改「数据怎么取」。<br>🔒 **现有逐料号函数原样保留、不许改动**（`findBasisLine` / `hasEverRejected` / `MaterialPriceVersionRef.findRef` / `hasRelevantPriceChange`）—— `AC-2` 要原样调用它们做对照。<br>🔒 **进池路径的全部查询走 `EntityManager`（Hibernate 可计数）**，🚫 调 `SqlViewExecutor` 或其它裸 JDBC（`AC-3` 的计数看不到它们）。<br>🧪 **测试钩子（S-1 `AC-2` 需要，2026-09-21 开发期补充，不改任何 AC）**：把批量判定落成 `PriceAdjustBudgetService` 上一个**只读**方法 `decideEnqueueBatch(UUID versionId, String customerNo, Collection<String> materials)`（`materials=null` = 全范围），返回对象带 `pooledMaterials()` / `advancedMaterials()` 两个访问器；**加入调用方事务（🚫 `REQUIRES_NEW`）、不写库**；进池入口**实际调用的必须就是它**（否则 `AC-2` 比的是副本）。它内部调用的依据行 / 相关元素判定同样不得自带 `REQUIRES_NEW`，否则看不到回滚事务里新建的目标版本。 |
 | **B-2** | AC-1, AC-3, AC-19 | **批量建行 + 批量推进指针**：① 该进池的料号用**一条原生语句**建行（`INSERT … SELECT unnest(...)` 或等价写法，`ON CONFLICT (version_id, material_no) DO NOTHING`）。🚫 逐个 `persist`（`statement-batch-size=100` 下会按批计入 `SqlStatementCounter`，`AC-3` 必挂）；② **反例外行**（无依据单、有驳回史）**直接写 `READY` + `column_count=0`**，其余写 `QUEUED`；③ 不进池的料号一条语句批量 UPSERT `material_price_version_ref`；④ 整段一个事务，写前带锁复核版本仍为 `PENDING`（沿用 `lockVersionAndCheckPending`）；⑤ 埋点 `[perf] budget-enqueue customer=%s N=%d pooled=%d advanced=%d sql=%d ms=%d`。 |
 | **B-3** | AC-12, AC-15 | **试算循环**：取本版本 `status='PENDING' AND budget_status='QUEUED'` 的行，按依据单分组（分组与并行见 `B-5`），**组内按 `material_no` 升序**处理（确定次序，测试要挑「靠后才算到」的料号）。每条严格按全文次序：`B-15` 取锁 → 抢占 → 用 `B-17` 的口径重找依据行 → 试算（与现 `computeBudget` 同一份实现，🚫 另写一份）→ 条件完成写 `READY` / `FAILED` → 放锁。🔒 **循环退出前重扫**：处理完一批后再取一次本版本的 `QUEUED` 行，直到取空才退出；「退出」与「被唤起」必须在同一把判定锁内互斥（例如退出前在锁内检查「需要重扫」标志），保证不会出现「循环刚判定为空、正要退出，此时被重新排队的行因判重而被跳过」（评审二轮【6】）。 |
 
@@ -49,7 +49,7 @@
 
 | 编号 | 服务的 AC | 任务内容 |
 |---|---|---|
-| **B-13** | AC-1, AC-27, AC-28 | **列表**：① `budget_status≠READY` 时金额字段返回 **`null`**（🚫 返 0）；② 返回体新增 `notComputedTotal`（当前筛选条件下、**待处理**行中 `QUEUED`/`COMPUTING` 的总数，一条计数查询）；③ **排序补确定次键**（`J-1`）：`created_at DESC, material_no ASC, id ASC`；④ 🚫 `toListItem` 内新增查询。 |
+| **B-13** | AC-1, AC-27, AC-28 | **列表**：① `budget_status≠READY` 时金额字段返回 **`null`**（🚫 返 0）；② 返回体新增 `notComputedTotal`（当前筛选条件下、**待处理**行中 `QUEUED`/`COMPUTING` 的总数，一条计数查询）；③ **排序补确定次键**（`J-1`）：`created_at DESC, material_no ASC, id ASC`；④ 🚫 `toListItem` 内新增查询；⑤ 🔒 既有分页字段 `totalElements` / `totalPages` **原样保留**，🚫 改名或新增 `total`（前端按 `totalElements` 取总数）。 |
 | **B-14** | AC-4 | **「只看标红」**：`breachedOnly=true` 时条件改为 `breachedCount > 0 AND budget_status='READY'`，并返回 `excludedByNotComputed`（因未计算而未参与筛选的待处理行数）。 |
 
 ## F 组 · 并发安全、收编与依据单口径（R-7 / R-8）
@@ -64,7 +64,7 @@
 
 ## 自检要求（交付回报必须逐条给出，缺一条视为未完成）
 
-1. **N+1 自检**（`docs/rules/backend.md §1`）：逐个列出本次新增 / 改动的循环体，声明其中无查库；给出 `AC-3` 两个夹具（N=5 / N=50）的 `[perf] budget-enqueue … sql=` 数值（必须相等），并**逐条列出进池路径的每条查询及其通道**（Hibernate / 裸 JDBC）。
+1. **N+1 自检**（`docs/rules/backend.md §1`）：逐个列出本次新增 / 改动的循环体，声明其中无查库；给出 `AC-3` 两个夹具（N=6 / N=60，`D-13`）的 `[perf] budget-enqueue … sql=` 数值（必须相等），并**逐条列出进池路径的每条查询及其通道**（Hibernate / 裸 JDBC）。
 2. **`AC-13` 自检**：在 worktree 临时后端上（并发度显式设 3）连跑两版取哈希，并做一次阳性对照，把两次哈希与对照结果贴进回报。不等 ⇒ 不许报完成，按 `B-6` 回落并报主线。
 3. **`AC-22` 自检**：给出正式升版路径的 diff（只应有取锁 / 放锁）与现有相关测试类的计数和退出码。
 4. 服务在 **worktree 自己的临时后端**上启动无错误日志，必带 `-Dquarkus.scheduler.enabled=false -Dcpq.price-adjust.startup-recovery.enabled=false`；改动端点返 200/202/401，无 500。🚫 拿共享 8081 当自检对象（它跑的是主仓代码）。

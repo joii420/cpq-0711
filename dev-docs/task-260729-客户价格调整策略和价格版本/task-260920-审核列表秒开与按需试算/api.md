@@ -34,7 +34,7 @@
       // 🔒 budgetStatus != "READY" 时上面这些金额**必须为 null**，🚫 不许返 0（前端 fmt 对 null 渲染「—」，对 0 渲染「0」）
     }
   ],
-  "page": 1, "size": 20, "total": 4527,
+  "page": 1, "size": 20, "totalElements": 4527, "totalPages": 227,   // 既有 PageResult 字段，原样保留（v2.2 示例误写为 total，2026-09-21 开发期更正）
   "notComputedTotal": 4510,       // 🆕 当前筛选条件下、审核状态为「待处理」的行中 budgetStatus ∈ (QUEUED, COMPUTING) 的总数（不是本页）
   "excludedByNotComputed": 0      // 🆕 仅 breachedOnly=true 时有意义：因未计算而未参与筛选的待处理行数；其余情况恒 0
 }

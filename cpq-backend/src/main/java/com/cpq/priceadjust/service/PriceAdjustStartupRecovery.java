@@ -33,8 +33,10 @@ import java.util.UUID;
  *       "row committed" and "group snapshot written") get the snapshot written; job counters/status are recomputed
  *       with {@link MaterialPriceUpdateJob#recountFrom} (same rule as {@code finalizeJob}).</li>
  *   <li><b>Unfinished budgets</b> ({@link #resumeBudgets}): pending versions whose scope still has materials with
- *       neither a review row nor a pointer at the version get their budget loop resumed asynchronously (the loop
- *       skips already processed materials, B-12①).</li>
+ *       neither a review row nor a pointer at the version, <b>or</b> (task-260920 B-12) that still have pending review
+ *       rows in {@code QUEUED / COMPUTING}, get their budget loop resumed asynchronously (enqueue skips already pooled
+ *       materials; the compute loop only takes {@code QUEUED} rows). {@code COMPUTING} rows last touched before this
+ *       instance started are reset to {@code QUEUED} first ({@link #resetOrphanComputing}).</li>
  * </ul>
  *
  * <p>🔒 {@link #runOnStartup} only acts when {@code cpq.price-adjust.startup-recovery.enabled=true} (default; the
@@ -80,6 +82,15 @@ public class PriceAdjustStartupRecovery {
             if (!jobIds.isEmpty()) recoverJobs(jobIds);
         } catch (Exception e) {
             LOG.errorf(e, "[price-adjust-recovery] 启动收尾中断批次失败（不影响服务启动）");
+        }
+        try {
+            // task-260920 B-12②：进程已死的「计算中」行不可能还在算 —— 重置为未计算，交给下面的续跑（常数条 SQL）。
+            int reset = resetOrphanComputing(cutoff);
+            if (reset > 0) {
+                LOG.infof("[price-adjust-recovery] 启动收尾：残留「计算中」审核行 %d 条重置为未计算", reset);
+            }
+        } catch (Exception e) {
+            LOG.errorf(e, "[price-adjust-recovery] 重置残留「计算中」审核行失败（不影响服务启动）");
         }
         try {
             List<UUID> versionIds = findVersionsNeedingBudgetResume();
@@ -258,6 +269,20 @@ public class PriceAdjustStartupRecovery {
     }
 
     /**
+     * task-260920 B-12②：待处理版本下、最后更新时间早于本实例启动时刻的 {@code COMPUTING} 审核行 ⇒ {@code QUEUED}。
+     * 一条语句；本实例启动后才被抢占的行（updated_at ≥ cutoff）不动。
+     */
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    int resetOrphanComputing(OffsetDateTime cutoff) {
+        return em.createNativeQuery(
+                "UPDATE material_price_review r SET budget_status = 'QUEUED', updated_at = now() " +
+                " WHERE r.status = 'PENDING' AND r.budget_status = 'COMPUTING' AND r.updated_at < :cutoff " +
+                "   AND EXISTS (SELECT 1 FROM element_price_version v WHERE v.id = r.version_id AND v.status = 'PENDING')")
+            .setParameter("cutoff", cutoff)
+            .executeUpdate();
+    }
+
+    /**
      * Pending versions whose material scope (same definition as {@code PriceAdjustBudgetService#resolveScopeMaterials}:
      * SPECIFIED ⇒ strategy material list, otherwise every product part number the customer ever quoted) still contains
      * a material with neither a review row for the version nor a version pointer at it. One statement for all versions.
@@ -287,7 +312,13 @@ public class PriceAdjustStartupRecovery {
                 "                    WHERE r.version_id = s.vid AND r.material_no = s.material_no)" +
                 "   AND NOT EXISTS (SELECT 1 FROM material_price_version_ref f" +
                 "                    WHERE f.customer_no = s.customer_no AND f.material_no = s.material_no" +
-                "                      AND f.version_id = s.vid)")
+                "                      AND f.version_id = s.vid)" +
+                // task-260920 B-12①：进池与试算解耦后，进池一完成上面的条件对任何版本都为空 —— 再 OR 上
+                // 「该待处理版本下有待处理且未算完（QUEUED / COMPUTING）的审核行」，否则续跑永远不会被触发（评审【1】）。
+                " UNION " +
+                "SELECT DISTINCT r.version_id FROM material_price_review r " +
+                "  JOIN element_price_version v ON v.id = r.version_id AND v.status = 'PENDING' " +
+                " WHERE r.status = 'PENDING' AND r.budget_status IN ('QUEUED', 'COMPUTING')")
             .getResultList();
         return rows;
     }

@@ -8,6 +8,8 @@ import com.cpq.priceadjust.dto.ElementPrice;
 import com.cpq.priceadjust.dto.ImpactResultDTO;
 import com.cpq.priceadjust.dto.ReviewDetailDTO;
 import com.cpq.priceadjust.dto.ReviewListItemDTO;
+import com.cpq.priceadjust.dto.ReviewPageResult;
+import com.cpq.priceadjust.dto.ComputeNowResponse;
 import com.cpq.priceadjust.dto.UpgradeResult;
 import com.cpq.priceadjust.entity.ElementPriceVersion;
 import com.cpq.priceadjust.entity.ElementPriceVersionItem;
@@ -67,34 +69,77 @@ public class PriceAdjustReviewService {
     // §2.1 待办池列表
     // -------------------------------------------------------------------------
 
-    public PageResult<ReviewListItemDTO> list(
+    public ReviewPageResult<ReviewListItemDTO> list(
             String customerNo, String status, boolean breachedOnly, String keyword, int page, int size) {
         // 🔒 Parameters 不能塞未在查询串里出现的 key（Panache 会校验全部命中，否则报
         // "No parameter named ':x'"）——status 恒有效（缺省 PENDING），作为第一个、必然
         // 存在的子句，不用占位 "1=1"/"dummy" 这种反模式起手。
-        StringBuilder q = new StringBuilder("status = :status");
+        StringBuilder base = new StringBuilder("status = :status");
         Parameters params = Parameters.with(
             "status", status != null && !status.isBlank() ? status : MaterialPriceReview.STATUS_PENDING);
         if (customerNo != null && !customerNo.isBlank()) {
-            q.append(" and customerNo = :customerNo");
+            base.append(" and customerNo = :customerNo");
             params = params.and("customerNo", customerNo);
         }
-        if (breachedOnly) {
-            q.append(" and breachedCount > 0");
-        }
         if (keyword != null && !keyword.isBlank()) {
-            q.append(" and materialNo like :kw");
+            base.append(" and materialNo like :kw");
             params = params.and("kw", "%" + keyword + "%");
         }
+        // task-260920 B-14：「只看标红」只在已算完的行里筛（未计算行的 breachedCount 没有意义）
+        String q = breachedOnly
+            ? base + " and breachedCount > 0 and budgetStatus = '" + MaterialPriceReview.BUDGET_READY + "'"
+            : base.toString();
+        // task-260920 B-13②：budget_status 只在「待处理」时有意义 —— 未计算数只数待处理行
+        String notComputed = " and status = '" + MaterialPriceReview.STATUS_PENDING + "' and budgetStatus in ('"
+            + MaterialPriceReview.BUDGET_QUEUED + "', '" + MaterialPriceReview.BUDGET_COMPUTING + "')";
 
-        long total = MaterialPriceReview.count(q.toString(), params);
+        long total = MaterialPriceReview.count(q, params);
+        long notComputedTotal = MaterialPriceReview.count(q + notComputed, params);
+        long excludedByNotComputed = breachedOnly ? MaterialPriceReview.count(base + notComputed, params) : 0;
+        // J-1：主排序 createdAt 倒序不变，补确定次键（批量建行后同一时刻的行成为常态，否则翻页重复 / 漏行）
         List<MaterialPriceReview> rows = MaterialPriceReview
-            .find(q.toString(), Sort.by("createdAt").descending(), params)
+            .find(q, Sort.by("createdAt").descending().and("materialNo").and("id"), params)
             .page(Page.of(Math.max(page - 1, 0), size)).list();
 
         List<ReviewListItemDTO> content = new ArrayList<>();
         for (MaterialPriceReview r : rows) content.add(toListItem(r));
-        return new PageResult<>(content, page, size, total);
+        return new ReviewPageResult<>(content, page, size, total, notComputedTotal, excludedByNotComputed);
+    }
+
+    /**
+     * task-260920 B-7 · 单行查询（供 compute-now 之后轮询）：字段与列表行完全一致，<b>不触发任何试算</b>。
+     */
+    public ReviewListItemDTO row(UUID reviewId) {
+        MaterialPriceReview r = MaterialPriceReview.findById(reviewId);
+        if (r == null) throw new BusinessException(404, "review 不存在: " + reviewId);
+        return toListItem(r);
+    }
+
+    /**
+     * task-260920 B-7 · 点击即算：受理并插队试算该条，结果写回审核行；一律 202（经 {@link #row} 轮询结果）。
+     * 非「待处理」⇒ 409 {@code REVIEW_NOT_PENDING}（走 {@link ReviewNotReadyException} 既有信封）。
+     */
+    public ComputeNowResponse computeNow(UUID reviewId) {
+        MaterialPriceReview r = MaterialPriceReview.findById(reviewId);
+        if (r == null) throw new BusinessException(404, "review 不存在: " + reviewId);
+        if (!MaterialPriceReview.STATUS_PENDING.equals(r.status)) {
+            throw notPending(r);
+        }
+        String st = budgetService.requestCompute(reviewId, PriceAdjustBudgetService.ComputeMode.COMPUTE_NOW);
+        if (st == null) throw new BusinessException(404, "review 不存在: " + reviewId);
+        if (!MaterialPriceReview.STATUS_PENDING.equals(budgetService.loadBrief(reviewId).status())) {
+            // 受理前一刻被作废 / 审核：与「非待处理」同口径
+            throw notPending(MaterialPriceReview.findById(reviewId));
+        }
+        return new ComputeNowResponse(reviewId, st);
+    }
+
+    private static ReviewNotReadyException notPending(MaterialPriceReview r) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("reviewId", r.id);
+        item.put("materialNo", r.materialNo);
+        item.put("reason", "状态已变化(" + r.status + ")");
+        return new ReviewNotReadyException("REVIEW_NOT_PENDING", "该料号已不是待处理状态", List.of(item));
     }
 
     private ReviewListItemDTO toListItem(MaterialPriceReview r) {
@@ -112,6 +157,13 @@ public class PriceAdjustReviewService {
         dto.targetVersionNo = tgt != null ? tgt.versionNo : null;
 
         dto.budgetStatus = r.budgetStatus;
+        // task-260920：compute-now 走整段异步降级时（请求线程等锁超时），行尚未抢占，按「计算中」呈现（纯内存）
+        if (MaterialPriceReview.STATUS_PENDING.equals(r.status)
+                && !MaterialPriceReview.BUDGET_READY.equals(r.budgetStatus)
+                && !MaterialPriceReview.BUDGET_COMPUTING.equals(r.budgetStatus)
+                && budgetService.isComputeAccepted(r.id)) {
+            dto.budgetStatus = MaterialPriceReview.BUDGET_COMPUTING;
+        }
         dto.budgetError = r.budgetError; // repair-260918 B-16：行对象已加载，无新增查询
         dto.reviewStatus = r.status;
         if (r.basisQuotationId != null) {
@@ -122,8 +174,9 @@ public class PriceAdjustReviewService {
             }
         }
 
-        MaterialPriceReviewColumn productTotal = MaterialPriceReviewColumn
-            .find("reviewId = ?1 and columnId = ?2", r.id, "col-default").firstResult();
+        // task-260920 B-13①：未算完的行金额一律 null（前端渲染「—」），🚫 返 0；也不再为它们查比对列
+        MaterialPriceReviewColumn productTotal = !MaterialPriceReview.BUDGET_READY.equals(r.budgetStatus) ? null
+            : MaterialPriceReviewColumn.find("reviewId = ?1 and columnId = ?2", r.id, "col-default").firstResult();
         if (productTotal != null) {
             dto.quoteCostCurrent = productTotal.quoteCurrent;
             dto.quoteCostAdjusted = productTotal.quoteAdjusted;
@@ -166,6 +219,7 @@ public class PriceAdjustReviewService {
         dto.currentVersionNo = cur != null ? cur.versionNo : null;
         dto.targetVersionNo = tgt != null ? tgt.versionNo : null;
         dto.budgetStatus = r.budgetStatus;
+        dto.budgetError = r.budgetError; // task-260920 B-19：取自已加载的审核行，无新增查询
         dto.reviewStatus = r.status;
 
         // 一、为什么变：目标版本的全部元素明细。usageQty/unitPriceImpact 按 FR-6 在下方补算
@@ -226,13 +280,18 @@ public class PriceAdjustReviewService {
         UUID basisLineItemId = null;
         BigDecimal basisCurrentSubtotal = null;
         if (r.basisQuotationId != null) {
+            // task-260920 B-17① / J-3：同单多行按 sort_order 升序（空值排后）、再按行 id 升序取第一行 ——
+            // 与进池、试算同一规则（原先取「结果里第一条匹配的行」，无确定次序）。纯内存。
+            QuotationLineItem best = null;
             for (Object[] row : rows) {
-                if (r.basisQuotationId.equals((UUID) row[0])) {
-                    basisLineItemId = (UUID) row[1];
-                    QuotationLineItem basisLi = liMap.get(basisLineItemId);
-                    basisCurrentSubtotal = basisLi != null ? basisLi.subtotal : null;
-                    break;
-                }
+                if (!r.basisQuotationId.equals((UUID) row[0])) continue;
+                QuotationLineItem cand = liMap.get((UUID) row[1]);
+                if (cand == null) continue;
+                if (best == null || J3_WITHIN_QUOTATION.compare(cand, best) < 0) best = cand;
+            }
+            if (best != null) {
+                basisLineItemId = best.id;
+                basisCurrentSubtotal = best.subtotal;
             }
         }
 
@@ -241,7 +300,7 @@ public class PriceAdjustReviewService {
         BigDecimal adjustedTotal = null;
         boolean basisComputed = false;
         if (basisLineItemId != null && tgt != null) {
-            adjustedTotal = safeDryRunAdjustedSubtotal(r.id, basisLineItemId, tgt.id, null);
+            adjustedTotal = safeDryRunAdjustedSubtotal(r.id, r.basisQuotationId, basisLineItemId, tgt.id, null);
             if (adjustedTotal != null && basisCurrentSubtotal != null) {
                 basisComputed = true;
             } else {
@@ -268,7 +327,7 @@ public class PriceAdjustReviewService {
                     ElementPriceVersionItem it = versionItems.get(i);
                     ReviewDetailDTO.ElementChange ec = dto.elementChanges.get(i);
                     Map<String, ElementPrice> overridePrices = buildOverridePricesForElement(versionItems, it.elementCode);
-                    BigDecimal adjustedX = safeDryRunAdjustedSubtotal(r.id, basisLineItemId, tgt.id, overridePrices);
+                    BigDecimal adjustedX = safeDryRunAdjustedSubtotal(r.id, r.basisQuotationId, basisLineItemId, tgt.id, overridePrices);
                     if (adjustedX != null) {
                         ec.unitPriceImpact = adjustedX.subtract(basisCurrentSubtotal);
                         sumImpact = sumImpact.add(ec.unitPriceImpact);
@@ -345,9 +404,11 @@ public class PriceAdjustReviewService {
      * 「dryRun 失败必须降级为 200 + 留白，不得 500」）——抽屉是财务的只读看板，一次试算失败不该
      * 卡住整个审核流程。
      */
-    private BigDecimal safeDryRunAdjustedSubtotal(UUID reviewId, UUID lineItemId, UUID targetVersionId,
-                                                    Map<String, ElementPrice> overridePrices) {
-        try {
+    private BigDecimal safeDryRunAdjustedSubtotal(UUID reviewId, UUID basisQuotationId, UUID lineItemId,
+                                                    UUID targetVersionId, Map<String, ElementPrice> overridePrices) {
+        // task-260920 B-15①：抽屉里的元素影响试算也是一次对依据单的 dryRun 升版 —— 每次调用前取该单的依据单锁，
+        // 与后台试算 / 正式升版错开（本方法不在事务里，取锁前无任何写库）。
+        try (BasisQuotationLocks.Handle lock = quotationLocks.acquire(basisQuotationId, "review-detail review=" + reviewId)) {
             return dryRunAdjustedSubtotal(lineItemId, targetVersionId, overridePrices);
         } catch (Exception e) {
             LOG.warnf(e, "[price-adjust-review] review=%s dryRun 试算异常，降级为未试算: %s", reviewId, e.getMessage());
@@ -443,6 +504,30 @@ public class PriceAdjustReviewService {
                 if (excludedQuotationIds.add(quotationId)) {
                     excludedByStatus.merge(status, 1, Integer::sum);
                 }
+            }
+        }
+
+        // task-260920 B-9：逐料号 col-default 金额 —— 一条 review_id IN 批量取（🚫 在上面的逐审核循环里加查询）
+        result.materials = new ArrayList<>();
+        if (!reviews.isEmpty()) {
+            List<UUID> rids = reviews.stream().map(x -> x.id).toList();
+            Map<UUID, MaterialPriceReviewColumn> colByReview = new LinkedHashMap<>();
+            for (MaterialPriceReviewColumn c : MaterialPriceReviewColumn.<MaterialPriceReviewColumn>list(
+                    "reviewId in ?1 and columnId = ?2", rids, "col-default")) {
+                colByReview.put(c.reviewId, c);
+            }
+            for (MaterialPriceReview r : reviews) { // pure in-memory
+                MaterialPriceReviewColumn c = colByReview.get(r.id);
+                ImpactResultDTO.MaterialAmount ma = new ImpactResultDTO.MaterialAmount();
+                ma.materialNo = r.materialNo;
+                if (c != null) {
+                    ma.quoteCostCurrent = c.quoteCurrent;
+                    ma.quoteCostAdjusted = c.quoteAdjusted;
+                    ma.diffAdjusted = c.diffAdjusted;
+                    ma.status = c.status;
+                    ma.missingSide = c.missingSide;
+                }
+                result.materials.add(ma);
             }
         }
 
@@ -579,9 +664,24 @@ public class PriceAdjustReviewService {
         if (req.reason == null || req.reason.isBlank()) {
             throw new BusinessException(400, "reason 不能为空（裁决 8）");
         }
-        for (UUID id : req.reviewIds) {
-            MaterialPriceReview r = MaterialPriceReview.findById(id);
-            if (r == null) continue;
+        // task-260920 B-18（D-6 / D-11）：未算出金额的行（QUEUED / COMPUTING / FAILED）不能驳回 —— 整批拒绝，
+        // 与 approve 同一异常类与信封（409 REVIEW_BUDGET_NOT_READY + invalidItems）。审核行一条 IN 批量取。
+        List<MaterialPriceReview> loaded = MaterialPriceReview.list("id in ?1", new ArrayList<>(new LinkedHashSet<>(req.reviewIds)));
+        List<Map<String, Object>> invalid = new ArrayList<>();
+        for (MaterialPriceReview r : loaded) { // pure in-memory
+            if (MaterialPriceReview.BUDGET_READY.equals(r.budgetStatus)) continue;
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("reviewId", r.id);
+            item.put("materialNo", r.materialNo);
+            item.put("reason", MaterialPriceReview.BUDGET_FAILED.equals(r.budgetStatus)
+                ? "计算失败(" + (r.budgetError != null ? r.budgetError : "") + ")"
+                : "预算未算完(" + r.budgetStatus + ")");
+            invalid.add(item);
+        }
+        if (!invalid.isEmpty()) {
+            throw new ReviewNotReadyException("REVIEW_BUDGET_NOT_READY", "部分料号尚未算出金额，整批拒绝", invalid);
+        }
+        for (MaterialPriceReview r : loaded) {
             r.status = MaterialPriceReview.STATUS_REJECTED;
             r.reviewedBy = actorId;
             r.reviewedAt = OffsetDateTime.now();
@@ -594,43 +694,25 @@ public class PriceAdjustReviewService {
     // §2.6 预算重试
     // -------------------------------------------------------------------------
 
+    /**
+     * §2.6 既有「重算」：签名与异步语义不变。task-260920 B-15：置「计算中」由无条件改为条件抢占
+     * （QUEUED / FAILED / READY → COMPUTING，按统一次序先取依据单锁），已在算则不重复发起；试算与后台循环同一份实现。
+     */
     public void recomputeBudget(UUID reviewId) {
         MaterialPriceReview r = MaterialPriceReview.findById(reviewId);
         if (r == null) throw new BusinessException(404, "review 不存在: " + reviewId);
-        markComputing(reviewId);
-        UUID versionId = r.versionId;
-        managedExecutor.runAsync(() -> recomputeSingleReview(reviewId, versionId));
-    }
-
-    @Transactional
-    void markComputing(UUID reviewId) {
-        MaterialPriceReview r = MaterialPriceReview.findById(reviewId);
-        if (r != null) {
-            r.budgetStatus = MaterialPriceReview.BUDGET_COMPUTING;
-            r.persist();
-        }
-    }
-
-    @jakarta.enterprise.context.control.ActivateRequestContext
-    void recomputeSingleReview(UUID reviewId, UUID versionId) {
-        // 复用 PriceAdjustBudgetService 的单料号处理逻辑：直接重跑 processMaterial
-        // （幂等：会重新定位 basis + 重算 columns，覆盖旧的 FAILED 状态）。
-        try {
-            MaterialPriceReview r = loadReview(reviewId);
-            if (r == null) return;
-            budgetServiceInstance().processMaterial(versionId, r.customerNo, resolveThreshold(r.customerNo), r.materialNo);
-        } catch (Exception e) {
-            LOG.errorf(e, "[price-adjust] recomputeBudget review=%s failed", reviewId);
-        }
-    }
-
-    @Transactional
-    MaterialPriceReview loadReview(UUID reviewId) {
-        return MaterialPriceReview.findById(reviewId);
+        String st = budgetService.requestCompute(reviewId, PriceAdjustBudgetService.ComputeMode.RECOMPUTE);
+        LOG.infof("[price-adjust] recomputeBudget review=%s material=%s 受理后状态=%s", reviewId, r.materialNo, st);
     }
 
     @Inject PriceAdjustBudgetService budgetService;
-    private PriceAdjustBudgetService budgetServiceInstance() { return budgetService; }
+    @Inject BasisQuotationLocks quotationLocks;
+
+    /** J-3 同单内依据行次序：sort_order 升序（空值排后）→ 行 id 升序（与 SQL {@code ORDER BY li.sort_order ASC NULLS LAST, li.id ASC} 一致，uuid 按 PG 字节序比较）。 */
+    private static final java.util.Comparator<QuotationLineItem> J3_WITHIN_QUOTATION =
+        java.util.Comparator.comparing((QuotationLineItem li) -> li.sortOrder,
+                java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder()))
+            .thenComparing(li -> li.id.toString());
 
     @Transactional
     BigDecimal resolveThreshold(String customerNo) {

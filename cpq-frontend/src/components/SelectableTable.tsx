@@ -85,6 +85,12 @@ export interface SelectableTableProps<T extends object> {
    * 翻页仍交给 `pagination.onChange`，否则排序处理里的 setPage(1) 会把翻页顶回第 1 页。
    */
   onChange?: TableProps<T>['onChange'];
+  /**
+   * Optional hint rendered right after the non-danger action buttons, derived from the current
+   * selection (task-260920 AC-8: 「其中 n 项未计算，点通过会先计算」 next to an ENABLED button —
+   * enabledWhen can only explain a DISABLED one via tooltip). Omitted → nothing rendered (other pages unchanged).
+   */
+  actionHint?: (selectedRows: T[]) => React.ReactNode;
 }
 
 function getRowKey<T>(r: T, rowKey: SelectableTableProps<T extends object ? T : never>['rowKey']): React.Key {
@@ -107,6 +113,7 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
     scroll,
     locale,
     onChange,
+    actionHint,
   } = props;
 
   const [selectedKeys, setSelectedKeys] = useState<React.Key[]>([]);
@@ -220,6 +227,7 @@ function SelectableTable<T extends object>(props: SelectableTableProps<T>) {
         <Space size={[6, 6]} wrap>
           {safeActions.map(renderActionButton)}
         </Space>
+        {actionHint && selectedRows.length > 0 && actionHint(selectedRows)}
         <div style={{ flex: 1, minWidth: 4 }} />
         <Space size={[6, 6]} wrap>
           {dangerActions.map(renderActionButton)}

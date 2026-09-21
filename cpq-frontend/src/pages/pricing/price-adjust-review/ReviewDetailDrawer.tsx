@@ -1,12 +1,16 @@
-import React, { useEffect, useState } from 'react';
-import { Drawer, Table, Tag, Spin, Alert, Typography, Tooltip } from 'antd';
+import React, { useEffect, useRef, useState } from 'react';
+import { Drawer, Table, Tag, Spin, Alert, Typography, Tooltip, Button } from 'antd';
 import dayjs from 'dayjs';
 import { useNavigate } from 'react-router-dom';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import type {
   ReviewDetailDTO, ElementChangeDTO, ComparisonColumnResultDTO, ReviewQuotationDTO,
-  ComparisonMissingSide,
+  ComparisonMissingSide, ReviewRowDTO,
 } from '../../../types/price-adjust';
+import {
+  drawerComputeMode, MSG_COMPUTE_SLOW, MSG_NOT_PENDING, MSG_SUPERSEDED,
+  type ComputeOutcome,
+} from './reviewCompute';
 import { formatNumber } from '../../../utils/formatNumber';
 import {
   DISPLAY_SCALE,
@@ -23,7 +27,43 @@ export interface ReviewDetailDrawerProps {
   open: boolean;
   reviewId: string | null;
   onClose: () => void;
+  /**
+   * task-260920 F-2: the list row that was clicked (title + budgetStatus decide whether to compute
+   * first). Absent → behaves like before (fetch detail straight away).
+   */
+  row?: ReviewRowDTO | null;
+  /** task-260920 F-2: the page's single compute routine (also replaces the list row in place). */
+  computeRow?: (row: ReviewRowDTO, mode: 'compute' | 'waitOnly', signal: { aborted: boolean }) => Promise<ComputeOutcome>;
 }
+
+/** F-2: map a non-DONE compute outcome to the drawer's error line (fixed copy, shared with the page). */
+function outcomeError(o: ComputeOutcome): string | null {
+  switch (o.kind) {
+    case 'DONE': return null;
+    case 'NOT_PENDING': return o.superseded ? MSG_SUPERSEDED : MSG_NOT_PENDING;
+    case 'TIMEOUT': return MSG_COMPUTE_SLOW;
+    case 'ABORTED': return null;
+    case 'ERROR': return o.message;
+  }
+}
+
+/** 抽屉状态 1（原型 审核抽屉-触发计算.html）：整个抽屉显示「正在计算」，期间不发详情请求。 */
+export const DrawerComputingPlaceholder: React.FC = () => (
+  <div style={{ textAlign: 'center', padding: '64px 0', color: 'rgba(0,0,0,.65)' }}>
+    <Spin size="large" style={{ display: 'block', marginBottom: 12 }} />
+    正在计算该料号的影响…
+    <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12.5, marginTop: 6 }}>后台正在计算同一张单时，需要先等它算完当前这一个料号（通常不到 1 秒）</div>
+  </div>
+);
+
+/** 抽屉状态 3：「二、能不能接受」在计算失败时的占位 + 「重新计算」（点了才调 compute-now）。 */
+export const DrawerFailedSection: React.FC<{ onRecompute?: () => void }> = ({ onRecompute }) => (
+  <div style={{ textAlign: 'center', padding: '28px 0', color: 'rgba(0,0,0,.65)' }}>
+    <div style={{ fontSize: 26, opacity: 0.25 }}>⚠️</div>
+    计算未完成，暂无法判断是否可接受
+    <div style={{ marginTop: 10 }}><Button type="primary" onClick={onRecompute} disabled={!onRecompute}>重新计算</Button></div>
+  </div>
+);
 
 /**
  * 本抽屉全部金额的唯一展示口径：最多 DISPLAY_SCALE(9) 位，尾零由
@@ -45,7 +85,7 @@ function fmt(v: DecimalString | null | undefined, digits = DISPLAY_SCALE): strin
  * 把业务排查方向带偏（实际两侧都没数据）。用 Record 后，后端再加枚举值时
  * 这里会直接编译不过，而不是又静默错一次。
  */
-const MISSING_SIDE_LABEL: Record<ComparisonMissingSide, string> = {
+export const MISSING_SIDE_LABEL: Record<ComparisonMissingSide, string> = {
   QUOTE: '报价侧',
   COSTING: '核价侧',
   BOTH: '两侧',
@@ -64,21 +104,70 @@ const cellStyle: Record<ComparisonColumnResultDTO['status'], React.CSSProperties
  * 三段结构（对应财务思考顺序，缺一不可）：① 为什么变 ② 能不能接受 ③ 下钻。
  * 🔒 抽屉内无任何可修改比对列的控件（只读展示）——改比对列会触发预算重算。
  */
-const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId, onClose }) => {
+const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId, onClose, row, computeRow }) => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+  const [computing, setComputing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<ReviewDetailDTO | null>(null);
+  const signalRef = useRef<{ aborted: boolean }>({ aborted: false });
+
+  const fetchDetail = (id: string, signal: { aborted: boolean }) => {
+    setLoading(true);
+    return priceAdjustService.getReviewDetail(id)
+      .then((d) => { if (!signal.aborted) setDetail(d); })
+      .catch((e: any) => { if (!signal.aborted) setError(e?.message || '加载料号审核详情失败'); })
+      .finally(() => { if (!signal.aborted) setLoading(false); });
+  };
+
+  /**
+   * 🔒 F-2 ④ 先算、后取详情：compute-now（或仅轮询）结束之后才调 GET /{id}，两者绝不并发 ——
+   * 详情接口自带元素影响试算，并发会对同一行同时试算两次（评审【2】）。
+   */
+  const computeThenFetch = async (target: ReviewRowDTO, mode: 'compute' | 'waitOnly', signal: { aborted: boolean }) => {
+    if (!computeRow) { await fetchDetail(target.reviewId, signal); return; }
+    setComputing(true);
+    setDetail(null);
+    setError(null);
+    const outcome = await computeRow(target, mode, signal);
+    if (signal.aborted) return;
+    setComputing(false);
+    const err = outcomeError(outcome);
+    if (err) { setError(err); return; }
+    await fetchDetail(target.reviewId, signal);
+  };
 
   useEffect(() => {
-    if (!open || !reviewId) { setDetail(null); return; }
-    setLoading(true);
+    signalRef.current.aborted = true;
+    const signal = { aborted: false };
+    signalRef.current = signal;
+    if (!open || !reviewId) { setDetail(null); setComputing(false); setError(null); return; }
     setError(null);
-    priceAdjustService.getReviewDetail(reviewId)
-      .then(setDetail)
-      .catch((e: any) => setError(e?.message || '加载料号审核详情失败'))
-      .finally(() => setLoading(false));
+    setDetail(null);
+    const mode = row && row.reviewId === reviewId ? drawerComputeMode(row.reviewStatus, row.budgetStatus) : 'none';
+    if (mode !== 'none' && row) {
+      computeThenFetch(row, mode, signal);
+    } else {
+      fetchDetail(reviewId, signal);
+    }
+    return () => { signal.aborted = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, reviewId]);
+
+  const handleRecompute = () => {
+    if (!detail || !reviewId) return;
+    const target: ReviewRowDTO = row && row.reviewId === reviewId
+      ? row
+      : ({ reviewId, materialNo: detail.materialNo, materialName: detail.materialName } as ReviewRowDTO);
+    computeThenFetch(target, 'compute', signalRef.current);
+  };
+
+  const isFailed = detail?.budgetStatus === 'FAILED' && detail.reviewStatus === 'PENDING';
+  const headerTag = computing
+    ? <Tag style={{ fontWeight: 400, marginLeft: 8 }}>未计算</Tag>
+    : isFailed ? <Tag color="red" style={{ fontWeight: 400, marginLeft: 8 }}>预算失败</Tag> : null;
+  const titleNo = detail?.materialNo ?? (row && row.reviewId === reviewId ? row.materialNo : undefined);
+  const titleName = detail?.materialName ?? (row && row.reviewId === reviewId ? row.materialName : undefined);
 
   const elementColumns = [
     { title: '元素', render: (_: unknown, r: ElementChangeDTO) => <span><b>{r.elementCode}</b> {r.elementName}</span> },
@@ -168,17 +257,26 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
 
   return (
     <Drawer
-      title={detail ? `料号审核 · ${detail.materialNo} ${detail.materialName}` : '料号审核'}
+      title={<span>{titleNo ? `料号审核 · ${titleNo} ${titleName ?? ''}` : '料号审核'}{headerTag}</span>}
       placement="right"
       width={1100}
       open={open}
       onClose={onClose}
       destroyOnClose
     >
-      {loading && <div style={{ textAlign: 'center', padding: 48 }}><Spin tip="加载中…" /></div>}
+      {computing && <DrawerComputingPlaceholder />}
+      {!computing && loading && <div style={{ textAlign: 'center', padding: 48 }}><Spin tip="加载中…" /></div>}
       {error && <Alert type="error" showIcon message={error} />}
-      {detail && (
+      {detail && !computing && (
         <>
+          {isFailed && (
+            <Alert
+              type="error"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={<span><b>该料号的影响计算失败</b>{detail.budgetError?.trim() ? `：${detail.budgetError}` : ''}</span>}
+            />
+          )}
           <section style={{ marginBottom: 28 }}>
             <h4 style={{ marginBottom: 10 }}>一、为什么变</h4>
             <Table
@@ -204,15 +302,19 @@ const ReviewDetailDrawer: React.FC<ReviewDetailDrawerProps> = ({ open, reviewId,
             <Text type="secondary" style={{ fontSize: 12.5 }}>
               按该料号所属模板系列「{detail.templateSeriesName}」的配置逐列展开（比对列唯一完整体现处，只读，改配置请到定价策略 Tab）
             </Text>
-            <Table
-              style={{ marginTop: 10 }}
-              size="small"
-              rowKey="columnId"
-              dataSource={detail.comparisonColumns}
-              columns={comparisonColumns}
-              pagination={false}
-              rowClassName={(r) => (r.status === 'RED' ? 'padj-row-red' : r.status === 'AMBER' ? 'padj-row-amber' : '')}
-            />
+            {isFailed ? (
+              <DrawerFailedSection onRecompute={computeRow ? handleRecompute : undefined} />
+            ) : (
+              <Table
+                style={{ marginTop: 10 }}
+                size="small"
+                rowKey="columnId"
+                dataSource={detail.comparisonColumns}
+                columns={comparisonColumns}
+                pagination={false}
+                rowClassName={(r) => (r.status === 'RED' ? 'padj-row-red' : r.status === 'AMBER' ? 'padj-row-amber' : '')}
+              />
+            )}
           </section>
 
           <section>
