@@ -74,8 +74,10 @@ class Ac260920AntiExceptionTest {
                     "c", fx.customerNo)) {
                     (x.equals(r[0]) ? xStates : normalStates).add((String) r[1]);
                 }
-                if (v != null && fx.notSettled(v) == 0 && db.count("SELECT count(*) FROM material_price_review WHERE version_id = :v",
-                    "v", v) >= 1 + q.materials().size()) break;
+                // 退出条件必须包含「X 已至少被采到一次」：否则行在本轮采样查询之后、退出判断之前才提交时，
+                // 会一次都没采到 X 就退出（2026-09-21 后端合跑时的一次空采样失败即此窗口）
+                if (v != null && !xStates.isEmpty() && fx.notSettled(v) == 0
+                    && db.count("SELECT count(*) FROM material_price_review WHERE version_id = :v", "v", v) >= 1 + q.materials().size()) break;
                 T920Fixture.sleep(20);
             }
             if (v == null) v = gen.get(60, TimeUnit.SECONDS);

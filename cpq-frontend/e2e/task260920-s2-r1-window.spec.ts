@@ -303,7 +303,11 @@ test('AC-8 + AC-9 · 同页勾 3 未计算 + 2 已计算 → 逐条算 → 确�
   expect(R.ac8.sawProgress, `应看到「正在计算 n/3」：${JSON.stringify(progSamples.slice(0, 5))}`).toBe(true);
   expect(R.ac8.amountsTableHasAll5).toBe(true);
   expect(jobsAfter, 'AC-8④：此刻本次版本、点击之后无新更新批次').toEqual([]);
-  // 🔎「现网既有区块一个不少」：不会被更新的单 / 跌破预警线 是数据条件区块 —— 期望值由 SQL 与 impact 响应给出后在报告里逐项核（此处只记录）
+  // 🔎「现网既有区块一个不少」：「不会被更新的单」按现网口径（excludedByStatus：只统计已发送/已接受/已过期/已取消，活单含已提交/已批准都会被升版）
+  //    开发库正泰无非活单（草稿 90 / 已提交 9 / 已批准 7）⇒ 本块在 S-2 **数据条件不满足**，如实记录、🚫 造数据；主线在测试库夹具上亲验。
+  //    其余四块（料号数/单数、版本推进路径、按状态分组、跌破预警线）按下面断言。
+  R.ac8.excludedBlockDataCondition = { excludedByStatus: impactBody?.excludedByStatus ?? null, expected: '不出现（数据条件不满足）', appeared: R.ac8.modalBlocks.不会被更新的单 };
+  for (const k of ['料号数', '单数', '版本推进路径', '按状态分组', '跌破预警线', '各料号金额'] as const) expect((R.ac8.modalBlocks as any)[k], `确认框应有区块「${k}」`).toBe(true);
   // AC-9 · 取消
   await modal.getByRole('button', { name: /取\s*消/ }).first().click();
   await page.waitForTimeout(1500);

@@ -117,7 +117,7 @@
         <p class="cap" style="margin-top:6px">末行是<b>算完了但缺核价侧数据</b>（<code>status=MISSING, missingSide=COSTING</code>）—— 与「未计算」是两回事。🔒 <b>缺哪一侧只空哪一侧</b>：报价侧的调整后照常显示（实查 <code>V26092003</code> 的 1202 条缺核价侧行，全部有「报价·调整后」；其中 36 条也有「报价·现」）。v1 这里画成三格全空，是错的。</p>
       </div>
 
-      <div class="alert warn">⚠️ <b>另有 2 张单不会被更新</b><div style="margin-top:2px">已提交 2 —— 这些单将保持旧价。</div></div>
+      <div class="alert warn">⚠️ <b>另有 2 张单不会被更新</b><div style="margin-top:2px">已发送 2 —— 这些单将保持旧价。</div><!-- 2026-09-21 开发期更正：原画「已提交 2」有误 —— 现网口径下已提交 / 已批准属于活单、会被升版；此块只统计已发送 / 已接受 / 已过期 / 已取消（ApproveImpactModal.tsx:328-335，excludedByStatus） --></div>
       <div class="alert err" style="margin-bottom:0">⛔ <b>以下料号仍有跌破预警线的比对列</b><div style="margin-top:2px">S3120011203（1 列）、PERFHOT-B00052（1 列）、T260907T-B01468（1 列）</div></div>
     </div>
     <div class="mf"><div class="btn">取消</div><div class="btn pri">确认通过并升版</div></div>

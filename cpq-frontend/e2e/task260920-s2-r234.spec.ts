@@ -21,10 +21,16 @@ import {
 const STEP = process.env.S2_STEP || '';
 const OUT = `${STEP || 'none'}-结果.json`;
 const matsEnv = (k: string, d: string[]) => (process.env[k] ? process.env[k]!.split(',').map(s => s.trim()).filter(Boolean) : d);
-/** 默认料号 = 准备期候选；Q-2 裁决后用 S2_AC10_MATS / S2_AC15_MATS / S2_AC26_MATS 覆盖（🚫 改代码里的默认值来「换料号」而不留痕） */
-const AC26 = matsEnv('S2_AC26_MATS', ['PERF600-B00233', 'PERF600-B00235']);
-const AC10 = matsEnv('S2_AC10_MATS', ['PERF600-B00236', 'PERF600-B00237']);
-const AC15 = matsEnv('S2_AC15_MATS', ['PERF600-B00230', 'PERF600-B00231', 'PERF600-B00232']);
+/**
+ * 默认料号 = 用户裁决 D-14（「A：全用 0842 的 PERF600」）后按只读 SQL 实时选出（准备/D14-选料号-输出.txt，2026-09-22 06:12:27 UTC）：
+ *   依据行升版前 subtotal = 0、上一版预算「调整后」= 9118.2、只挂 QT-20260911-0842 一张活单一行、无版本指针；三组互不重叠。
+ *   AC-26 取 0842 组第 817/818 位（「趁后台在算 Q」时仍未算到）；AC-10 取第 230/231、AC-15 取第 240~242 位（V3 生成后先被后台循环算到）。
+ *   搜索词各自恒一页（前缀命中 10 个）：PERF600-B0059 / PERF600-B0001 / PERF600-B0002。
+ * 数据若漂移（R4 前复跑 准备/D14-选料号.sql），用 S2_AC10_MATS / S2_AC15_MATS / S2_AC26_MATS 覆盖，🚫 改这里的默认值而不留痕。
+ */
+const AC26 = matsEnv('S2_AC26_MATS', ['PERF600-B00598', 'PERF600-B00599']);
+const AC10 = matsEnv('S2_AC10_MATS', ['PERF600-B00011', 'PERF600-B00012']);
+const AC15 = matsEnv('S2_AC15_MATS', ['PERF600-B00021', 'PERF600-B00022', 'PERF600-B00023']);
 const AC20 = process.env.S2_AC20_MAT || 'T260907T-B01800';   // 0628 大单料号：单次试算最长，最容易「在它算完之前」插入生成
 
 test.describe.configure({ mode: 'serial' });
@@ -128,20 +134,26 @@ test('R4 · AC-26 后台在算 0842 组时「计算」2 个 → 通过 → 逐�
     for (let i = 0; i < 90 && review(V.id, m)[0].budget_status !== 'READY'; i++) await page.waitForTimeout(1000);
   }
   const budget = Object.fromEntries(AC26.map(m => [m, review(V.id, m)[0]]));
+  const pre26 = basisSubtotal(V.id, AC26);                    // D-14：升版前依据行金额（应为 0，且 ≠ 预算）
   const off = logSize();
   const a = await approveUi(page, V.version_no, AC26[0].slice(0, -1), AC26, true, 'AC-26');   // ⚠️ 搜索词取公共前缀，跑前核「同页」
   R.ac26.approve = a; R.ac26.groupStateAtApprove = sql(`select count(*) filter (where budget_status='QUEUED')::int queued from material_price_review
       where version_id='${V.id}' and basis_quotation_id=(select id from quotation where quotation_number='${Q0842}')`)[0];
   R.ac26.job = await waitJob(a.jobId!);
   const sub = basisSubtotal(V.id, AC26);
-  R.ac26.compare = AC26.map(m => ({ m, budget_qa: budget[m].qa, subtotal: sub.find((x: any) => x.material_no === m)?.subtotal }));
+  R.ac26.compare = AC26.map(m => ({ m, budget_qa: budget[m].qa, pre: pre26.find((x: any) => x.material_no === m)?.subtotal, subtotal: sub.find((x: any) => x.material_no === m)?.subtotal }));
   const log = logSince(off);
   evid('AC-26-日志片段.log', log);
   R.ac26.lockLogLines = log.split('\n').filter(l => /lock|锁|wait|等待/i.test(l)).slice(0, 50);   // ⚠️ 关键字未验证，原样留全段日志供人工核
   save(OUT);
   expect(R.ac26.groupStateAtApprove.queued, '通过时后台仍在算 0842 组（否则不是 AC-26 的场景）').toBeGreaterThan(0);
   expect(R.ac26.job?.status).toBe('SUCCESS');
-  for (const c of R.ac26.compare) { expect(c.budget_qa, `${c.m} 预算非空`).not.toBeNull(); expect(c.subtotal, `${c.m} 升版后 subtotal = 预算 quote_adjusted（Q-3）`).toBe(c.budget_qa); }
+  for (const c of R.ac26.compare) {
+    expect(c.budget_qa, `${c.m} 预算非空`).not.toBeNull();
+    expect(c.pre, `${c.m} 前置（D-14）：升版前金额 ≠ 预算，否则比较无区分力`).not.toBe(c.budget_qa);
+    expect(c.subtotal, `${c.m} 升版后 subtotal = 预算 quote_adjusted（Q-3）`).toBe(c.budget_qa);
+    expect(c.subtotal, `${c.m} 升版后 ≠ 升版前（D-14）`).not.toBe(c.pre);
+  }
   // ② 等 V3 跑完 → 该组其余「调整后非空」行：先快照循环算出的值，再逐条串行重算，逐位比
   R.ac26.done = await waitLoopDone(page, V.id);
   const loopVals = sql<any>(`select r.material_no m, c.quote_adjusted::text qa, c.costing_adjusted::text ca, c.diff_adjusted::text da
@@ -149,7 +161,8 @@ test('R4 · AC-26 后台在算 0842 组时「计算」2 个 → 通过 → 逐�
      where r.version_id='${V.id}' and r.status='PENDING' and r.basis_quotation_id=(select id from quotation where quotation_number='${Q0842}')
        and c.quote_adjusted is not null order by r.material_no, c.column_id`);
   const n = Number(process.env.S2_AC26_RECHECK_N || '0');   // 0 = 全部；时间不够时由主线定抽样数
-  const pick = [...new Set(loopVals.map(x => x.m))].filter(m => !AC26.includes(m)).slice(0, n || undefined);
+  // 排除 AC-10 / AC-15 的料号：它们要保留「后台算出」的值给下一步（重算会覆盖它）
+  const pick = [...new Set(loopVals.map(x => x.m))].filter(m => !AC26.includes(m) && !AC10.includes(m) && !AC15.includes(m)).slice(0, n || undefined);
   evid('AC-26-循环值快照.json', loopVals);
   await serialRecompute(page, V.id, pick);
   const after = sql<any>(`select r.material_no m, c.quote_adjusted::text qa, c.costing_adjusted::text ca, c.diff_adjusted::text da
@@ -171,15 +184,18 @@ test('R4 · AC-10（确认框金额 = 升版后实际）+ AC-15（后台预算 =
   for (const m of [...AC10, ...AC15]) expect(review(V.id, m)[0]?.budget_status, `前置：${m} 已计算（READY）`).toBe('READY');
   // AC-10
   const b10 = Object.fromEntries(AC10.map(m => [m, review(V.id, m)[0]]));
+  const pre10 = basisSubtotal(V.id, AC10);
+  for (const m of AC10) expect(pre10.find((x: any) => x.material_no === m)?.subtotal, `${m} 前置（D-14）：升版前金额 ≠ 预算「调整后」`).not.toBe(b10[m].qa);
   const a10 = await approveUi(page, V.version_no, process.env.S2_AC10_KW || AC10[0].slice(0, -1), AC10, true, 'AC-10');
   const j10 = await waitJob(a10.jobId!);
   const s10 = basisSubtotal(V.id, AC10);
-  R.ac10 = { mats: AC10, modalAmounts: a10.amounts, budget: b10, job: j10, subtotal: s10 };
+  R.ac10 = { mats: AC10, modalAmounts: a10.amounts, budget: b10, pre: pre10, job: j10, subtotal: s10 };
   save(OUT);
   expect(j10?.status).toBe('SUCCESS');
   for (const m of AC10) {
     const sub = s10.find((x: any) => x.material_no === m)?.subtotal;
     expect(sub, `${m} 升版后依据行 subtotal = 升版前预算 quote_adjusted`).toBe(b10[m].qa);
+    expect(sub, `${m} 升版后 ≠ 升版前（D-14）`).not.toBe(pre10.find((x: any) => x.material_no === m)?.subtotal);
     // 确认框显示按 DISPLAY_SCALE(9) 去尾零 ⇒ 比「显示值」与 subtotal 按 9 位截断去尾零后的文本
     const shown = (a10.amounts[m].match(/-?\d[\d,]*\.?\d*/g) || []).map(s => s.replace(/,/g, ''));
     const want = String(Number(sub)).length ? sub!.replace(/(\.\d{0,9})\d*$/, '$1').replace(/\.?0+$/, '') : '';
@@ -187,12 +203,19 @@ test('R4 · AC-10（确认框金额 = 升版后实际）+ AC-15（后台预算 =
   }
   // AC-15
   const b15 = Object.fromEntries(AC15.map(m => [m, review(V.id, m)[0]]));
+  const pre15 = basisSubtotal(V.id, AC15);
+  // AC-15 要「后台算出」的值：这些行的更新时间应早于任何人工重算，且 AC-26 复算已排除它们
+  for (const m of AC15) expect(pre15.find((x: any) => x.material_no === m)?.subtotal, `${m} 前置（D-14）：升版前 ≠ 预算`).not.toBe(b15[m].qa);
   const a15 = await approveUi(page, V.version_no, process.env.S2_AC15_KW || AC15[0].slice(0, -1), AC15, true, 'AC-15');
   const j15 = await waitJob(a15.jobId!);
   const s15 = basisSubtotal(V.id, AC15);
-  R.ac15 = { mats: AC15, budget: b15, job: j15, subtotal: s15 }; save(OUT);
+  R.ac15 = { mats: AC15, budget: b15, pre: pre15, job: j15, subtotal: s15 }; save(OUT);
   expect(j15?.status).toBe('SUCCESS');
-  for (const m of AC15) expect(s15.find((x: any) => x.material_no === m)?.subtotal, `${m} 逐位相同`).toBe(b15[m].qa);
+  for (const m of AC15) {
+    const sub = s15.find((x: any) => x.material_no === m)?.subtotal;
+    expect(sub, `${m} 逐位相同`).toBe(b15[m].qa);
+    expect(sub, `${m} 升版后 ≠ 升版前（D-14）`).not.toBe(pre15.find((x: any) => x.material_no === m)?.subtotal);
+  }
   expect(blocked).toEqual([]);
 });
 

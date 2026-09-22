@@ -1,0 +1,35 @@
+BEGIN
+      backup_sample_utc       
+------------------------------
+ 2026-09-22 06:12:42.10409+00
+(1 row)
+
+== 0. 影响面计数（报批用）
+ lines | quotations |  quotation_nos   | comp_rows | revisions | mbom_record_rows | ebom_record_rows | view_structures 
+-------+------------+------------------+-----------+-----------+------------------+------------------+-----------------
+     7 |          1 | QT-20260911-0842 |        21 |         2 |                0 |                0 |               2
+(1 row)
+
+ROLLBACK
+BEGIN
+              now              
+-------------------------------
+ 2026-09-22 06:12:42.275896+00
+(1 row)
+
+ pointers_existing 
+-------------------
+                 0
+(1 row)
+
+ quotation_number | status |   original_amount   |    total_amount     | revisions 
+------------------+--------+---------------------+---------------------+-----------
+ QT-20260911-0842 | DRAFT  | 145891.200000000000 | 145891.200000000000 |         2
+(1 row)
+
+ comp_rows_of_7 
+----------------
+             21
+(1 row)
+
+ROLLBACK

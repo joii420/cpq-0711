@@ -1,0 +1,1 @@
+[2026-09-21T23:20:48.550922933] 版本 cf79c3b2-c7a8-45b2-9866-34bd78c0bf91；X=T260920-4e700734-RJ-0001 采样到的状态=[READY]；X 行=[PENDING, READY, null, 2026-09-22T06:20:46.591474Z, d29c7f21-541a-4017-a04b-0b8b4bce4b93] column_count/basis/created=updated/比对列行数=[0, null, true, 0]；普通料号采样状态=[QUEUED, COMPUTING, READY]；本轮 dryRun 次数=3；列表按 X 搜索命中=true

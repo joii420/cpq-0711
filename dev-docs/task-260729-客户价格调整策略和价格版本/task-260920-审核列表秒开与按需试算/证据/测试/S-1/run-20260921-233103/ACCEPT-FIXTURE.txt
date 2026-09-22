@@ -1,0 +1,41 @@
+[2026-09-21T23:31:03.417904456] 客户=T260920-43482dfe 搜索词=T260920-43482dfe 目标版本=64a669af-017b-4ac3-8b10-0a938cdfbaea 已作废版本=2634ffb5-bcfd-41d0-91fe-761398d187aa
+a=T260920-43482dfe-A-0001→4647c0d0-d858-469d-8052-10436c040295 T260920-43482dfe-A-0002→cb1bb8dd-19c4-4391-81c8-582169150382 T260920-43482dfe-A-0003→8a621045-e266-43cf-88e1-6fee068ad532 依据单=T260920-43482dfe-A
+b=T260920-43482dfe-B-0001→dfcc3d95-abc4-442d-a652-4f8e275d4cb6 依据单=T260920-43482dfe-B（CANCELLED）
+c=T260920-43482dfe-C-0001→72914b12-1a45-4f0c-bd93-7a6dcffc03de 依据单=T260920-43482dfe-C（CANCELLED）
+d=T260920-43482dfe-D-0001→f069eda5-51fb-449d-ba73-92da32440510 T260920-43482dfe-D-0002→ba1f9aa0-634e-49df-ad92-5d7c340685a4 依据单=T260920-43482dfe-D；标红行=2
+e=T260920-43482dfe-D-0001 另挂在 T260920-43482dfe-E（SENT）
+f=[565e3aee-9af7-4582-8151-97b62d1e6084, 5b7aeb24-bb08-4686-ad18-2fe00a9c1a75]（T260920-43482dfe-F-0001,T260920-43482dfe-F-0002）
+PM 账号=t260920-accept-43482dfe / T260920@Accept1（PRICING_MANAGER）
+全部审核行：
+  [4647c0d0-d858-469d-8052-10436c040295, T260920-43482dfe-A-0001, PENDING, QUEUED, , 0, T260920-43482dfe-A, DRAFT]
+  [cb1bb8dd-19c4-4391-81c8-582169150382, T260920-43482dfe-A-0002, PENDING, QUEUED, , 0, T260920-43482dfe-A, DRAFT]
+  [8a621045-e266-43cf-88e1-6fee068ad532, T260920-43482dfe-A-0003, PENDING, QUEUED, , 0, T260920-43482dfe-A, DRAFT]
+  [dfcc3d95-abc4-442d-a652-4f8e275d4cb6, T260920-43482dfe-B-0001, PENDING, QUEUED, , 0, T260920-43482dfe-B, CANCELLED]
+  [72914b12-1a45-4f0c-bd93-7a6dcffc03de, T260920-43482dfe-C-0001, PENDING, FAILED, 判断依据单已不在活单范围内, 0, T260920-43482dfe-C, CANCELLED]
+  [f069eda5-51fb-449d-ba73-92da32440510, T260920-43482dfe-D-0001, PENDING, READY, , 1, T260920-43482dfe-D, DRAFT]
+  [ba1f9aa0-634e-49df-ad92-5d7c340685a4, T260920-43482dfe-D-0002, PENDING, READY, , 1, T260920-43482dfe-D, DRAFT]
+  [565e3aee-9af7-4582-8151-97b62d1e6084, T260920-43482dfe-F-0001, VOIDED, QUEUED, , 0, null, null]
+  [5b7aeb24-bb08-4686-ad18-2fe00a9c1a75, T260920-43482dfe-F-0002, VOIDED, QUEUED, , 0, null, null]
+清理 SQL：
+-- T260920 亲验夹具清理（按私有 id 精确限定；只写不跑，主线验完后执行）
+BEGIN;
+DELETE FROM material_price_update_job_item WHERE quotation_id IN ('4d63b2e5-113d-4cf5-82a0-2c80692f0327', 'a9476455-4fc5-424e-acf1-e7b672b28725', 'e20425f0-f5dd-40fb-b2bf-0f840263c8b7', '306a25b3-20bd-40cb-beee-4a63e74ed29c', '0233a328-6b6b-43b9-9f3e-7a0bad291a92') OR job_id IN (SELECT id FROM material_price_update_job WHERE customer_no = 'T260920-43482dfe');
+DELETE FROM material_price_update_job WHERE customer_no = 'T260920-43482dfe';
+DELETE FROM material_price_review_column WHERE review_id IN (SELECT id FROM material_price_review WHERE customer_no = 'T260920-43482dfe');
+DELETE FROM material_price_review WHERE customer_no = 'T260920-43482dfe';
+DELETE FROM material_price_version_ref WHERE customer_no = 'T260920-43482dfe';
+DELETE FROM quotation_price_revision WHERE quotation_id IN ('4d63b2e5-113d-4cf5-82a0-2c80692f0327', 'a9476455-4fc5-424e-acf1-e7b672b28725', 'e20425f0-f5dd-40fb-b2bf-0f840263c8b7', '306a25b3-20bd-40cb-beee-4a63e74ed29c', '0233a328-6b6b-43b9-9f3e-7a0bad291a92');
+DELETE FROM costing_order_version_override WHERE costing_order_id IN (SELECT id FROM costing_order WHERE quotation_id IN ('4d63b2e5-113d-4cf5-82a0-2c80692f0327', 'a9476455-4fc5-424e-acf1-e7b672b28725', 'e20425f0-f5dd-40fb-b2bf-0f840263c8b7', '306a25b3-20bd-40cb-beee-4a63e74ed29c', '0233a328-6b6b-43b9-9f3e-7a0bad291a92'));
+DELETE FROM costing_order WHERE quotation_id IN ('4d63b2e5-113d-4cf5-82a0-2c80692f0327', 'a9476455-4fc5-424e-acf1-e7b672b28725', 'e20425f0-f5dd-40fb-b2bf-0f840263c8b7', '306a25b3-20bd-40cb-beee-4a63e74ed29c', '0233a328-6b6b-43b9-9f3e-7a0bad291a92');
+DELETE FROM quotation WHERE id IN ('4d63b2e5-113d-4cf5-82a0-2c80692f0327', 'a9476455-4fc5-424e-acf1-e7b672b28725', 'e20425f0-f5dd-40fb-b2bf-0f840263c8b7', '306a25b3-20bd-40cb-beee-4a63e74ed29c', '0233a328-6b6b-43b9-9f3e-7a0bad291a92');
+DELETE FROM element_price_version WHERE customer_no = 'T260920-43482dfe';
+DELETE FROM comparison_column_config WHERE customer_no = 'T260920-43482dfe';
+DELETE FROM customer_price_adjust_strategy WHERE id = '1c00e165-e190-4eb4-8505-7b1ead53ad94';
+DELETE FROM element_price_strategy WHERE customer_no = 'T260920-43482dfe';
+DELETE FROM template WHERE id = '14f34f3d-21d2-4563-bf0c-e709d44d11eb';
+DELETE FROM component WHERE code IN ('T260920-ELEM-43482dfe', 'T260920-SUB-43482dfe');
+DELETE FROM customer WHERE id = 'e7005462-bf8c-4bbc-944b-19a7894a2437';
+DELETE FROM "user" WHERE id = 'd6fda83c-1b25-4400-a9fb-781c7b29c198' AND username = 't260920-accept-43482dfe';
+-- 残留自检（应全为 0）：
+SELECT (SELECT count(*) FROM material_price_review WHERE customer_no = 'T260920-43482dfe') + (SELECT count(*) FROM quotation WHERE quotation_number LIKE 'T260920-43482dfe-%') + (SELECT count(*) FROM customer WHERE code = 'T260920-43482dfe') + (SELECT count(*) FROM "user" WHERE username = 't260920-accept-43482dfe') AS residue;
+COMMIT;
