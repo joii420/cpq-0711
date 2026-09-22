@@ -17,6 +17,7 @@ import com.cpq.quotation.entity.QuotationLineItem;
 import com.cpq.template.entity.Template;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.context.control.ActivateRequestContext;
@@ -44,6 +45,7 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -87,25 +89,87 @@ public class PriceAdjustBudgetService {
     @ConfigProperty(name = "cpq.price-adjust.budget.concurrency", defaultValue = "3")
     int configuredConcurrency;
 
-    /**
-     * 本类自己的工作线程池（后台循环的并行工作线程 / compute-now / recompute 的异步段）。
-     * 🔒 不用 {@code ManagedExecutor}：它会把提交线程的 CDI 请求上下文传播过去，请求作用域的 {@code DataLoader}
-     * 会被多个线程共用（expand 层非线程安全）。普通线程上 {@code @ActivateRequestContext} 各自开一个新的上下文。
-     */
-    private final ExecutorService pool = Executors.newCachedThreadPool(new java.util.concurrent.ThreadFactory() {
-        private final AtomicInteger seq = new AtomicInteger();
+    /** 点击即算 / 重算的试算名额（与后台分开计数、互不挤占）。 */
+    @ConfigProperty(name = "cpq.price-adjust.budget.interactive-concurrency", defaultValue = "2")
+    int configuredInteractiveConcurrency;
 
-        @Override
-        public Thread newThread(Runnable r) {
-            Thread t = new Thread(r, "price-adjust-budget-" + seq.incrementAndGet());
+    /**
+     * 本类自己的线程（不用 {@code ManagedExecutor}：它会把提交线程的 CDI 请求上下文传播过去，请求作用域的
+     * {@code DataLoader} 会被多个线程共用 —— expand 层非线程安全）。普通线程上 {@code @ActivateRequestContext} 各开一个。
+     *
+     * <p>🔒 task-260920 B-5 返工：线程数本身不限，<b>同时在算的数量由下面两个公平名额限住</b>，两类线程分开：
+     * <ul>
+     *   <li>{@link #coordinatorPool}：版本级协调线程（{@link #runComputeOnly} / {@link #enqueueThenRun}），会 {@code join}
+     *       工作线程、<b>本身不占试算名额</b>；与工作线程分池，版本再多也不会把工作线程饿死；</li>
+     *   <li>{@link #workerPool}：后台工作线程与点击即算 / 重算的异步段；等名额时不持锁、不开事务。</li>
+     * </ul>
+     */
+    private final ExecutorService coordinatorPool = Executors.newCachedThreadPool(namedDaemon("price-adjust-budget-coord-"));
+    private final ExecutorService workerPool = Executors.newCachedThreadPool(namedDaemon("price-adjust-budget-"));
+
+    /**
+     * 后台试算名额：<b>全进程所有版本的工作线程合计</b>同时在算不超过 {@link #effectiveConcurrency()}（默认 3、上限 5）。
+     * 点击即算 / 重算另用 {@link #interactivePermits}（默认 2）。每个在算线程占 2 个主池连接 ⇒ 默认最多 10 个、上限配置下 14 个。
+     * 公平（先到先得），逐料号取还 ⇒ 多个版本交错推进。
+     */
+    private Semaphore backgroundPermits;
+    private Semaphore interactivePermits;
+    private final BudgetConcurrencyMeter meter = new BudgetConcurrencyMeter();
+
+    @PostConstruct
+    void initPermits() {
+        backgroundPermits = new Semaphore(effectiveConcurrency(), true);
+        interactivePermits = new Semaphore(Math.max(1, configuredInteractiveConcurrency), true);
+        LOG.infof("[price-adjust-budget] 试算名额：后台=%d 点击即算/重算=%d", backgroundPermits.availablePermits(),
+            interactivePermits.availablePermits());
+    }
+
+    /** 测试 / 诊断：名额计量器。 */
+    BudgetConcurrencyMeter concurrencyMeter() {
+        return meter;
+    }
+
+    private static java.util.concurrent.ThreadFactory namedDaemon(String prefix) {
+        AtomicInteger seq = new AtomicInteger();
+        return r -> {
+            Thread t = new Thread(r, prefix + seq.incrementAndGet());
             t.setDaemon(true);
             return t;
-        }
-    });
+        };
+    }
 
     @PreDestroy
     void shutdownPool() {
-        pool.shutdownNow();
+        coordinatorPool.shutdownNow();
+        workerPool.shutdownNow();
+    }
+
+    /**
+     * 取一个试算名额（公平）。🔒 调用方此刻不得持有依据单锁、不得有打开的事务（次序：名额 → 锁 → 抢占 → 试算 → 条件完成 → 放锁 → 还名额）。
+     *
+     * @return false = 等待中被中断（已恢复中断标志）：调用方直接停止，不改该行状态
+     */
+    private boolean acquirePermit(boolean isBackground, String who) {
+        Semaphore s = isBackground ? backgroundPermits : interactivePermits;
+        try {
+            if (!s.tryAcquire(0, java.util.concurrent.TimeUnit.MILLISECONDS)) { // 计时版遵守公平（无参 tryAcquire 会插队）
+                long t0 = System.nanoTime();
+                s.acquire();
+                LOG.infof("[price-adjust-budget] %s 等待试算名额（%s）%d ms", who, isBackground ? "后台" : "点击即算/重算",
+                    (System.nanoTime() - t0) / 1_000_000);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            LOG.infof("[price-adjust-budget] %s 等待试算名额时被中断，停止（未改动该行）", who);
+            return false;
+        }
+        meter.enter(isBackground);
+        return true;
+    }
+
+    private void releasePermit(boolean isBackground) {
+        meter.exit(isBackground);
+        (isBackground ? backgroundPermits : interactivePermits).release();
     }
 
     /** 试算入口允许抢占的预算状态（B-15②）。 */
@@ -133,7 +197,9 @@ public class PriceAdjustBudgetService {
         /** 未抢到 / 行已不是本入口可处理的状态（被其它入口处理），本次什么都没写。 */
         SKIPPED,
         /** 版本已不是 PENDING：什么都没写，调用方停止。 */
-        STOP
+        STOP,
+        /** 等试算名额时被中断（进程关闭）：没有抢占、什么都没写，调用方直接停止。 */
+        INTERRUPTED
     }
 
     // -------------------------------------------------------------------------
@@ -145,6 +211,8 @@ public class PriceAdjustBudgetService {
         boolean rescan;
         /** 某个工作线程发现版本已作废：其余工作线程在下一条开始前各自停。 */
         volatile boolean stopped;
+        /** 等名额时被中断（进程关闭）：整个循环退出，不记「版本已作废」。 */
+        volatile boolean aborted;
     }
 
     /** guarded by itself. */
@@ -251,7 +319,7 @@ public class PriceAdjustBudgetService {
                 continue;
             }
             try {
-                pool.execute(() -> runComputeOnly(v, run));
+                coordinatorPool.execute(() -> runComputeOnly(v, run));
             } catch (RejectedExecutionException e) {
                 forceFinishRun(v, run);
                 LOG.errorf(e, "[price-adjust-budget] versionId=%s 唤起试算循环失败", v);
@@ -277,7 +345,7 @@ public class PriceAdjustBudgetService {
         if (versionId == null || materials == null || materials.isEmpty()) return;
         List<String> mats = new ArrayList<>(materials);
         try {
-            pool.execute(() -> enqueueThenRun(versionId, customerNo, mats));
+            coordinatorPool.execute(() -> enqueueThenRun(versionId, customerNo, mats));
         } catch (RejectedExecutionException e) {
             LOG.errorf(e, "[price-adjust-budget] versionId=%s 新增料号进池派发失败", versionId);
         }
@@ -803,6 +871,10 @@ public class PriceAdjustBudgetService {
             failed += pc.failed.get();
             lost += pc.lost.get();
             skippedByOthers += pc.skipped.get();
+            if (run.aborted) {
+                LOG.infof("[price-adjust-budget] versionId=%s 等试算名额时被中断（进程关闭），循环退出（剩余行留待重启续跑）", versionId);
+                break;
+            }
             if (run.stopped) {
                 stoppedRemaining = rows.size() - pc.processed.get();
                 break;
@@ -858,7 +930,7 @@ public class PriceAdjustBudgetService {
             List<CompletableFuture<Void>> fs = new ArrayList<>();
             for (int w = 1; w <= workers; w++) {
                 final int workerNo = w;
-                fs.add(CompletableFuture.runAsync(() -> runWorker(versionId, run, queue, pc, workerNo), pool));
+                fs.add(CompletableFuture.runAsync(() -> runWorker(versionId, run, queue, pc, workerNo), workerPool));
             }
             for (CompletableFuture<Void> f : fs) {
                 try {
@@ -886,7 +958,7 @@ public class PriceAdjustBudgetService {
             int done = 0;
             for (int i = 0; i < g.rows.size(); i++) {
                 QueuedRow row = g.rows.get(i);
-                if (run.stopped) {
+                if (run.stopped || run.aborted) {
                     left = g.rows.size() - i;
                     break outer;
                 }
@@ -897,6 +969,11 @@ public class PriceAdjustBudgetService {
                     LOG.errorf(e, "[price-adjust-budget] versionId=%s material=%s 处理异常（不影响后续料号；该行未写，留待重扫）",
                         versionId, row.materialNo());
                     r = ItemResult.SKIPPED; // 不算进展：持续异常时由 computeLoop 的防空转上限兜住，不会死循环
+                }
+                if (r == ItemResult.INTERRUPTED) {
+                    run.aborted = true;
+                    left = g.rows.size() - i;
+                    break outer;
                 }
                 if (r == ItemResult.STOP) {
                     run.stopped = true;
@@ -921,14 +998,20 @@ public class PriceAdjustBudgetService {
         }
     }
 
-    /** 后台循环的一条：取锁 → 抢占（QUEUED）→ 试算事务 → 条件完成 → 放锁。 */
+    /**
+     * 后台循环的一条：<b>取后台名额 → 取锁 → 抢占（QUEUED）→ 试算事务 → 条件完成 → 放锁 → 还名额</b>。
+     * 已作废版本的线程拿到名额后抢占必失败 ⇒ 立刻 STOP 还名额，不久占。
+     */
     private ItemResult computeItemInLoop(UUID versionId, QueuedRow row, String who) {
-        try (BasisQuotationLocks.Handle h = quotationLocks.acquire(row.basisQuotationId(),
-                who + " material=" + row.materialNo())) {
+        String whoItem = who + " material=" + row.materialNo();
+        if (!acquirePermit(true, whoItem)) return ItemResult.INTERRUPTED;
+        try (BasisQuotationLocks.Handle h = quotationLocks.acquire(row.basisQuotationId(), whoItem)) {
             if (!preempt(row.id(), ComputeMode.LOOP.allowed)) {
                 return isVersionPending(versionId) ? ItemResult.SKIPPED : ItemResult.STOP;
             }
             return computeTxSafe(row.id());
+        } finally {
+            releasePermit(true);
         }
     }
 
@@ -1162,7 +1245,7 @@ public class PriceAdjustBudgetService {
                 return now != null ? now.budgetStatus() : null;
             }
             try {
-                pool.execute(() -> computeClaimed(reviewId, b.basisQuotationId(), who));
+                workerPool.execute(() -> computeClaimed(reviewId, b.basisQuotationId(), who));
             } catch (RejectedExecutionException e) {
                 LOG.errorf(e, "[price-adjust-budget] review=%s 派发试算失败，退回未计算", reviewId);
                 releaseClaim(reviewId);
@@ -1173,7 +1256,7 @@ public class PriceAdjustBudgetService {
         }
         if (!acceptedCompute.add(reviewId)) return MaterialPriceReview.BUDGET_COMPUTING;
         try {
-            pool.execute(() -> {
+            workerPool.execute(() -> {
                 try {
                     computeWithLock(reviewId, b.basisQuotationId(), mode.allowed, null, who);
                 } finally {
@@ -1191,10 +1274,15 @@ public class PriceAdjustBudgetService {
     /** 已由请求线程抢占（COMPUTING）的行：取锁 → 试算事务 → 条件完成 → 放锁。 */
     @ActivateRequestContext
     void computeClaimed(UUID reviewId, UUID basisQuotationId, String who) {
+        // 名额 → 锁 → 试算事务 → 条件完成 → 放锁 → 还名额。等名额被中断（进程关闭）⇒ 行保持 COMPUTING，由下次启动的
+        // B-12 收尾重置为 QUEUED（本线程不再写库）。
+        if (!acquirePermit(false, who)) return;
         try (BasisQuotationLocks.Handle h = quotationLocks.acquire(basisQuotationId, who)) {
             computeTxSafe(reviewId);
         } catch (Exception e) {
             LOG.errorf(e, "[price-adjust-budget] review=%s 试算异常", reviewId);
+        } finally {
+            releasePermit(false);
         }
     }
 
@@ -1202,6 +1290,17 @@ public class PriceAdjustBudgetService {
     @ActivateRequestContext
     ItemResult computeWithLock(UUID reviewId, UUID basisQuotationId, Set<String> allowed, BigDecimal thresholdOverride,
                                String who) {
+        // 名额（点击即算 / 重算额度）→ 锁 → 抢占 → 试算事务 → 条件完成 → 放锁 → 还名额
+        if (!acquirePermit(false, who)) return ItemResult.INTERRUPTED;
+        try {
+            return computeWithLockHeld(reviewId, basisQuotationId, allowed, thresholdOverride, who);
+        } finally {
+            releasePermit(false);
+        }
+    }
+
+    private ItemResult computeWithLockHeld(UUID reviewId, UUID basisQuotationId, Set<String> allowed,
+                                           BigDecimal thresholdOverride, String who) {
         try (BasisQuotationLocks.Handle h = quotationLocks.acquire(basisQuotationId, who)) {
             if (!preempt(reviewId, allowed)) return ItemResult.SKIPPED;
             if (thresholdOverride == null) return computeTxSafe(reviewId);

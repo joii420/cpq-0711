@@ -114,7 +114,7 @@ class Ac260920ListTest {
     private static List<String> pages(String customerNo) {
         List<String> out = new ArrayList<>();
         for (int p = 1; p <= 5; p++) {
-            JsonNode j = T920Api.unwrap(T920Api.anonymous().list(T920Api.q("customerNo", customerNo, "page", p, "size", 20)));
+            JsonNode j = T920Api.unwrap(T920Api.anonymous().list(T920Api.q("customerNo", customerNo, "status", "VOIDED", "page", p, "size", 20)));
             assertEquals(20, j.path("content").size(), "第 " + p + " 页应有 20 行（totalElements=" + j.path("totalElements") + "）");
             for (JsonNode r : j.path("content")) out.add(r.path("reviewId").asText());
         }

@@ -97,6 +97,9 @@ class Ac260920EnqueueParityTest {
         long reviewsBefore = db.count("SELECT count(*) FROM material_price_review WHERE customer_no = :c", "c", CHINT);
         long refsBefore = db.count("SELECT count(*) FROM material_price_version_ref WHERE customer_no = :c", "c", CHINT);
         long versionsBefore = db.count("SELECT count(*) FROM element_price_version WHERE customer_no = :c", "c", CHINT);
+        String elemBefore = db.text("SELECT count(*) || ':' || coalesce(string_agg(e.element_code, ',' ORDER BY e.element_code), '') "
+            + "FROM customer_price_adjust_element e JOIN customer_price_adjust_strategy s ON s.id = e.strategy_id WHERE s.customer_no = :c",
+            "c", CHINT);
         assertEquals(0, db.count("SELECT count(*) FROM element_price_version WHERE customer_no = :c AND status = 'PENDING'",
             "c", CHINT), "前提（S1-3）：测试库正泰没有待处理版本；若已有，本用例不适用，报主线");
 
@@ -104,32 +107,62 @@ class Ac260920EnqueueParityTest {
         UUID target = UUID.randomUUID();
         Decision oldD;
         Decision newD;
+        Decision oldP;
+        Decision newP;
+        int pointerK;
         Set<String> scope;
         String bumped;
         utx.begin();
         try {
             em.joinTransaction();
-            UUID latest = (UUID) em.createNativeQuery("SELECT id FROM element_price_version WHERE customer_no = :c "
-                + "ORDER BY created_at DESC LIMIT 1").setParameter("c", CHINT).getResultList().stream().findFirst().orElse(null);
-            assertNotNull(latest, "前提：测试库正泰至少有一个历史版本（用来复制元素价明细）");
+            // 测试库正泰：0 个版本 / 0 条指针 / 0 条审核行 / 策略参与元素 0 个（主线 01:52 后端只读实查）
+            // ⇒ 全部在本回滚事务内合成：参与元素 Ag + 目标版本（仅 Ag 一条明细）。事务外零写入。
+            UUID strategy = (UUID) em.createNativeQuery("SELECT id FROM customer_price_adjust_strategy WHERE customer_no = :c")
+                .setParameter("c", CHINT).getResultList().stream().findFirst().orElse(null);
+            assertNotNull(strategy, "前提：测试库正泰有调价策略（ALL 模式）");
+            em.createNativeQuery("INSERT INTO customer_price_adjust_element (strategy_id, element_code) VALUES (:s, 'Ag') "
+                + "ON CONFLICT DO NOTHING").setParameter("s", strategy).executeUpdate();
+            Object ag = em.createNativeQuery("SELECT raw_price FROM element_daily_price WHERE element_name = 'Ag' "
+                + "AND raw_price IS NOT NULL AND price_date <= CURRENT_DATE ORDER BY price_date DESC, source_id LIMIT 1")
+                .getResultList().stream().findFirst().orElse(null);
+            assertNotNull(ag, "前提：测试库有银日价（合成目标版本价格用）");
+            java.math.BigDecimal agPrice = new java.math.BigDecimal(ag.toString());
+            bumped = "Ag";
             em.createNativeQuery("INSERT INTO element_price_version (id, customer_no, version_no, base_date, status, trigger_type, "
                     + "created_at) VALUES (:id, :c, :vn, CURRENT_DATE, 'PENDING', 'MANUAL', now())")
                 .setParameter("id", target).setParameter("c", CHINT).setParameter("vn", "T920" + run + "-ZT").executeUpdate();
-            // 目标版本 = 最新一版的明细复制，只把一个元素（字母序第一个有价元素）的价 +1 ⇒ 同时存在「有变化」与「无变化」
-            bumped = (String) em.createNativeQuery("SELECT min(element_code) FROM element_price_version_item WHERE version_id = :v "
-                + "AND current_price IS NOT NULL").setParameter("v", latest).getSingleResult();
-            em.createNativeQuery("INSERT INTO element_price_version_item (version_id, element_code, current_price, previous_price, "
-                    + "change_rate, currency, price_unit, no_price, inherited_from_previous) "
-                    + "SELECT :t, element_code, CASE WHEN element_code = :e THEN current_price + 1 ELSE current_price END, "
-                    + "current_price, NULL, currency, price_unit, no_price, inherited_from_previous "
-                    + "FROM element_price_version_item WHERE version_id = :v")
-                .setParameter("t", target).setParameter("e", bumped).setParameter("v", latest).executeUpdate();
+            em.createNativeQuery("INSERT INTO element_price_version_item (version_id, element_code, current_price, currency, "
+                    + "price_unit, no_price, inherited_from_previous) VALUES (:t, 'Ag', CAST(:p AS numeric), 'CNY', 'kg', false, false)")
+                .setParameter("t", target).setParameter("p", agPrice.toPlainString()).executeUpdate();
             // 范围由新批量判定给出（ALL 模式的范围解析不是 AC-2 的判定对象）；旧判定在同一范围上逐个跑
             Decision probe = T920Hooks.newDecision(budget, target, CHINT, null);
             scope = new LinkedHashSet<>(probe.pooled());
             scope.addAll(probe.advanced());
             oldD = T920Hooks.oldDecision(budget, target, CHINT, new ArrayList<>(scope));
             newD = T920Hooks.newDecision(budget, target, CHINT, new ArrayList<>(scope));
+            // 变体 P（同一回滚事务）：测试库正泰没有指针 ⇒ 上面只覆盖「无指针」类分支。再合成两个旧版本
+            // （银价相同 / 不同），把前 2×K 个进池料号的指针分别指过去，覆盖「有指针无变化 / 有变化 / 扫不出元素」分支后再比一次。
+            UUID vSame = UUID.randomUUID();
+            UUID vDiff = UUID.randomUUID();
+            for (Object[] v : new Object[][]{{vSame, "-ZS", agPrice}, {vDiff, "-ZD", agPrice.subtract(java.math.BigDecimal.ONE)}}) {
+                em.createNativeQuery("INSERT INTO element_price_version (id, customer_no, version_no, base_date, status, trigger_type, "
+                        + "created_at) VALUES (:id, :c, :vn, CURRENT_DATE - 1, 'SUPERSEDED', 'MANUAL', now() - interval '1 day')")
+                    .setParameter("id", v[0]).setParameter("c", CHINT).setParameter("vn", "T920" + run + v[1]).executeUpdate();
+                em.createNativeQuery("INSERT INTO element_price_version_item (version_id, element_code, current_price, currency, "
+                        + "price_unit, no_price, inherited_from_previous) VALUES (:t, 'Ag', CAST(:p AS numeric), 'CNY', 'kg', false, false)")
+                    .setParameter("t", v[0]).setParameter("p", ((java.math.BigDecimal) v[2]).toPlainString()).executeUpdate();
+            }
+            List<String> pooledSorted = new ArrayList<>(new TreeSet<>(oldD.pooled()));
+            int k = Math.min(Integer.getInteger("t260920.ac2.pointerK", 100), pooledSorted.size() / 2);
+            for (int i = 0; i < 2 * k; i++) {
+                em.createNativeQuery("INSERT INTO material_price_version_ref (customer_no, material_no, version_id, updated_at) "
+                        + "VALUES (:c, :m, :v, now())")
+                    .setParameter("c", CHINT).setParameter("m", pooledSorted.get(i)).setParameter("v", i < k ? vSame : vDiff).executeUpdate();
+            }
+            em.flush();
+            oldP = T920Hooks.oldDecision(budget, target, CHINT, new ArrayList<>(scope));
+            newP = T920Hooks.newDecision(budget, target, CHINT, new ArrayList<>(scope));
+            pointerK = k;
         } finally {
             rollback();
         }
@@ -151,10 +184,20 @@ class Ac260920EnqueueParityTest {
         assertFalse(oldD.pooled().isEmpty(), "进池集合非空");
         assertEquals(new TreeSet<>(oldD.pooled()), new TreeSet<>(newD.pooled()), "AC-2（正泰全量）：进池集合逐个相同");
         assertEquals(new TreeSet<>(oldD.advanced()), new TreeSet<>(newD.advanced()), "AC-2（正泰全量）：推进集合逐个相同");
+        T920Evidence.log("AC-2", "正泰变体P（合成指针 " + pointerK + " 同价 + " + pointerK + " 变价）：旧 进池=" + oldP.pooled().size()
+            + " 推进=" + oldP.advanced().size() + "；新 进池=" + newP.pooled().size() + " 推进=" + newP.advanced().size());
+        assertTrue(pointerK > 0, "变体P前提：至少合成 1 组指针");
+        assertTrue(oldP.advanced().size() > oldD.advanced().size(),
+            "变体P鉴别力：合成的「同价指针」料号应从进池转为推进（否则指针分支没被走到）");
+        assertEquals(new TreeSet<>(oldP.pooled()), new TreeSet<>(newP.pooled()), "AC-2（正泰+合成指针）：进池集合逐个相同");
+        assertEquals(new TreeSet<>(oldP.advanced()), new TreeSet<>(newP.advanced()), "AC-2（正泰+合成指针）：推进集合逐个相同");
         // S1-3：不留任何写入
         assertEquals(reviewsBefore, db.count("SELECT count(*) FROM material_price_review WHERE customer_no = :c", "c", CHINT));
         assertEquals(refsBefore, db.count("SELECT count(*) FROM material_price_version_ref WHERE customer_no = :c", "c", CHINT));
         assertEquals(versionsBefore, db.count("SELECT count(*) FROM element_price_version WHERE customer_no = :c", "c", CHINT));
+        assertEquals(elemBefore, db.text("SELECT count(*) || ':' || coalesce(string_agg(e.element_code, ',' ORDER BY e.element_code), '') "
+            + "FROM customer_price_adjust_element e JOIN customer_price_adjust_strategy s ON s.id = e.strategy_id WHERE s.customer_no = :c",
+            "c", CHINT), "S1-3：策略参与元素随事务回滚");
         assertEquals(0, db.count("SELECT count(*) FROM element_price_version WHERE id = :id", "id", target), "目标版本已随事务回滚");
     }
 
