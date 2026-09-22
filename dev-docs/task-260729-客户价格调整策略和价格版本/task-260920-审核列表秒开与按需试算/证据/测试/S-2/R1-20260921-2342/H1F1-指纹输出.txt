@@ -1,0 +1,60 @@
+BEGIN
+          sample_utc          |              version_id              
+------------------------------+--------------------------------------
+ 2026-09-22 07:18:50.68757+00 | d49ed296-5778-4992-830e-3f11bda64f01
+(1 row)
+
+== ① 逐行导出（审核行 LEFT JOIN 比对列；排序 material_no, column_id NULLS FIRST）
+== ② 聚合哈希 H（不含 updated_at；NULL 写成 ∅；numeric::text 保留全部位数；行序同导出）
+ rows | rows_quote_adjusted_nonnull |               hash               
+------+-----------------------------+----------------------------------
+ 4543 |                        1208 | cdfcd714fedd78ac975c85f0e21e61b3
+(1 row)
+
+== ②b 状态分布（辅助；AC-12 口径另见 R1 脚本）
+ status  | budget_status |  n   
+---------+---------------+------
+ PENDING | READY         | 4543
+(1 row)
+
+== ③a 输入指纹：目标版本元素价「按内容」（元素 / 价格 / 币种；不含版本 id）
+ items |         element_price_fp         
+-------+----------------------------------
+     1 | f1e12e36a4699caa1e4707e7c76ab947
+(1 row)
+
+== ③b 输入指纹：三张大单全部行 quote_card_values + subtotal
+ quotation_number | lines |             card_fp              
+------------------+-------+----------------------------------
+ QT-20260908-0628 |  1845 | ee5538300d62ce642c27d57b5aa5fc78
+ QT-20260909-0629 |  1845 | 78aecfca2bc390ecbe2035e8eb97e973
+ QT-20260911-0842 |  1200 | 983a9ae2b616bb56f28c62b17c351933
+(3 rows)
+
+== ③b2 输入指纹：三张大单 quotation_line_component_data 的 snapshot_rows / row_data / row_version
+ quotation_number | comp_rows |             comp_fp              
+------------------+-----------+----------------------------------
+ QT-20260908-0628 |     25830 | 423942f51002b2586f33bad9eee7bba7
+ QT-20260909-0629 |     25830 | c3f498ecc98eec76f3f7cc02b1c20820
+ QT-20260911-0842 |      3600 | 9d78941ee658eb3f1555f6c78a64dc15
+(3 rows)
+
+== ③c0 进池集合（本版本有审核行的料号）
+ pooled |          pooled_set_fp           
+--------+----------------------------------
+   4543 | 5de3eaea116584915ac8682ae398b272
+(1 row)
+
+== ③c 进池料号的版本指针（只比进池料号；不进池料号每轮都会被推到本轮版本，按定义不同）
+ pooled |            pointer_fp            
+--------+----------------------------------
+   4543 | 7fc53dfa72f4e2580a443c7d8b3e127f
+(1 row)
+
+== ④ 库内阳性对照（第二道；第一道在导出副本上做）：第 1 行 quote_adjusted +1e-12 / ∅→0
+          tampered_hash           
+----------------------------------
+ 5b5fd01f9fb9967e0e190f294aaea516
+(1 row)
+
+ROLLBACK

@@ -54,7 +54,7 @@ describe('F-2 · 抽屉占位（原型 审核抽屉-触发计算.html 状态 1 /
   it('状态 1：正在计算该料号的影响…', () => {
     const t = text(renderToStaticMarkup(<DrawerComputingPlaceholder />));
     expect(t).toContain('正在计算该料号的影响…');
-    expect(t).toContain('后台正在计算同一张单时，需要先等它算完当前这一个料号（通常不到 1 秒）');
+    expect(t).toContain('后台正在计算同一张单时需要排队，可能要几秒');
   });
   it('状态 3（AC-7）：计算未完成占位 +「重新计算」按钮', () => {
     const h = renderToStaticMarkup(<DrawerFailedSection onRecompute={() => {}} />);

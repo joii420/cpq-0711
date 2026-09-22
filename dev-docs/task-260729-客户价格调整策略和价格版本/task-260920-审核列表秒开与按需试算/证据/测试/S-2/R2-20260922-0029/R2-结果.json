@@ -1,0 +1,58 @@
+{
+  "identity": {
+    "step": "R2",
+    "frontend": {
+      "url": "http://localhost:5230",
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend"
+    },
+    "backendPort": 8130,
+    "log": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/dev-docs/task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算/证据/测试/S-2/R2-20260922-0029/backend-8130.log",
+    "oldSide": false
+  },
+  "listSeq": [],
+  "R2": {
+    "gen": {
+      "before": {
+        "id": "d49ed296-5778-4992-830e-3f11bda64f01",
+        "created_at": "2026-09-22 06:55:10.255111+00",
+        "version_no": "V26092102"
+      },
+      "V": {
+        "id": "51ce45ed-2691-4aa8-9cec-af281501b54c",
+        "created_at": "2026-09-22 07:30:09.068275+00",
+        "version_no": "V26092201"
+      },
+      "t0": 1790062209738,
+      "tSend": "2026-09-22T07:30:05.299Z",
+      "tReturned": "2026-09-22T07:30:09.180Z",
+      "exchanges": [
+        {
+          "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+          "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":false}",
+          "status": 409,
+          "body": "{\"code\":409,\"message\":\"已有待处理版本 V26092102，需二次确认后作废重建\",\"data\":{\"code\":\"PENDING_VERSION_EXISTS\",\"pendingVersionNo\":\"V26092102\",\"approvedReviewCount\":0,\"pendingReviewCount\":4543}}",
+          "at": "2026-09-22T07:30:06.001Z"
+        },
+        {
+          "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+          "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":true}",
+          "status": 201,
+          "body": "{\"versionId\":\"51ce45ed-2691-4aa8-9cec-af281501b54c\",\"versionNo\":\"V26092201\",\"baseDate\":\"2026-09-22\",\"status\":null,\"triggerType\":null,\"createdAt\":null,\"createdBy\":null,\"itemCount\":1,\"budgetJobId\":\"51ce45ed-2691-4aa8-9cec-af281501b54c\",\"budgetStatus\":\"QUEUED\",\"progress\":null}",
+          "at": "2026-09-22T07:30:09.180Z"
+        }
+      ],
+      "request": {
+        "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+        "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":true}"
+      },
+      "status": 201
+    },
+    "done": {
+      "last": "2026-09-22 07:52:46.328181+00",
+      "failed": 0,
+      "pending": 4543,
+      "unfinished": 0,
+      "waitedMs": 1358891
+    }
+  }
+}

@@ -33,3 +33,5 @@
 12:28:08 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
 12:28:30 AM [vite] (client) [console.error] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead.
 12:28:30 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+12:31:52 AM [vite] (client) hmr update /src/pages/pricing/price-adjust-review/PriceAdjustReviewPage.tsx
+2:15:49 AM [vite] (client) hmr update /src/pages/pricing/price-adjust-review/ReviewDetailDrawer.tsx

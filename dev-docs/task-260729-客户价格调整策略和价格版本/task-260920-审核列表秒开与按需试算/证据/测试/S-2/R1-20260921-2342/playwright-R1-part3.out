@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r1-window.spec.ts:244:1 › AC-8 + AC-9 · 同页勾 3 未计算 + 2 已计算 → 逐条算 → 确认框 → 取消
+[1A[2K  1 passed (20.6s)

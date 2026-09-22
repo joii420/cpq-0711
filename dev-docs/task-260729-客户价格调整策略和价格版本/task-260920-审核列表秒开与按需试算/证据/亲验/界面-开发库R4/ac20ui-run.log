@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 e2e/mainline260920-ac20ui.spec.ts:9:1 › AC-20 ④ 界面提示 (7.1s)
+
+  1 passed (7.8s)

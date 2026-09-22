@@ -59,7 +59,7 @@
     <div class="loading-center">
       <span class="spin lg"></span>
       正在计算该料号的影响…
-      <div class="muted" style="font-size:12.5px;margin-top:6px">后台正在计算同一张单时，需要先等它算完当前这一个料号（通常不到 1 秒）</div>
+      <div class="muted" style="font-size:12.5px;margin-top:6px">后台正在计算同一张单时需要排队，可能要几秒</div><!-- 2026-09-22 开发期更正 D-20：原文「需要先等它算完当前这一个料号（通常不到 1 秒）」与实测（同单并发时总计 4~8 s，D-18）不符 -->
     </div>
     <p class="cap">🚫 计算期间不发详情请求；🚫 不转圈超过 90 秒 —— 超过即停止等待并提示「计算较慢，可稍后刷新」（<code>F-2</code> ①）。</p>
   </div>

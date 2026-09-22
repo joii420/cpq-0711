@@ -1,0 +1,69 @@
+BEGIN
+          sample_utc           
+-------------------------------
+ 2026-09-22 07:18:50.363246+00
+(1 row)
+
+== AC-1 / AC-4 接口对账辅助：本版本待处理行中未计算数（应 = 接口 notComputedTotal，无筛选时）
+ not_computed | pending_total 
+--------------+---------------
+            0 |          4543
+(1 row)
+
+== AC-4 辅助：breachedOnly 下因未计算被排除的行（应 = excludedByNotComputed）；标红且 READY 的行数（列表应只剩这些）
+ excluded_by_not_computed_upper | breached_ready 
+--------------------------------+----------------
+                              0 |           4537
+(1 row)
+
+== AC-5 / AC-6 / AC-21：指定料号的审核行与比对列（逐位值 + 更新时间）
+   material_no   |              review_id               | status  | budget_status | budget_error |          updated_at           |  column_id  | quote_current | quote_adjusted | costing_adjusted | diff_adjusted | col_status | missing_side 
+-----------------+--------------------------------------+---------+---------------+--------------+-------------------------------+-------------+---------------+----------------+------------------+---------------+------------+--------------
+ T260907T-B01845 | d1d4a813-fddc-4cde-851f-7d4185dab463 | PENDING | READY         |              | 2026-09-22 06:55:27.418982+00 | col-default |               |                |                  |               | MISSING    | BOTH
+(1 row)
+
+== AC-21：同一料号在本版本的审核行条数（必须 = 1）
+   material_no   | count 
+-----------------+-------
+ T260907T-B01845 |     1
+(1 row)
+
+== AC-8 ④ / AC-9：本版本、点击时刻之后的新更新批次（必须 0 行）
+ id | status | total_count | triggered_at 
+----+--------+-------------+--------------
+(0 rows)
+
+== AC-9：这些料号的版本指针（与操作前快照逐个比）
+ material_no | version_id | updated_at 
+-------------+------------+------------
+(0 rows)
+
+== AC-12：本版本待处理行中 QUEUED/COMPUTING = 0 且 待处理总数 > 0
+ unfinished | pending_total | failed |         last_updated          
+------------+---------------+--------+-------------------------------
+          0 |          4543 |      0 | 2026-09-22 07:18:34.410666+00
+(1 row)
+
+ budget_error | count 
+--------------+-------
+(0 rows)
+
+== AC-14 辅助：本版本审核行建行/最后更新（全量耗时的库侧旁证；判据用日志 [perf] budget-compute / budget-group）
+         first_created         |         last_created          |         last_updated          |      wall       
+-------------------------------+-------------------------------+-------------------------------+-----------------
+ 2026-09-22 06:55:10.906868+00 | 2026-09-22 06:55:10.906868+00 | 2026-09-22 07:18:34.410666+00 | 00:23:23.503798
+(1 row)
+
+== AC-10 / AC-15 / AC-26：依据行的实际报价侧金额（升版后）—— 依据行口径 J-3：单据 created_at 倒序 → sort_order 升序(空后) → id 升序
+   material_no   | quotation_number |               line_id                |    subtotal    | line_unit_price | line_total_amount | excel_invalidated 
+-----------------+------------------+--------------------------------------+----------------+-----------------+-------------------+-------------------
+ T260907T-B01845 | QT-20260908-0628 | 11968ca5-5cf2-42e4-a554-7358d5b59fd1 | 0.000000000000 |                 |                   | f
+(1 row)
+
+== AC-20 ③：作废之后该行及其比对列无写入（比对列无 updated_at，只能看审核行 updated_at 与列 created_at）
+   material_no   | status  | budget_status |          updated_at           |        col_max_created        
+-----------------+---------+---------------+-------------------------------+-------------------------------
+ T260907T-B01845 | PENDING | READY         | 2026-09-22 06:55:27.418982+00 | 2026-09-22 06:55:27.437766+00
+(1 row)
+
+ROLLBACK

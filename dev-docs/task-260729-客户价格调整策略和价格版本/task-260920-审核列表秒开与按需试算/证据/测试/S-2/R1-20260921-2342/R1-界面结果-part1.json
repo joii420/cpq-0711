@@ -1,0 +1,333 @@
+{
+  "identity": {
+    "frontend": {
+      "url": "http://localhost:5230",
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend"
+    },
+    "backend": {
+      "port": 8130,
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend"
+    },
+    "log": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/dev-docs/task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算/证据/测试/S-2/R1-20260921-2342/backend-8130.log"
+  },
+  "listSeq": [
+    {
+      "ev": "send",
+      "t": 1790060112873,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060112875,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060113597,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060113746,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060114404,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01844"
+    },
+    {
+      "ev": "send",
+      "t": 1790060114433,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01844"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060114707,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01844"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060114742,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01844"
+    },
+    {
+      "ev": "send",
+      "t": 1790060114914,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060114935,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060115785,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060115890,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060118210,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060118211,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060118993,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060119161,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060119848,
+      "url": "?page=1&size=20&status=PENDING&breachedOnly=true"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060120802,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&breachedOnly=true"
+    },
+    {
+      "ev": "send",
+      "t": 1790060123427,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060123428,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060124330,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060124489,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060125253,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01845"
+    },
+    {
+      "ev": "send",
+      "t": 1790060125281,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01845"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060125404,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01845"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060125439,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01845"
+    },
+    {
+      "ev": "send",
+      "t": 1790060132707,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060132708,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060133590,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060133750,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060134519,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00291"
+    },
+    {
+      "ev": "send",
+      "t": 1790060134559,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00291"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060134682,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00291"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060134729,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00291"
+    }
+  ],
+  "gen": {
+    "before": {
+      "id": "0827e9b6-879f-470a-a19c-26d6f0b4e0a2",
+      "created_at": "2026-09-22 01:00:08.437678+00",
+      "version_no": "V26092101"
+    },
+    "willVoid": {
+      "n": 4543
+    },
+    "response": {
+      "tSend": "2026-09-22T06:55:06.278Z",
+      "tReturned": "2026-09-22T06:55:10.335Z",
+      "status": 201,
+      "exchanges": [
+        {
+          "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+          "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":false}",
+          "status": 409,
+          "body": "{\"code\":409,\"message\":\"已有待处理版本 V26092101，需二次确认后作废重建\",\"data\":{\"pendingReviewCount\":4543,\"approvedReviewCount\":0,\"pendingVersionNo\":\"V26092101\",\"code\":\"PENDING_VERSION_EXISTS\"}}",
+          "at": "2026-09-22T06:55:06.941Z"
+        },
+        {
+          "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+          "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":true}",
+          "status": 201,
+          "body": "{\"versionId\":\"d49ed296-5778-4992-830e-3f11bda64f01\",\"versionNo\":\"V26092102\",\"baseDate\":\"2026-09-21\",\"status\":null,\"triggerType\":null,\"createdAt\":null,\"createdBy\":null,\"itemCount\":1,\"budgetJobId\":\"d49ed296-5778-4992-830e-3f11bda64f01\",\"budgetStatus\":\"QUEUED\",\"progress\":null}",
+          "at": "2026-09-22T06:55:10.335Z"
+        }
+      ],
+      "t0": "2026-09-22T06:55:10.335Z"
+    },
+    "request": {
+      "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+      "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":true}"
+    }
+  },
+  "V1": {
+    "id": "d49ed296-5778-4992-830e-3f11bda64f01",
+    "created_at": "2026-09-22 06:55:10.255111+00",
+    "version_no": "V26092102"
+  },
+  "ac1": {
+    "searchable": true,
+    "msAfterT0": 4430,
+    "status": "未计算计算",
+    "amounts": [
+      "— → —",
+      "—",
+      "—"
+    ],
+    "spinInRow": 0,
+    "hintWithKeyword": "共1条，其中1条未计算，正在后台计算…",
+    "hintAll": "共4545条，其中4534条未计算，正在后台计算…",
+    "api": {
+      "totalElements": 4545,
+      "notComputedTotal": 4534
+    },
+    "sqlNow": {
+      "m": 4531,
+      "n": 4543
+    },
+    "row": {
+      "ca": null,
+      "da": null,
+      "id": "c3cc8f23-7602-4981-8831-06630f6a92e0",
+      "qa": null,
+      "qc": null,
+      "basis": "QT-20260908-0628",
+      "status": "PENDING",
+      "col_status": null,
+      "updated_at": "2026-09-22 06:55:10.906868+00",
+      "budget_error": null,
+      "missing_side": null,
+      "budget_status": "QUEUED"
+    }
+  },
+  "ac4": {
+    "excludedByNotComputed": 4516,
+    "tip": "⚠️另有4516个料号尚未计算，不参与本次筛选——它们可能也超阈值。可点某个料号单独计算，或等后台算完。",
+    "rowsShown": 20,
+    "rowsWithNotComputed": 0
+  },
+  "ac5a": {
+    "mat": "T260907T-B01845",
+    "ms": 4030,
+    "sawComputing": true,
+    "bgBusySameQuote": {
+      "n": 7,
+      "last": "2026-09-22 06:55:25.855237+00"
+    },
+    "statusAfterClose": "🔴1 🟠0 / 1列 ⚪1",
+    "db": {
+      "ca": null,
+      "da": null,
+      "id": "d1d4a813-fddc-4cde-851f-7d4185dab463",
+      "qa": null,
+      "qc": null,
+      "basis": "QT-20260908-0628",
+      "status": "PENDING",
+      "col_status": "MISSING",
+      "updated_at": "2026-09-22 06:55:27.418982+00",
+      "budget_error": null,
+      "missing_side": "BOTH",
+      "budget_status": "READY"
+    },
+    "missingBoth": true
+  },
+  "ac5b": {
+    "mat": "PERFHOT-B00291",
+    "ms": 3007,
+    "bgBusySameQuote": {
+      "n": 9,
+      "last": "2026-09-22 06:55:35.168499+00"
+    },
+    "drawerRow": "1\t产品总价\t0\t9118.2\t9118.2\t—\t—\t—（缺数据：核价侧）",
+    "listAmount": "9118.2 → 9118.2",
+    "db": {
+      "ca": null,
+      "da": null,
+      "id": "3427164c-1c34-408a-9344-babe9b9e8b8d",
+      "qa": "9118.200000000000",
+      "qc": "9118.200000000000",
+      "basis": "QT-20260911-0842",
+      "status": "PENDING",
+      "col_status": "MISSING",
+      "updated_at": "2026-09-22 06:55:36.246331+00",
+      "budget_error": null,
+      "missing_side": "COSTING",
+      "budget_status": "READY"
+    }
+  }
+}

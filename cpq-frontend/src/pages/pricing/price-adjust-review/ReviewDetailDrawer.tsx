@@ -52,7 +52,7 @@ export const DrawerComputingPlaceholder: React.FC = () => (
   <div style={{ textAlign: 'center', padding: '64px 0', color: 'rgba(0,0,0,.65)' }}>
     <Spin size="large" style={{ display: 'block', marginBottom: 12 }} />
     正在计算该料号的影响…
-    <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12.5, marginTop: 6 }}>后台正在计算同一张单时，需要先等它算完当前这一个料号（通常不到 1 秒）</div>
+    <div style={{ color: 'rgba(0,0,0,.45)', fontSize: 12.5, marginTop: 6 }}>后台正在计算同一张单时需要排队，可能要几秒</div>
   </div>
 );
 

@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 e2e/mainline260920-race.spec.ts:8:1 › 进页即搜 × 5 (1.8m)
+
+  1 passed (1.8m)

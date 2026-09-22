@@ -98,8 +98,8 @@ const PriceAdjustReviewPage: React.FC = () => {
         setExcludedByNotComputed(res.excludedByNotComputed ?? 0);
         setPage(p);
       },
-      onError: (e: any) => {
-        if (!opts?.silent) message.error(e?.message || '加载待办池失败');
+      onError: (e) => {
+        if (!opts?.silent) message.error((e as Error)?.message || '加载待办池失败');
       },
       // latest request only: clears a spinner left by an earlier non-silent request that went stale
       onSettled: () => setLoading(false),
@@ -128,8 +128,11 @@ const PriceAdjustReviewPage: React.FC = () => {
       pollRef.current = window.setTimeout(() => load(page, { silent: true }), delay);
     }
     return () => { if (pollRef.current) { window.clearTimeout(pollRef.current); pollRef.current = null; } };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, page, status, notComputedTotal, pageHidden]);
+    // 🔒 F-7 / AC-30: `load` MUST be a dependency. It changes whenever status / keyword / breachedOnly
+    // change; without it a pending timer would fire the load captured with the OLD search term and —
+    // being the newest request — overwrite the new search result until the next poll. Re-arming the
+    // timer on those (user-driven) changes is harmless. Dependency list is complete (lint-clean).
+  }, [rows, page, status, notComputedTotal, pageHidden, load]);
 
   // ── F-2: the page's single "compute one row" entry (list「计算」link, drawer, batch approve) ──
   const inflightRef = useRef(new Map<string, Promise<ComputeOutcome>>());
