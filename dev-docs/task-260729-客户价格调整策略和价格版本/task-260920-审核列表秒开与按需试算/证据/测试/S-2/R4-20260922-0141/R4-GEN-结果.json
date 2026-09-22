@@ -1,0 +1,28 @@
+{
+  "gen": {
+    "V3": {
+      "id": "82461c99-c390-4f42-b439-63f811ad7780",
+      "created_at": "2026-09-22 08:53:04.150973+00",
+      "version_no": "V26092202"
+    },
+    "tSend": "2026-09-22T08:53:00.264Z",
+    "tReturned": "2026-09-22T08:53:04.264Z",
+    "exchanges": [
+      {
+        "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+        "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":false}",
+        "status": 409,
+        "body": "{\"code\":409,\"message\":\"已有待处理版本 V26092201，需二次确认后作废重建\",\"data\":{\"approvedReviewCount\":0,\"pendingReviewCount\":4543,\"code\":\"PENDING_VERSION_EXISTS\",\"pendingVersionNo\":\"V26092201\"}}",
+        "at": "2026-09-22T08:53:00.926Z"
+      },
+      {
+        "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+        "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":true}",
+        "status": 201,
+        "body": "{\"versionId\":\"82461c99-c390-4f42-b439-63f811ad7780\",\"versionNo\":\"V26092202\",\"baseDate\":\"2026-09-22\",\"status\":null,\"triggerType\":null,\"createdAt\":null,\"createdBy\":null,\"itemCount\":1,\"budgetJobId\":\"82461c99-c390-4f42-b439-63f811ad7780\",\"budgetStatus\":\"QUEUED\",\"progress\":null}",
+        "at": "2026-09-22T08:53:04.264Z"
+      }
+    ]
+  },
+  "listSeq": []
+}

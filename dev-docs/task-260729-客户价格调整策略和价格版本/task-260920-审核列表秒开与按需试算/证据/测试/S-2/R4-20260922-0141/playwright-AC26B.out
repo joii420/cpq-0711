@@ -1,0 +1,7 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r4.spec.ts:87:1 › R4-AC26B · 0842 组算完后抽 20 个复算，与循环值逐位比
+[1A[2K  Slow test file: e2e/task260920-s2-r4.spec.ts (9.9m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  1 passed (9.9m)

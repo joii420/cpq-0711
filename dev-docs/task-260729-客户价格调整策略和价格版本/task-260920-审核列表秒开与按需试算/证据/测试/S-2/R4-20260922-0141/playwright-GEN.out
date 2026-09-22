@@ -1,0 +1,8 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r4.spec.ts:41:1 › R4-GEN · 生成 V3
+[1A[2Ke2e/task260920-s2-r4.spec.ts:41:1 › R4-GEN · 生成 V3
+[V3] V26092202 82461c99-c390-4f42-b439-63f811ad7780 sent=2026-09-22T08:53:00.264Z returned=2026-09-22T08:53:04.264Z
+
+[1A[2K  1 passed (9.4s)

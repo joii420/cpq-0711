@@ -1,0 +1,15 @@
+
+  VITE v8.0.8  ready in 189 ms
+
+  ➜  Local:   http://localhost:5296/
+  ➜  Network: http://10.255.255.254:5296/
+  ➜  Network: http://100.127.83.65:5296/
+  ➜  Network: http://10.177.157.20:5296/
+  ➜  Network: http://198.18.0.1:5296/
+1:53:36 AM [vite] (client) [console.error] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead.
+1:53:36 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+1:53:48 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+2:12:25 AM [vite] (client) [console.error] Warning: [antd: Modal] `destroyOnClose` is deprecated. Please use `destroyOnHidden` instead.
+2:12:25 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+2:12:30 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+2:15:49 AM [vite] (client) hmr update /src/pages/pricing/price-adjust-review/ReviewDetailDrawer.tsx

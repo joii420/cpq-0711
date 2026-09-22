@@ -1,0 +1,5 @@
+tampered row#2686 material=S0004 quote_adjusted 1507463.874833122000 -> 1507463.874833122001
+original hash=cdfcd714fedd78ac975c85f0e21e61b3
+tampered hash=6347297f0c4860440bf07985a2750c98
+sample=220 compared_with_value=200 diff=1 missing=0 not_recomputed=0
+tamper_compare_exit=1

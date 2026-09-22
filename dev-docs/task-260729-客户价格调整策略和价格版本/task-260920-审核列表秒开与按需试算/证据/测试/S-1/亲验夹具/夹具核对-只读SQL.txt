@@ -1,0 +1,23 @@
+BEGIN
+       material_no       | budget_status | breached_count |  column_id  | quote_current |   quote_adjusted   | status  | missing_side 
+-------------------------+---------------+----------------+-------------+---------------+--------------------+---------+--------------
+ T260920-43482dfe-D-0001 | READY         |              1 | col-default |               | 28894.734567890000 | MISSING | COSTING
+ T260920-43482dfe-D-0002 | READY         |              1 | col-default |               | 28894.734567890000 | MISSING | COSTING
+(2 rows)
+
+  quotation_number  |  status   
+--------------------+-----------
+ T260920-43482dfe-A | DRAFT
+ T260920-43482dfe-B | CANCELLED
+ T260920-43482dfe-C | CANCELLED
+ T260920-43482dfe-D | DRAFT
+ T260920-43482dfe-E | SENT
+(5 rows)
+
+ product_part_no_snapshot |  quotation_number  | status 
+--------------------------+--------------------+--------
+ T260920-43482dfe-D-0001  | T260920-43482dfe-D | DRAFT
+ T260920-43482dfe-D-0001  | T260920-43482dfe-E | SENT
+(2 rows)
+
+ROLLBACK

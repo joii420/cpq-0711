@@ -1,0 +1,17 @@
+{
+  "identity": {
+    "step": "R3",
+    "frontend": {
+      "url": "http://localhost:5230",
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend"
+    },
+    "backendPort": 8130,
+    "log": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/dev-docs/task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算/证据/测试/S-2/R3-20260922-0055/backend-8130.log",
+    "oldSide": false
+  },
+  "listSeq": [],
+  "R3": {
+    "r3Start": "2026-09-22 07:56:09.090396+00",
+    "n": 220
+  }
+}

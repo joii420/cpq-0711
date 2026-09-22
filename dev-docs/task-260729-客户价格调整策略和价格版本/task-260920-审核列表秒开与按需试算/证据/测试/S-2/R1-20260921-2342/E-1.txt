@@ -1,0 +1,10 @@
+== E-1 启动命令（ps /proc cmdline）
+java pid=1804476
+/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend
+java -Dquarkus.http.port=8130 -Dquarkus.scheduler.enabled=false -Dcpq.price-adjust.startup-recovery.enabled=false -Dcpq.price-adjust.budget.concurrency=3 -jar target/quarkus-app/quarkus-run.jar 
+== 日志对应行
+11:2026-09-21 23:43:03.292 INFO  [io.qua.sch.run.SimpleScheduler] (main) Simple scheduler is disabled by config property and will not be started
+13:2026-09-21 23:43:03.444 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+（budget.concurrency=3：日志无此行，以启动参数为准）
+== 启动后定时扫描/启动收尾输出计数（除上面跳过行外）
+1

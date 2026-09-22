@@ -1,0 +1,2 @@
+[2026-09-21T23:17:43.647850829] 小=Measured[customer=T260920-2b7ae419, n=6, pooled=4, advanced=2, sql=16, ms=245, raw=[perf] budget-enqueue customer=T260920-2b7ae419 N=6 pooled=4 advanced=2 sql=16 ms=245]
+大=Measured[customer=T260920-c3166436, n=60, pooled=40, advanced=20, sql=16, ms=278, raw=[perf] budget-enqueue customer=T260920-c3166436 N=60 pooled=40 advanced=20 sql=16 ms=278]

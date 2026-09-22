@@ -1,0 +1,32 @@
+== qli.csv: 备份 7 行 / 当前 7 行；新增 0；消失 0；有变化的列 7
+   列 discount_base_amount: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份=''  当前='9118.200000000000'
+   列 line_discount_amount: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份=''  当前='0.000000000000'
+   列 line_final_price: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份=''  当前='9118.200000000000'
+   列 line_total_amount: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份=''  当前='0.000000000000'
+   列 line_unit_price: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份=''  当前='9118.200000000000'
+   列 quote_card_values: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份=''  当前='{"tabs": [{"tabName": "产品", "baseRows": [{"driverRow": {"hf_part_no": "PERF600-B…(len 5346)'
+   列 subtotal: 7 行变化  例 id=cfc76bb3-22d4-44a4-9a68-28577fc62e92  备份='0.000000000000'  当前='9118.200000000000'
+== qlcd.csv: 备份 21 行 / 当前 21 行；新增 0；消失 0；有变化的列 3
+   列 row_data: 7 行变化  例 id=b16d0a15-b1a7-49f1-b4d2-5b47aa60aa49  备份='[{"元素": "Ag", "料号": "992", "项次": 1, "row_index": 0, "净用量": "8.554", "材料名": "AgNi…(len 212)'  当前='[{"元素": "Ag", "料号": "992", "项次": 1, "row_index": 0, "净用量": "8.554", "材料名": "AgNi…(len 269)'
+   列 row_version: 7 行变化  例 id=b16d0a15-b1a7-49f1-b4d2-5b47aa60aa49  备份='0'  当前='1'
+   列 snapshot_rows: 7 行变化  例 id=b16d0a15-b1a7-49f1-b4d2-5b47aa60aa49  备份='[{"driverRow": {"hf_part_no": "PERF600-B00022", "元素单价": "3000", "_材质_材料名": "AgNi…(len 878)'  当前='[{"driverRow": {"hf_part_no": "PERF600-B00022", "元素单价": "28892.5", "__priceLocke…(len 935)'
+== quotation.csv: 备份 1 行 / 当前 1 行；新增 0；消失 0；有变化的列 3
+   列 original_amount: 1 行变化  例 id=5f641c55-8387-4eee-a7ff-a78f312bbf06  备份='145891.200000000000'  当前='209718.600000000000'
+   列 total_amount: 1 行变化  例 id=5f641c55-8387-4eee-a7ff-a78f312bbf06  备份='145891.200000000000'  当前='209718.600000000000'
+   列 updated_at: 1 行变化  例 id=5f641c55-8387-4eee-a7ff-a78f312bbf06  备份='2026-09-19 07:02:26.795338+00'  当前='2026-09-22 08:56:35.032469+00'
+== qpr.csv: 备份 2 行 / 当前 3 行；新增 1；消失 0；有变化的列 0
+   新增 {'id': '0a2b7f7a-fdfb-4ad4-ae03-ae0603497d9f', 'revision_no': 'R26092201', 'based_version_id': '82461c99-c390-4f42-b439-63f811ad7780', 'sealed': 't', 'quote_total_amount': '209718.600000000000', 'created_at': '2026-09-22 08:54:09.724925+00'}
+== mpvr.csv: 备份 32 行 / 当前 39 行；新增 7；消失 0；有变化的列 2
+   列 updated_at: 15 行变化  例 id=5f2488cf-292f-4ee7-98a4-aeddf58b8f10  备份='2026-09-22 07:30:09.798364+00'  当前='2026-09-22 09:07:03.962517+00'
+   列 version_id: 15 行变化  例 id=5f2488cf-292f-4ee7-98a4-aeddf58b8f10  备份='51ce45ed-2691-4aa8-9cec-af281501b54c'  当前='04b70b9b-a805-43a4-8fac-9f66feb8daf7'
+   新增 {'id': '034bed3c-c561-4caa-b1bc-11b7a8b2f71f', 'material_no': 'PERF600-B00023', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+   新增 {'id': '0d33835a-f719-44b0-a830-0885ef734cda', 'material_no': 'PERF600-B00021', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+   新增 {'id': '43fad760-fdb7-4138-bd34-217ddf564640', 'material_no': 'PERF600-B00598', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+   新增 {'id': 'b4285175-85e1-4988-915e-05e323379f10', 'material_no': 'PERF600-B00022', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+   新增 {'id': 'cde867c7-4362-4066-b8de-af87b4e6878d', 'material_no': 'PERF600-B00599', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+   新增 {'id': 'f12ee8ee-f8af-4f66-81b1-25fa39b950c0', 'material_no': 'PERF600-B00012', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+   新增 {'id': 'fa1a7b73-d112-47be-ba19-fbc053c7e70a', 'material_no': 'PERF600-B00011', 'version_id': '04b70b9b-a805-43a4-8fac-9f66feb8daf7', 'updated_at': '2026-09-22 09:07:03.962517+00'}
+== ds_quote_material_bom_record.csv: 备份 0 行 / 当前 0 行；新增 0；消失 0；有变化的列 0
+== ds_quote_element_bom_record.csv: 备份 0 行 / 当前 0 行；新增 0；消失 0；有变化的列 0
+== qvs.csv: 备份 2 行 / 当前 2 行；新增 0；消失 0；有变化的列 0
+合计差异项 111

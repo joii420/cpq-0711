@@ -1,0 +1,4 @@
+{
+  "url": "http://localhost:5230/api/cpq/price-adjust/versions/generate",
+  "postData": "{\"customerNo\":\"CUST-0004\",\"confirmSupersede\":true}"
+}

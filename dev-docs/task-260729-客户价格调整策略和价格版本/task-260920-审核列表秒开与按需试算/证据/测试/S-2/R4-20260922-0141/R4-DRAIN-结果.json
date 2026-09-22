@@ -1,0 +1,11 @@
+{
+  "drain": {
+    "V": "V26092203",
+    "last": "2026-09-22 09:30:38.552231+00",
+    "failed": 0,
+    "pending": 4536,
+    "unfinished": 0,
+    "waitedMs": 1331157
+  },
+  "listSeq": []
+}

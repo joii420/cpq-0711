@@ -14,6 +14,8 @@ public class ReviewDetailDTO {
     public String currentVersionNo;
     public String targetVersionNo;
     public String budgetStatus;
+    /** task-260920 B-19：预算失败原因（{@code material_price_review.budget_error}），可空；取自已加载的审核行，无新增查询。 */
+    public String budgetError;
     public String reviewStatus;
 
     // 一、为什么变

@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ✓  1 e2e/mainline260920-ac5-sampling.spec.ts:14:1 › AC-5 ① 分段计时采样 (1.0m)
+
+  1 passed (1.1m)

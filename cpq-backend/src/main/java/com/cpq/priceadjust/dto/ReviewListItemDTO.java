@@ -4,7 +4,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.UUID;
 
-/** api.md §2.1 — 跨客户的料号待办池（屏 3 主列表）。纯读库，不实时算。 */
+/** api.md §2.1 — 跨客户的料号待办池（屏 3 主列表）。纯读库，不实时算。task-260920：budgetStatus≠READY 时金额字段一律 null（不返 0）。 */
 public class ReviewListItemDTO {
     public UUID reviewId;
     public String customerNo;

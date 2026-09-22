@@ -1,0 +1,131 @@
+{
+  "identity": {
+    "frontend": {
+      "url": "http://localhost:5230",
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend"
+    },
+    "backend": {
+      "port": 8130,
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend"
+    },
+    "log": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/dev-docs/task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算/证据/测试/S-2/R1-20260921-2342/backend-8130.log"
+  },
+  "listSeq": [
+    {
+      "ev": "send",
+      "t": 1790060404724,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060404725,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060405733,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060405899,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060406552,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "send",
+      "t": 1790060406584,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060406712,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060406748,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "send",
+      "t": 1790060408543,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060408544,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060409522,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060409685,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060410330,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "send",
+      "t": 1790060410364,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060410496,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060410577,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERFHOT-B00239"
+    }
+  ],
+  "ac21": {
+    "mat": "PERFHOT-B00239",
+    "postStatuses": [
+      202,
+      202
+    ],
+    "final": {
+      "ca": null,
+      "da": null,
+      "id": "9e2f9db9-29e9-4bcf-8ae9-9c31528dabcc",
+      "qa": "9118.200000000000",
+      "qc": "9118.200000000000",
+      "basis": "QT-20260911-0842",
+      "status": "PENDING",
+      "col_status": "MISSING",
+      "updated_at": "2026-09-22 07:00:12.098416+00",
+      "budget_error": null,
+      "missing_side": "COSTING",
+      "budget_status": "READY"
+    },
+    "reviewRows": 1,
+    "basisLine": "1e16d003-ea1f-4b54-8817-52ad288d98f9",
+    "dryRunLogLines": 2,
+    "dryRunSample": [
+      "2026-09-22 00:00:11.964 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-6) [b0-upgrade] li=1e16d003-ea1f-4b54-8817-52ad288d98f9 quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 9118.200000000000->9118.2 dryRun=true",
+      "2026-09-22 00:00:11.964 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-6) [perf] upgrade li=1e16d003-ea1f-4b54-8817-52ad288d98f9 quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=360"
+    ]
+  }
+}

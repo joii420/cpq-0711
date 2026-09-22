@@ -51,7 +51,7 @@
 <div class="wrap">
 
 <div class="note">
-  <b>📌 当前基准（v2）</b> · 价格调整审核列表（<code>PriceAdjustReviewPage.tsx</code>）· 任务 <code>task-260920-审核列表秒开与按需试算</code><br>v2 相对 v1：状态 2 的「驳回」改为置灰（裁决 <code>D-6</code>）· 状态 4 撤掉自定义空态（N-10）· 新增状态 6「已作废」筛选（<code>AC-27</code>）<br>
+  <b>📌 当前基准（v2.2 · 开发期更正三处原型缺陷）</b> · 价格调整审核列表（<code>PriceAdjustReviewPage.tsx</code>）· 任务 <code>task-260920-审核列表秒开与按需试算</code><br>开发期更正（2026-09-21，前端提出、主线采纳，均为原型本身画错）：① 状态 1 工具栏去掉「已选 0 项」前无含义的转圈；② 查询栏「查询 / 重置」<b>沿用现网链接样式</b>（本原型画成按钮是错的，非绿框区块一律以现网为准）；③ 状态 6 说明改为「已算完的非待处理行保留比对标记」。<br>v2 相对 v1：状态 2 的「驳回」改为置灰（裁决 <code>D-6</code>）· 状态 4 撤掉自定义空态（N-10）· 新增状态 6「已作废」筛选（<code>AC-27</code>）<br>
   数据取自开发库 <code>cpq_db_0724</code> 真实行（客户 <b>正泰 CUST-0004</b> / 版本 <b>V26092003</b> / 依据单 <code>QT-20260911-0842</code> 等）。
   金额按 <b>DISPLAY_SCALE(9) 去尾零</b> 显示（2026-09-20 已修，commit <code>6f770d10</code>）。
 </div>
@@ -66,7 +66,7 @@
     <div class="btn pri">查询</div><div class="btn">重置</div>
     <span class="hint">共 4527 条，其中 <b style="color:var(--orange)">4510 条未计算</b>，正在后台计算…</span>
   </div>
-  <div class="tbar"><span class="spin"></span>已选 <b>0</b> 项　<span class="btn dis">通过并升版</span><span class="btn dis">驳回</span><span class="btn dis">重算预算</span></div>
+  <div class="tbar">已选 <b>0</b> 项　<span class="btn dis">通过并升版</span><span class="btn dis">驳回</span><span class="btn dis">重算预算</span></div>
   <table>
     <thead><tr>
       <th style="width:36px"><i class="box"></i></th><th>客户</th><th>料号</th><th>料号名称</th>
@@ -204,7 +204,7 @@
       <tr><td class="mono">PERFHOT-B01442</td><td class="mono" style="font-size:12.5px">（首次） → V26092003</td><td class="num muted">— → <b>—</b></td><td class="muted">—</td><td><span class="tag grey">已作废</span></td></tr>
     </tbody>
   </table>
-  <p class="cap">「比对状态」对非待处理行一律显示「—」；本筛选下<b>不发起轮询</b>（<code>F-3</code> ④），停留 60 秒应只有首次加载那一次列表请求。</p>
+  <p class="cap">非待处理行：<b>已算完（READY）的照旧显示比对标记</b>（现网行为），未算完的显示「—」，都不显示「未计算 / 计算」；本筛选下<b>不发起轮询</b>（<code>F-3</code> ④），停留 60 秒应只有首次加载那一次列表请求。<br>📌 原型缺陷更正（2026-09-21 开发期，前端提出）：v2.1 这里写的是「对非待处理行一律显示『—』」，会把已通过行的比对标记抹掉，与现网冲突 —— 是原型画错了。</p>
 </div>
 </div>
 </body>

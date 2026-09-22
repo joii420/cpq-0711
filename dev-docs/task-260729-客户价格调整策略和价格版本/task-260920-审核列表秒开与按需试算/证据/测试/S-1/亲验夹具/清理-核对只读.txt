@@ -1,0 +1,13 @@
+核对 2026-09-22 05:37:48 PDT
+BEGIN
+ reviews | cols | quotes | versions | strategies | elem_strategies | refs | jobs | components | templates | customers | users 
+---------+------+--------+----------+------------+-----------------+------+------+------------+-----------+-----------+-------
+       0 |    0 |      0 |        0 |          0 |               0 |    0 |    0 |          0 |         0 |         0 |     0
+(1 row)
+
+                  id                  |     material_no     | status  | budget_status 
+--------------------------------------+---------------------+---------+---------------
+ c9c15cab-e62e-4303-ad12-238c4c4f0f04 | T260907R-XCB-203527 | PENDING | READY
+(1 row)
+
+ROLLBACK

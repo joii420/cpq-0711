@@ -46,6 +46,8 @@ public class PriceAdjustVersionGenerationService {
     @Inject EntityManager em;
     @Inject PriceAdjustBudgetService budgetService;
     @Inject ManagedExecutor managedExecutor;
+    /** task-260920 问题-1（AC-17）：生成新版本 = 旧 PENDING 版本的写者（见 {@link VersionSupersedeGate}）。 */
+    @Inject VersionSupersedeGate versionGate;
 
     public static class GenerateResult {
         public UUID versionId;
@@ -70,12 +72,36 @@ public class PriceAdjustVersionGenerationService {
      */
     public GenerateResult generateVersionAndEnqueueBudget(
             String customerNo, boolean confirmSupersede, String triggerType, OffsetDateTime scheduledSlot) {
-        GenerateResult r = generateVersion(customerNo, confirmSupersede, triggerType, scheduledSlot);
+        // task-260920 问题-1（AC-17）：要作废旧 PENDING 版本时，生成事务开始前先对它取「版本写锁」、提交后放 ——
+        // 公平读写锁让排队中的生成只等在途的那几次试算（它们是读者：事务里 FOR SHARE 复核版本），不被首尾交叠的
+        // 试算事务饿死到整轮算完；写锁放开后，排队的试算读到 SUPERSEDED 即停止。单实例部署前提（同 repair-260918 D-7）。
+        // 不会作废旧版的调用（未确认取代 ⇒ 将 409；定时槽位已生成过 ⇒ 幂等返回）不取锁，免得白等在途试算。
+        UUID supersedeTarget = confirmSupersede ? findVersionToSupersede(customerNo, scheduledSlot) : null;
+        GenerateResult r;
+        try (VersionSupersedeGate.Handle g = versionGate.write(supersedeTarget,
+                "generate customer=" + customerNo + " trigger=" + triggerType)) {
+            r = generateVersion(customerNo, confirmSupersede, triggerType, scheduledSlot); // @Transactional：返回即已提交
+        }
         if (!r.alreadyExisted) {
             UUID versionId = r.versionId;
             managedExecutor.runAsync(() -> budgetService.onVersionGenerated(versionId));
         }
         return r;
+    }
+
+    /**
+     * 本次生成若会作废旧版本，返回该旧 PENDING 版本 id；定时槽位已生成过（幂等返回既有版本）或当前无 PENDING ⇒ null。
+     * 只读短事务，口径与 {@link #generateVersion} 开头两步一致。
+     */
+    @Transactional
+    UUID findVersionToSupersede(String customerNo, OffsetDateTime scheduledSlot) {
+        if (customerNo == null || customerNo.isBlank()) return null;
+        if (scheduledSlot != null && ElementPriceVersion
+                .count("customerNo = ?1 and scheduledSlot = ?2", customerNo, scheduledSlot) > 0) {
+            return null;
+        }
+        ElementPriceVersion pending = ElementPriceVersion.findPending(customerNo);
+        return pending != null ? pending.id : null;
     }
 
     @Transactional

@@ -342,12 +342,10 @@ public class PriceAdjustComparisonColumnService {
 
     public PutResult putColumns(String customerNo, UUID templateSeriesId, List<ComparisonColumnDef> columns, UUID actorId) {
         PutResult syncResult = doPutColumns(customerNo, templateSeriesId, columns, actorId);
-        if (syncResult.affectedReviewIds != null && !syncResult.affectedReviewIds.isEmpty()) {
-            BigDecimal threshold = syncResult.costDiffThreshold;
-            for (var review : syncResult.affectedReviewIds) {
-                managedExecutor.runAsync(() ->
-                    budgetService.processMaterial(review.versionId, customerNo, threshold, review.materialNo));
-            }
+        // task-260920 B-16（D-4 收编）：已标 QUEUED 的行交给后台试算循环（未在跑 ⇒ 启动；在跑 ⇒ 置重扫）。
+        // 🚫 不再逐条 runAsync(processMaterial)。
+        if (syncResult.affectedVersionIds != null && !syncResult.affectedVersionIds.isEmpty()) {
+            budgetService.requestBudgetRun(syncResult.affectedVersionIds);
         }
         return syncResult;
     }
@@ -355,13 +353,7 @@ public class PriceAdjustComparisonColumnService {
     public static class PutResult {
         public boolean budgetRecomputeTriggered;
         public int affectedReviewCount;
-        List<ReviewRef> affectedReviewIds;
-        BigDecimal costDiffThreshold;
-    }
-
-    private static final class ReviewRef {
-        UUID versionId;
-        String materialNo;
+        List<UUID> affectedVersionIds;
     }
 
     @Transactional
@@ -397,27 +389,26 @@ public class PriceAdjustComparisonColumnService {
 
         writeAuditLog(customerNo, beforeSnapshot, afterJson, actorId);
 
-        // 重算范围 = 该「客户 × 模板系列」下的 PENDING 料号（不是该客户全部）
-        List<MaterialPriceReview> pending = MaterialPriceReview.list(
-            "customerNo = ?1 and templateSeriesId = ?2 and status = ?3",
-            customerNo, templateSeriesId, MaterialPriceReview.STATUS_PENDING);
+        // 重算范围 = 该「客户 × 模板系列」下的 PENDING 料号（不是该客户全部）。
+        // task-260920 B-16：一条语句全部标 QUEUED（含正在 COMPUTING 的，旧配置的结果由条件完成丢弃），再一条取要唤起的版本。
+        int affected = MaterialPriceReview.update(
+            "budgetStatus = ?1, updatedAt = ?2 where customerNo = ?3 and templateSeriesId = ?4 and status = ?5",
+            MaterialPriceReview.BUDGET_QUEUED, OffsetDateTime.now(), customerNo, templateSeriesId,
+            MaterialPriceReview.STATUS_PENDING);
+        @SuppressWarnings("unchecked")
+        List<UUID> versionIds = affected == 0 ? List.of() : em.createNativeQuery(
+                "SELECT DISTINCT version_id FROM material_price_review " +
+                "WHERE customer_no = :c AND template_series_id = :t AND status = 'PENDING'")
+            .setParameter("c", customerNo)
+            .setParameter("t", templateSeriesId)
+            .getResultList();
 
         PutResult result = new PutResult();
-        result.affectedReviewCount = pending.size();
-        result.budgetRecomputeTriggered = !pending.isEmpty();
-        result.affectedReviewIds = new ArrayList<>();
-        CustomerPriceAdjustStrategy strategy = CustomerPriceAdjustStrategy.findByCustomerNo(customerNo);
-        result.costDiffThreshold = strategy != null ? strategy.costDiffThreshold : BigDecimal.ZERO;
-        for (MaterialPriceReview r : pending) {
-            r.budgetStatus = MaterialPriceReview.BUDGET_QUEUED;
-            r.persist();
-            ReviewRef ref = new ReviewRef();
-            ref.versionId = r.versionId;
-            ref.materialNo = r.materialNo;
-            result.affectedReviewIds.add(ref);
-        }
+        result.affectedReviewCount = affected;
+        result.budgetRecomputeTriggered = affected > 0;
+        result.affectedVersionIds = new ArrayList<>(versionIds);
         LOG.infof("[comparison-columns] customer=%s series=%s 保存成功，触发重算 %d 条 PENDING 料号",
-            customerNo, templateSeriesId, pending.size());
+            customerNo, templateSeriesId, affected);
         return result;
     }
 

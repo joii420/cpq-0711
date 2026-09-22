@@ -1,0 +1,11 @@
+row visible=true
+checked=true 已选=已选 1 项
+重算预算 count=1 enabled=false text=重算预算
+tooltip=选中项需包含「预算失败」的料号
+click failed TimeoutError: locator.click: Timeout 5000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: /重算预算/ }).first()[22m
+[2m    - locat
+dialogs=0 text=[]
+dialog buttons=[]
+blocked=[]

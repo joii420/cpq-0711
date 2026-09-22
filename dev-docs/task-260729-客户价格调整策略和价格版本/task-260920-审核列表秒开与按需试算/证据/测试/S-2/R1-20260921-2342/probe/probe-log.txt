@@ -1,0 +1,13 @@
+347ms login ok
+1641ms goto /pricing url=http://localhost:5230/pricing
+2680ms inputs placeholders=["搜索客户",""]
+2684ms ant-list-item count=20
+4771ms after search ant-list-item count=1 texts=["正泰 钻石CUST-0004"]
+4776ms 正泰 candidates=1
+6572ms tabs=["全部","钻石","VIP","黄金","白银","标准","元素价格策略","价格调整策略 新"]
+8372ms buttons=["","","","🕘变更历史","","","","","","查询","重置","","","取消","保存","⚡立即生成一次","",""]
+8385ms 立即生成 count=1
+10086ms dialogs=0 text=[]
+10096ms dialog buttons=[]
+10096ms blocked(after click)=["POST http://localhost:5230/api/cpq/price-adjust/versions/generate"]
+10175ms blocked(after confirm)=["POST http://localhost:5230/api/cpq/price-adjust/versions/generate"]

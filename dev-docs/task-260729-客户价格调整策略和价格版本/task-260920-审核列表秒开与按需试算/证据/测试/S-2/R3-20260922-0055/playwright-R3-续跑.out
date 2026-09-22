@@ -1,0 +1,5 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r234.spec.ts:64:1 › R3 · 冷缓存逐条串行重算抽样料号（「重算」入口）
+[1A[2K  1 passed (13.3s)

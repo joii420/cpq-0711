@@ -1,0 +1,25 @@
+             now              
+------------------------------
+ 2026-09-22 09:08:23.98564+00
+(1 row)
+
+                  id                  | status | budget_status | budget_error |          updated_at           | cols 
+--------------------------------------+--------+---------------+--------------+-------------------------------+------
+ 02a71145-5882-441c-ab9b-8992fc77c4b6 | VOIDED | COMPUTING     |              | 2026-09-22 09:07:03.242851+00 |    0
+(1 row)
+
+  status  | budget_status | count 
+----------+---------------+-------
+ APPROVED | READY         |     7
+ VOIDED   | COMPUTING     |     2
+ VOIDED   | QUEUED        |  1422
+ VOIDED   | READY         |  3112
+(4 rows)
+
+                  id                  | status  | item_status | count 
+--------------------------------------+---------+-------------+-------
+ ef276982-dfd8-4916-a831-6ca79a0e3276 | SUCCESS | SUCCESS     |     3
+ 3d75dc11-675c-4f50-9a32-a6f615304313 | SUCCESS | SUCCESS     |     2
+ 1d521d23-0aa9-4df8-9988-273fb6502d9d | SUCCESS | SUCCESS     |     2
+(3 rows)
+

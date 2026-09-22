@@ -1,0 +1,319 @@
+{
+  "identity": {
+    "frontend": {
+      "url": "http://localhost:5230",
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend"
+    },
+    "backend": {
+      "port": 8130,
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend"
+    },
+    "log": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/dev-docs/task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算/证据/测试/S-2/R1-20260921-2342/backend-8130.log"
+  },
+  "listSeq": [
+    {
+      "ev": "send",
+      "t": 1790060700815,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060700816,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060701686,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060702016,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790060702778,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0008"
+    },
+    {
+      "ev": "send",
+      "t": 1790060702806,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0008"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060702937,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0008"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060702973,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0008"
+    },
+    {
+      "ev": "send",
+      "t": 1790060704488,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0012"
+    },
+    {
+      "ev": "send",
+      "t": 1790060704509,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0012"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060704667,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0012"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060704698,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=S0012"
+    },
+    {
+      "ev": "send",
+      "t": 1790060706531,
+      "url": "?page=1&size=20&status=PENDING&keyword=S00"
+    },
+    {
+      "ev": "send",
+      "t": 1790060706549,
+      "url": "?page=1&size=20&status=PENDING&keyword=S00"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060706955,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=S00"
+    },
+    {
+      "ev": "recv",
+      "t": 1790060706986,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=S00"
+    }
+  ],
+  "ac8": {
+    "hint": "其中3项未计算，点通过会先计算",
+    "rejectTip": "含3项尚未计算金额，需先计算才能驳回",
+    "approveEnabled": true,
+    "rejectEnabled": false,
+    "tClick": "2026-09-22 07:05:08.475961+00",
+    "progSamples": [
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 1 / 3 · 已用 0 秒 料号 名称 结果 S0001 铆钉 计算中 S0011 S0011 等待 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 1 / 3 · 已用 0 秒 料号 名称 结果 S0001 铆钉 计算中 S0011 S0011 等待 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 1 / 3 · 已用 0 秒 料号 名称 结果 S0001 铆钉 计算中 S0011 S0011 等待 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 1 / 3 · 已用 0 秒 料号 名称 结果 S0001 铆钉 计算中 S0011 S0011 等待 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 1 / 3 · 已用 1 秒 料号 名称 结果 S0001 铆钉 计算中 S0011 S0011 等待 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 1 / 3 · 已用 1 秒 料号 名称 结果 S0001 铆钉 计算中 S0011 S0011 等待 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 2 / 3 · 已用 1 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 计算中 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 2 / 3 · 已用 2 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 计算中 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 2 / 3 · 已用 2 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 计算中 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 2 / 3 · 已用 2 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 计算中 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 2 / 3 · 已用 2 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 计算中 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 2 / 3 · 已用 3 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 计算中 S0014 S0014 等待 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 3 / 3 · 已用 3 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 已完成 S0014 S0014 计算中 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 3 / 3 · 已用 3 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 已完成 S0014 S0014 计算中 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 3 / 3 · 已用 3 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 已完成 S0014 S0014 计算中 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 3 / 3 · 已用 4 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 已完成 S0014 S0014 计算中 取 消 下一步",
+      "正在计算选中料号的影响 共 5 个料号，其中 3 个尚未计算金额。正在计算，完成后会显示影响面供你确认。 正在计算 3 / 3 · 已用 4 秒 料号 名称 结果 S0001 铆钉 已完成 S0011 S0011 已完成 S0014 S0014 计算中 取 消 下一步",
+      "通过前影响面确认 · 共 5 个料号 正在计算影响面… 取 消 确认通过并升版"
+    ],
+    "sawProgress": true,
+    "sawRowStates": [
+      "等待",
+      "计算中",
+      "已完成"
+    ],
+    "modalBlocks": {
+      "料号数": true,
+      "单数": true,
+      "版本推进路径": true,
+      "按状态分组": true,
+      "不会被更新的单": false,
+      "跌破预警线": true,
+      "各料号金额": true
+    },
+    "amountsTableHasAll5": true,
+    "impact": {
+      "materialCount": 5,
+      "versionPaths": [
+        {
+          "materialNo": "S0001",
+          "from": null,
+          "to": "V26092102"
+        },
+        {
+          "materialNo": "S0008",
+          "from": null,
+          "to": "V26092102"
+        },
+        {
+          "materialNo": "S0011",
+          "from": null,
+          "to": "V26092102"
+        },
+        {
+          "materialNo": "S0012",
+          "from": null,
+          "to": "V26092102"
+        },
+        {
+          "materialNo": "S0014",
+          "from": null,
+          "to": "V26092102"
+        }
+      ],
+      "quotationCount": 35,
+      "byStatus": {
+        "APPROVED": 3,
+        "DRAFT": 29,
+        "SUBMITTED": 3
+      },
+      "breachedMaterials": [
+        {
+          "materialNo": "S0011",
+          "breachedCount": 1
+        },
+        {
+          "materialNo": "S0014",
+          "breachedCount": 1
+        }
+      ],
+      "excludedQuotationCount": 0,
+      "excludedByStatus": {},
+      "materials": [
+        {
+          "materialNo": "S0001",
+          "quoteCostCurrent": "594741.60242805",
+          "quoteCostAdjusted": "5718108.768316574",
+          "diffAdjusted": "5718108.768316574",
+          "status": "NORMAL",
+          "missingSide": null
+        },
+        {
+          "materialNo": "S0008",
+          "quoteCostCurrent": "702322.62840128",
+          "quoteCostAdjusted": "6763497.95340128",
+          "diffAdjusted": "6763497.95340128",
+          "status": "NORMAL",
+          "missingSide": null
+        },
+        {
+          "materialNo": "S0011",
+          "quoteCostCurrent": "0",
+          "quoteCostAdjusted": "0",
+          "diffAdjusted": null,
+          "status": "MISSING",
+          "missingSide": "COSTING"
+        },
+        {
+          "materialNo": "S0012",
+          "quoteCostCurrent": "244508.978228838",
+          "quoteCostAdjusted": "2300361.810421025",
+          "diffAdjusted": "2300361.810421025",
+          "status": "NORMAL",
+          "missingSide": null
+        },
+        {
+          "materialNo": "S0014",
+          "quoteCostCurrent": "0",
+          "quoteCostAdjusted": "0",
+          "diffAdjusted": null,
+          "status": "MISSING",
+          "missingSide": "COSTING"
+        }
+      ]
+    },
+    "jobsAfterClick": [],
+    "excludedBlockDataCondition": {
+      "excludedByStatus": {},
+      "expected": "不出现（数据条件不满足）",
+      "appeared": false
+    }
+  },
+  "ac9": {
+    "after": [
+      {
+        "ca": "0.000000000000",
+        "da": "6763497.953401280000",
+        "id": "72e68e3e-cd2a-4cac-ad7f-13c73f9a1027",
+        "qa": "6763497.953401280000",
+        "qc": "702322.628401280000",
+        "basis": "QT-20260914-0867",
+        "status": "PENDING",
+        "col_status": "NORMAL",
+        "updated_at": "2026-09-22 07:05:03.786466+00",
+        "budget_error": null,
+        "missing_side": null,
+        "budget_status": "READY"
+      },
+      {
+        "ca": "0.000000000000",
+        "da": "2300361.810421025000",
+        "id": "e33f4604-9fd7-4676-9fc0-57ad52a6caba",
+        "qa": "2300361.810421025000",
+        "qc": "244508.978228838000",
+        "basis": "QT-20260914-0867",
+        "status": "PENDING",
+        "col_status": "NORMAL",
+        "updated_at": "2026-09-22 07:05:05.491513+00",
+        "budget_error": null,
+        "missing_side": null,
+        "budget_status": "READY"
+      },
+      {
+        "ca": "0.000000000000",
+        "da": "5718108.768316574000",
+        "id": "e1927b5f-60ca-4384-ad1e-5dd12d364e29",
+        "qa": "5718108.768316574000",
+        "qc": "594741.602428050000",
+        "basis": "QT-20260914-0867",
+        "status": "PENDING",
+        "col_status": "NORMAL",
+        "updated_at": "2026-09-22 07:05:08.801034+00",
+        "budget_error": null,
+        "missing_side": null,
+        "budget_status": "READY"
+      },
+      {
+        "ca": null,
+        "da": null,
+        "id": "9ce07d5a-4973-4637-a4c9-e567d2614113",
+        "qa": "0.000000000000",
+        "qc": "0.000000000000",
+        "basis": "QT-20260910-0805",
+        "status": "PENDING",
+        "col_status": "MISSING",
+        "updated_at": "2026-09-22 07:05:10.321596+00",
+        "budget_error": null,
+        "missing_side": "COSTING",
+        "budget_status": "READY"
+      },
+      {
+        "ca": null,
+        "da": null,
+        "id": "9c4421dd-3872-4f0b-aa2b-bf950e0d664b",
+        "qa": "0.000000000000",
+        "qc": "0.000000000000",
+        "basis": "QT-20260910-0824",
+        "status": "PENDING",
+        "col_status": "MISSING",
+        "updated_at": "2026-09-22 07:05:11.771521+00",
+        "budget_error": null,
+        "missing_side": "COSTING",
+        "budget_status": "READY"
+      }
+    ],
+    "ptrBefore": [],
+    "ptrAfter": [],
+    "jobs": []
+  }
+}

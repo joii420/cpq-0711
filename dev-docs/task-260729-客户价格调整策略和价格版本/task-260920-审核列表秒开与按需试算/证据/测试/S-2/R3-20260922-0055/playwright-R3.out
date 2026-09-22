@@ -1,0 +1,45 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r234.spec.ts:64:1 › R3 · 冷缓存逐条串行重算抽样料号（「重算」入口）
+[1A[2Ke2e/task260920-s2-r234.spec.ts:64:1 › R3 · 冷缓存逐条串行重算抽样料号（「重算」入口）
+psql: error: connection to server at "10.177.152.12", port 5432 failed: Network is unreachable
+	Is the server running on that host and accepting TCP/IP connections?
+
+[1A[2K  1) e2e/task260920-s2-r234.spec.ts:64:1 › R3 · 冷缓存逐条串行重算抽样料号（「重算」入口） ──────────────────────────────
+
+    Error: Command failed: psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -X -A -t -q -v ON_ERROR_STOP=1 -c SET default_transaction_read_only = on -c SELECT coalesce(jsonb_agg(q), '[]'::jsonb)::text FROM (select budget_status, updated_at::text, (updated_at > '2026-09-22 08:00:14.263737+00'::timestamptz) fresh from material_price_review where id='ce12a5b5-7694-4cd2-855d-44ff62a84a29') q
+    psql: error: connection to server at "10.177.152.12", port 5432 failed: Network is unreachable
+    	Is the server running on that host and accepting TCP/IP connections?
+
+
+       at task260920-s2.helpers.ts:62
+
+      60 |   const s = q.trim().replace(/;+\s*$/, '');
+      61 |   if (!/^(select|with)\b/i.test(s)) throw new Error(`S-2 界面脚本只许 SELECT/WITH：${s.slice(0, 60)}`);
+    > 62 |   const out = execFileSync('psql', ['-h', '10.177.152.12', '-U', 'postgres', '-d', 'cpq_db_0724', '-X', '-A', '-t', '-q',
+         |               ^
+      63 |     '-v', 'ON_ERROR_STOP=1', '-c', 'SET default_transaction_read_only = on',
+      64 |     '-c', `SELECT coalesce(jsonb_agg(q), '[]'::jsonb)::text FROM (${s}) q`],
+      65 |     { env: { ...process.env, PGPASSWORD: 'joii5231' }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+        at sql (/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend/e2e/task260920-s2.helpers.ts:62:15)
+        at serialRecompute (/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend/e2e/task260920-s2.helpers.ts:237:13)
+        at /home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend/e2e/task260920-s2-r234.spec.ts:73:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/test-results/task260920-s2/task260920-s2-r234-R3-·-冷缓存逐条串行重算抽样料号（「重算」入口）/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/test-results/task260920-s2/task260920-s2-r234-R3-·-冷缓存逐条串行重算抽样料号（「重算」入口）/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/task260920-s2/task260920-s2-r234-R3-·-冷缓存逐条串行重算抽样料号（「重算」入口）/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/task260920-s2/task260920-s2-r234-R3-·-冷缓存逐条串行重算抽样料号（「重算」入口）/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K  1 failed
+    e2e/task260920-s2-r234.spec.ts:64:1 › R3 · 冷缓存逐条串行重算抽样料号（「重算」入口） ───────────────────────────────

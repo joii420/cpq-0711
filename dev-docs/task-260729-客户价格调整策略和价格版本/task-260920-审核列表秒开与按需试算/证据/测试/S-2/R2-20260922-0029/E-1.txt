@@ -1,0 +1,9 @@
+java pid=1846675
+/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend
+java -Dquarkus.http.port=8130 -Dquarkus.scheduler.enabled=false -Dcpq.price-adjust.startup-recovery.enabled=false -Dcpq.price-adjust.budget.concurrency=3 -jar target/quarkus-app/quarkus-run.jar 
+== 日志
+11:2026-09-22 00:29:46.772 INFO  [io.qua.sch.run.SimpleScheduler] (main) Simple scheduler is disabled by config property and will not be started
+12:2026-09-22 00:29:46.865 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 52 entries upserted
+13:2026-09-22 00:29:46.872 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+22:2026-09-22 00:29:48.109 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.936s. Listening on: http://0.0.0.0:8130
+23:2026-09-22 00:29:48.109 INFO  [io.quarkus] (main) Profile prod activated. 

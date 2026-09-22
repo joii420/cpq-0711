@@ -1,0 +1,3 @@
+java pid=1804476
+/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend
+java -Dquarkus.http.port=8130 -Dquarkus.scheduler.enabled=false -Dcpq.price-adjust.startup-recovery.enabled=false -Dcpq.price-adjust.budget.concurrency=3 -jar target/quarkus-app/quarkus-run.jar 

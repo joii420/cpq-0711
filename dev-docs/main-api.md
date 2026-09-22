@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-22（task-260920 审核列表秒开与按需试算：`/price-adjust/reviews` 新增 `compute-now` 与 `/{id}/row`、列表返回 `notComputedTotal` / `excludedByNotComputed` 与确定排序、`reject` 预算守门、`impact` 新增 `materials[]`、详情 `budgetError`，新配置 `cpq.price-adjust.budget.concurrency` / `interactive-concurrency`，见 12.X.4 补充）**；此前：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -9986,6 +9986,30 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | POST | `/job-items/{itemId}/retry` | 单条重试 | `STALE` 项返 **409**；异步 `retryJobItem`；202 空体<br>🔧 repair-260918（大单升版）：**行为修正**：重试执行抛异常时明细按上述口径落库为 `FAILED` 并重新汇总批次（原先异常时明细停在旧状态、批次不重算） |
 
 > 来源任务：`task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示`｜回写日期：2026-09-18（覆盖 12.X.3 `/{versionId}/items`、12.X.4 审核列表 / 详情、12.X.5 五个端点）
+
+#### 12.X.4 补充 · task-260920 审核列表秒开与按需试算
+
+> 来源任务：`task-260729-客户价格调整策略和价格版本/task-260920-审核列表秒开与按需试算`｜回写日期：2026-09-22（以交付代码为准；新增 2 个端点，改 5 个既有端点的返回体或行为）
+
+| 方法 | 路径 | 本次 | 要点 |
+|------|------|------|------|
+| GET | （类根路径） | 改 | 响应由 `PageResult` 改为子类 `ReviewPageResult<ReviewListItemDTO>`：既有 `content,page,size,totalElements,totalPages` 原样保留，新增 **`notComputedTotal`**（当前筛选条件下、审核状态「待处理」且 `budgetStatus ∈ (QUEUED, COMPUTING)` 的总数，不是本页）与 **`excludedByNotComputed`**（仅 `breachedOnly=true` 时有值：因未计算而未参与「只看标红」的待处理行数；其余恒 0）。`breachedOnly=true` 收窄为 `breachedCount > 0 AND budgetStatus = 'READY'`（此时 `notComputedTotal` 恒 0）。排序：`createdAt` 倒序不变，补确定次键 `materialNo` 升序、`id` 升序。🔒 `budgetStatus ≠ READY` 时金额字段一律 `null`（不返 0）。`budgetStatus` 新增 `QUEUED`（未计算）、`COMPUTING`（计算中），只在 `reviewStatus = PENDING` 时有意义 |
+| GET | `/{reviewId}` | 改 | `ReviewDetailDTO` 新增可空 **`budgetError`**；详情内的元素影响试算改为持该行依据单的进程内锁（与后台试算错开） |
+| POST | 🆕 `/{reviewId}/compute-now` | 新 | 点击即算：受理并插队试算该条、写回审核行。**一律 202**，body `ComputeNowResponse{reviewId,budgetStatus}`（受理 / 已在算 ⇒ `COMPUTING`；已是 `READY` ⇒ `READY`）。可抢占：`QUEUED`、`FAILED`。404 = 不存在；409 = 审核状态不是「待处理」⇒ `ReviewNotReadyException` 信封 `data.code="REVIEW_NOT_PENDING"` + `invalidItems[{reviewId,materialNo,reason:"状态已变化(<status>)"}]`。`@RoleAllowed({"PRICING_MANAGER","SYSTEM_ADMIN"})`（未登录 401 / 错角色 403） |
+| GET | 🆕 `/{reviewId}/row` | 新 | 单行状态（供轮询），返回 `ReviewListItemDTO`（字段与列表行一致）；**不触发任何试算**；404 = 不存在；权限同上 |
+| POST | `/impact` | 改 | `ImpactResultDTO` 新增 **`materials[]`**：`materialNo,quoteCostCurrent,quoteCostAdjusted,diffAdjusted,status,missingSide(QUOTE｜COSTING｜BOTH｜null)`（`col-default` 比对列，口径同列表行）；既有字段一个不删。前端只传 `READY` 行 |
+| POST | `/approve` | 不改 | 既有守门：入参任何 `budgetStatus≠READY`（含 `FAILED`）⇒ 整批 409 `REVIEW_BUDGET_NOT_READY` + `invalidItems` |
+| POST | `/reject` | 改 | 🆕 预算守门：入参任何 `budgetStatus≠READY`（`QUEUED` / `COMPUTING` / `FAILED`）⇒ 整批 409 `REVIEW_BUDGET_NOT_READY` + `invalidItems`，`reason` 为「预算未算完(<状态>)」或「计算失败(<budget_error>)」 |
+| POST | `/{reviewId}/recompute-budget` | 行为收紧 | 签名、202 与异步语义不变；置「计算中」由无条件改为条件抢占（仅「待处理 ∧ `QUEUED`/`FAILED`/`READY` ∧ 版本仍 PENDING」），已在算不重复发起；非待处理行不做任何事 |
+
+- 🔧 **task-260920 补充不变量**：
+  ① **进池与试算解耦**：生成版本后，范围内料号经一次批量判定建出审核行（`budgetStatus=QUEUED`，实测 4558 个料号 1.3 s、SQL 16 条，与料号数无关），试算由后台循环逐条完成；反例外行（无依据单）进池即 `READY` + 0 列。
+  ② **统一试算次序**（后台循环 / 点击即算 / 重算）：取试算名额 → 取依据单锁（进程内公平锁，逐料号取放）→ 条件抢占（独立短事务立即提交）→ **取版本读锁** → 试算事务（开头 `FOR SHARE` 复核版本仍 PENDING）→ 条件完成（`WHERE status='PENDING' AND budget_status='COMPUTING'`，0 行则整体回滚、结果丢弃）→ 提交 → 放读锁 → 放依据单锁 → 还名额。正式升版执行（`PriceAdjustJobExecutionService`）只加了同一把依据单锁。
+  ③ **生成新版本 = 版本写者**（`VersionSupersedeGate`，按版本的进程内公平读写锁，🔒 单实例部署前提）：要作废旧 PENDING 版本时，生成事务开始前取写锁、提交后放。⇒ 生成只等**已进入试算事务**的在途试算（它们正常写入、随后被作废）；已受理但仍在排队的点击即算不写入、该行作废（库内可能停在「已作废 + 计算中」，页面显示「—」），前端提示「该价格版本已被新版本取代」。
+  ④ **并发与名额**：按依据单分组、组间并行、组内串行（同一依据单永不跨线程），大组先派；后台试算全进程所有版本合计同时在算 ≤ `cpq.price-adjust.budget.concurrency`（默认 3、上限 5，测试 profile 1）；点击即算 / 重算另用 **`cpq.price-adjust.budget.interactive-concurrency`**（默认 2），两者互不挤占；协调线程与工作线程分池。每个在算线程占 2 个主池连接。
+  ⑤ **启动收尾**（`cpq.price-adjust.startup-recovery.enabled`）新增：启动前已停止更新的「计算中」审核行重置为「未计算」；续跑判定追加「待处理版本下有 `QUEUED` / `COMPUTING` 行」。
+  ⑥ 改策略阈值 / 比对列后：受影响待处理行标 `QUEUED`，由试算循环处理（不再逐条异步派发）；循环退出前重扫。
+  ⑦ 前端列表查询只认最新一次请求（过期响应丢弃，含轮询），无契约变化。
 
 #### 附：核心状态机与不变量（跨上述 5 个 Resource，回写时一并补充）
 

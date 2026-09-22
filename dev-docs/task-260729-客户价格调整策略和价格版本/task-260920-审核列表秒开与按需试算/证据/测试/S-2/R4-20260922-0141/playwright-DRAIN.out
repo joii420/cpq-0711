@@ -1,0 +1,7 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r4.spec.ts:170:1 › R4-DRAIN · 等 V4 全部算完
+[1A[2K  Slow test file: e2e/task260920-s2-r4.spec.ts (22.2m)
+  Consider running tests from slow files in parallel. See: https://playwright.dev/docs/test-parallel
+  1 passed (22.2m)

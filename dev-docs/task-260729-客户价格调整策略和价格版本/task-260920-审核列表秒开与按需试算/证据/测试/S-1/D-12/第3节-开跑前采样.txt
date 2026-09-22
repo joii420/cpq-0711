@@ -1,0 +1,21 @@
+pre 2026-09-21 23:22:04 PDT
+BEGIN
+ running_jobs 
+--------------
+            0
+(1 row)
+
+  customer_no  | version_no | not_computed | specified_unprocessed |   mode    
+---------------+------------+--------------+-----------------------+-----------
+ CUST-0001     | V26090801  |            0 |                     0 | SPECIFIED
+ CUST-0002     | V26090101  |            0 |                     0 | ALL
+ CUST-0729-FV2 | V26080501  |            0 |                     0 | 
+ CUST-0729-QA  | V26080514  |            0 |                     0 | SPECIFIED
+(4 rows)
+
+     material_no     | status  | budget_status |          updated_at           
+---------------------+---------+---------------+-------------------------------
+ T260907R-XCB-203527 | PENDING | READY         | 2026-09-22 03:16:27.418286+00
+(1 row)
+
+ROLLBACK

@@ -1,0 +1,1 @@
+id,quotation_id,origin_id,base_row_fingerprint,base_version_no,material_no,item_seq,input_material_no,unit_weight,output_material_type,component_qty,gross_weight,net_weight,weight_unit,material_ratio,loss_rate,defect_rate,extend_column,element_price,customer_no,source,created_at,created_by,updated_at,updated_by,import_batch_id

@@ -1,0 +1,174 @@
+{
+  "ac26b": {
+    "poolSize": 1170,
+    "step": 58,
+    "pick": [
+      "0028-2609000013",
+      "PERF0909-B00040",
+      "PERF0909-B00098",
+      "PERF0909-B00156",
+      "PERF600-B00016",
+      "PERF600-B00077",
+      "PERF600-B00135",
+      "PERF600-B00193",
+      "PERF600-B00251",
+      "PERF600-B00309",
+      "PERF600-B00367",
+      "PERF600-B00425",
+      "PERF600-B00483",
+      "PERF600-B00541",
+      "PERFHOT-B00001",
+      "PERFHOT-B00059",
+      "PERFHOT-B00117",
+      "PERFHOT-B00175",
+      "PERFHOT-B00233",
+      "PERFHOT-B00293"
+    ],
+    "tStart": "2026-09-22 09:06:21.56784+00",
+    "recompute": [
+      {
+        "m": "0028-2609000013",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:22.070625+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF0909-B00040",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:23.216909+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF0909-B00098",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:24.392059+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF0909-B00156",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:25.507795+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00016",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:26.661474+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00077",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:27.756701+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00135",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:28.907368+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00193",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:30.136382+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00251",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:31.239649+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00309",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:32.366089+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00367",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:33.544363+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00425",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:34.736115+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00483",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:35.881895+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERF600-B00541",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:36.970121+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERFHOT-B00001",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:38.092438+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERFHOT-B00059",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:39.17329+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERFHOT-B00117",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:40.214816+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERFHOT-B00175",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:41.239677+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERFHOT-B00233",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:42.28253+00",
+        "budget_status": "READY"
+      },
+      {
+        "m": "PERFHOT-B00293",
+        "http": 202,
+        "fresh": true,
+        "updated_at": "2026-09-22 09:06:43.336931+00",
+        "budget_status": "READY"
+      }
+    ],
+    "diff": [],
+    "nonzero": 19
+  },
+  "listSeq": []
+}

@@ -1,0 +1,135 @@
+BEGIN;
+BEGIN
+SELECT now() AS reset_start_utc;
+        reset_start_utc        
+-------------------------------
+ 2026-09-22 09:39:36.858812+00
+(1 row)
+
+CREATE TEMP TABLE bk_qli  (LIKE quotation_line_item)            ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_qlcd (LIKE quotation_line_component_data)  ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_q    (LIKE quotation)                      ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_qpr  (LIKE quotation_price_revision)       ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_mbom (LIKE ds_quote_material_bom_record)   ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_ebom (LIKE ds_quote_element_bom_record)    ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_mpvr (LIKE material_price_version_ref)     ON COMMIT DROP;
+CREATE TABLE
+COPY  bk_qli FROM STDIN WITH CSV HEADER
+COPY 7
+COPY  bk_qlcd FROM STDIN WITH CSV HEADER
+COPY 21
+COPY  bk_q FROM STDIN WITH CSV HEADER
+COPY 1
+COPY  bk_qpr FROM STDIN WITH CSV HEADER
+COPY 2
+COPY  bk_mbom FROM STDIN WITH CSV HEADER
+COPY 0
+COPY  bk_ebom FROM STDIN WITH CSV HEADER
+COPY 0
+COPY  bk_mpvr FROM STDIN WITH CSV HEADER
+COPY 32
+SELECT (SELECT count(*) FROM bk_qli) qli, (SELECT count(*) FROM bk_qlcd) qlcd, (SELECT count(*) FROM bk_q) q, (SELECT count(*) FROM bk_qpr) qpr,
+       (SELECT count(*) FROM bk_mbom) mbom, (SELECT count(*) FROM bk_ebom) ebom, (SELECT count(*) FROM bk_mpvr) mpvr;
+ qli | qlcd | q | qpr | mbom | ebom | mpvr 
+-----+------+---+-----+------+------+------
+   7 |   21 | 1 |   2 |    0 |    0 |   32
+(1 row)
+
+UPDATE quotation_line_item t SET quote_card_values = b.quote_card_values, costing_card_values = b.costing_card_values,
+       quote_excel_values = b.quote_excel_values, subtotal = b.subtotal, line_unit_price = b.line_unit_price,
+       discount_base_amount = b.discount_base_amount, line_final_price = b.line_final_price,
+       line_discount_amount = b.line_discount_amount, line_total_amount = b.line_total_amount,
+       card_snapshot_at = b.card_snapshot_at, quote_values_at = b.quote_values_at, row_version = b.row_version
+  FROM bk_qli b WHERE t.id = b.id;
+UPDATE 7
+UPDATE quotation_line_component_data t SET snapshot_rows = b.snapshot_rows, row_data = b.row_data, row_version = b.row_version,
+       snapshot_at = b.snapshot_at FROM bk_qlcd b WHERE t.id = b.id;
+UPDATE 21
+UPDATE quotation t SET original_amount = b.original_amount, total_amount = b.total_amount, updated_at = b.updated_at
+  FROM bk_q b WHERE t.id = b.id;
+UPDATE 1
+UPDATE quotation_price_revision t SET sealed = b.sealed, upgraded_material_nos = b.upgraded_material_nos,
+       quote_card_values = b.quote_card_values, costing_card_values = b.costing_card_values, snapshot_rows = b.snapshot_rows,
+       quote_total_amount = b.quote_total_amount, last_updated_at = b.last_updated_at
+  FROM bk_qpr b WHERE t.id = b.id;
+UPDATE 2
+SELECT r.id, q.quotation_number, r.revision_no, r.based_version_id, r.created_at FROM quotation_price_revision r JOIN quotation q ON q.id = r.quotation_id
+ WHERE r.quotation_id IN (SELECT id FROM bk_q) AND r.id NOT IN (SELECT id FROM bk_qpr) AND r.created_at >= '2026-09-22 08:53:00+00';
+                  id                  | quotation_number | revision_no |           based_version_id           |          created_at           
+--------------------------------------+------------------+-------------+--------------------------------------+-------------------------------
+ 0a2b7f7a-fdfb-4ad4-ae03-ae0603497d9f | QT-20260911-0842 | R26092201   | 82461c99-c390-4f42-b439-63f811ad7780 | 2026-09-22 08:54:09.724925+00
+(1 row)
+
+DELETE FROM quotation_price_revision r
+ WHERE r.quotation_id IN (SELECT id FROM bk_q) AND r.id NOT IN (SELECT id FROM bk_qpr) AND r.created_at >= '2026-09-22 08:53:00+00';
+DELETE 1
+UPDATE ds_quote_material_bom_record t SET element_price = b.element_price, updated_at = b.updated_at FROM bk_mbom b WHERE t.id = b.id;
+UPDATE 0
+UPDATE ds_quote_element_bom_record  t SET element_price = b.element_price, updated_at = b.updated_at FROM bk_ebom b WHERE t.id = b.id;
+UPDATE 0
+SELECT id, material_no, version_id, updated_at FROM material_price_version_ref t WHERE t.customer_no = 'CUST-0004' AND t.material_no = ANY(CAST('{PERF600-B00011,PERF600-B00012,PERF600-B00021,PERF600-B00022,PERF600-B00023,PERF600-B00598,PERF600-B00599}' AS text[]))
+   AND t.id NOT IN (SELECT id FROM bk_mpvr);
+                  id                  |  material_no   |              version_id              |          updated_at           
+--------------------------------------+----------------+--------------------------------------+-------------------------------
+ 43fad760-fdb7-4138-bd34-217ddf564640 | PERF600-B00598 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+ cde867c7-4362-4066-b8de-af87b4e6878d | PERF600-B00599 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+ f12ee8ee-f8af-4f66-81b1-25fa39b950c0 | PERF600-B00012 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+ fa1a7b73-d112-47be-ba19-fbc053c7e70a | PERF600-B00011 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+ 034bed3c-c561-4caa-b1bc-11b7a8b2f71f | PERF600-B00023 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+ 0d33835a-f719-44b0-a830-0885ef734cda | PERF600-B00021 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+ b4285175-85e1-4988-915e-05e323379f10 | PERF600-B00022 | 04b70b9b-a805-43a4-8fac-9f66feb8daf7 | 2026-09-22 09:07:03.962517+00
+(7 rows)
+
+DELETE FROM material_price_version_ref t WHERE t.customer_no = 'CUST-0004' AND t.material_no = ANY(CAST('{PERF600-B00011,PERF600-B00012,PERF600-B00021,PERF600-B00022,PERF600-B00023,PERF600-B00598,PERF600-B00599}' AS text[]))
+   AND t.id NOT IN (SELECT id FROM bk_mpvr);
+DELETE 7
+SELECT count(*) AS qli_mismatch FROM quotation_line_item t JOIN bk_qli b ON b.id = t.id
+ WHERE (t.subtotal, t.line_total_amount, t.quote_card_values::text, coalesce(t.quote_excel_values::text,''))
+       IS DISTINCT FROM (b.subtotal, b.line_total_amount, b.quote_card_values::text, coalesce(b.quote_excel_values::text,''));
+ qli_mismatch 
+--------------
+            0
+(1 row)
+
+SELECT count(*) AS q_mismatch FROM quotation t JOIN bk_q b ON b.id = t.id
+ WHERE (t.original_amount, t.total_amount) IS DISTINCT FROM (b.original_amount, b.total_amount);
+ q_mismatch 
+------------
+          0
+(1 row)
+
+SELECT count(*) AS qlcd_mismatch FROM quotation_line_component_data t JOIN bk_qlcd b ON b.id = t.id
+ WHERE (t.snapshot_rows::text, t.row_data::text, t.row_version) IS DISTINCT FROM (b.snapshot_rows::text, b.row_data::text, b.row_version);
+ qlcd_mismatch 
+---------------
+             0
+(1 row)
+
+SELECT count(*) AS qli_full_mismatch FROM quotation_line_item t JOIN bk_qli b ON b.id = t.id
+ WHERE (t.subtotal, t.line_unit_price, t.discount_base_amount, t.line_final_price, t.line_discount_amount, t.line_total_amount, coalesce(t.quote_card_values::text,''), coalesce(t.costing_card_values::text,''))
+   IS DISTINCT FROM (b.subtotal, b.line_unit_price, b.discount_base_amount, b.line_final_price, b.line_discount_amount, b.line_total_amount, coalesce(b.quote_card_values::text,''), coalesce(b.costing_card_values::text,''));
+ qli_full_mismatch 
+-------------------
+                 0
+(1 row)
+
+SELECT count(*) AS qpr_rows_after FROM quotation_price_revision WHERE quotation_id IN (SELECT id FROM bk_q);
+ qpr_rows_after 
+----------------
+              2
+(1 row)
+
+SELECT count(*) AS new_pointers_left FROM material_price_version_ref WHERE customer_no='CUST-0004' AND material_no = ANY(CAST('{PERF600-B00011,PERF600-B00012,PERF600-B00021,PERF600-B00022,PERF600-B00023,PERF600-B00598,PERF600-B00599}' AS text[]));
+ new_pointers_left 
+-------------------
+                 0
+(1 row)
+
+ROLLBACK;
+ROLLBACK

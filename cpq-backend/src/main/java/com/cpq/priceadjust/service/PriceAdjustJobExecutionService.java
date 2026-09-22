@@ -57,6 +57,7 @@ public class PriceAdjustJobExecutionService {
     @Inject DriverBatchSafetyAuditor safetyAuditor;
     @Inject CardSnapshotService cardSnapshotService;
     @Inject CurrentPeriodRevisionWriter revisionWriter;
+    @Inject BasisQuotationLocks quotationLocks;
 
     /**
      * task-0806 · FR-1（方案 B）+ FR-4/FR-5/FR-6/FR-7：逐项循环<b>之前</b>按
@@ -107,6 +108,9 @@ public class PriceAdjustJobExecutionService {
                 // 每条明细一次 markItemRunning + 一次 executeItem（各自独立事务）—— 这是「逐条独立提交、
                 // 一单失败不回滚全批」的既定执行单位（task-0729 B5），不是查询 N+1；组内读库条数与整单行数无关。
                 for (MaterialPriceUpdateJobItem item : g.getValue()) {
+                    // task-260920 D-9：只加取放锁（该单的依据单锁，与预算试算互斥）；以下原有代码逐字未动（故意不改缩进）
+                    BasisQuotationLocks.Handle quotationLock = quotationLocks.acquire(item.quotationId, "job=" + jobId + " item=" + item.id);
+                    try {
                     markItemRunning(item.id);
                     CardSnapshotService.PrecomputedTreeRows precomputed =
                         item.lineItemId != null ? precomputedByLineItem.get(item.lineItemId) : null;
@@ -122,6 +126,9 @@ public class PriceAdjustJobExecutionService {
                     if (MaterialPriceUpdateJobItem.SUCCESS.equals(status)) {
                         current.successItemIds.add(item.id);
                         current.materialNos.add(item.materialNo);
+                    }
+                    } finally {
+                        quotationLock.close();
                     }
                 }
                 completeGroup(jobId, versionId, current);
@@ -585,6 +592,9 @@ public class PriceAdjustJobExecutionService {
         // repair-260918：单条重试 = 完整路径（本期快照在 upgrade() 自己的事务里写，不延后）。
         // B-5 执行前置 RUNNING；B-6 异常时按可读口径落库（原先异常时明细停在旧状态、批次不重算）；
         // finally 照常 finalizeJob 重新汇总批次。
+        // task-260920 D-9：只加取放锁；以下原有代码逐字未动（故意不改缩进）
+        BasisQuotationLocks.Handle quotationLock = quotationLocks.acquire(item.quotationId, "job-item-retry item=" + itemId);
+        try {
         try {
             markItemRunning(itemId);
             executeItem(itemId);
@@ -599,6 +609,9 @@ public class PriceAdjustJobExecutionService {
             if (t instanceof Error) throw (Error) t;
         } finally {
             finalizeJob(item.jobId);
+        }
+        } finally {
+            quotationLock.close();
         }
     }
 

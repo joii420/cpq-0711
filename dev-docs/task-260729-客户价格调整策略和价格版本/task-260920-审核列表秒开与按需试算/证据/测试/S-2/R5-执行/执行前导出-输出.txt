@@ -1,0 +1,23 @@
+BEGIN
+       backup_sample_utc       
+-------------------------------
+ 2026-09-22 12:35:49.171847+00
+(1 row)
+
+== 0. 影响面计数（报批用）
+ lines | quotations |  quotation_nos   | comp_rows | revisions | mbom_record_rows | ebom_record_rows | view_structures 
+-------+------------+------------------+-----------+-----------+------------------+------------------+-----------------
+     7 |          1 | QT-20260911-0842 |        21 |         3 |                0 |                0 |               2
+(1 row)
+
+== 1. quotation_line_item 整行（S4a quote_card_values / S5 quote_card_values,costing_card_values / S6 subtotal + LineDiscountService 5 列 / S7 quote_excel_values）
+== 2. quotation_line_component_data 整行（S3a/S3b/S4b snapshot_rows,row_data,row_version）
+== 3. quotation 表头整行（S8 total_amount / S8b recomputeDraftHeaderTotals original_amount,total_amount）
+== 4. quotation_price_revision 整行（S9 前置 sealInitialIfNeeded 初版 / S9 或 job 延后写 本期记录）
+== 5. ds_quote_material_bom_record / ds_quote_element_bom_record（S3 写点后 syncElementPrice：element_price, updated_at）
+== 6. quotation_view_structure（S2 结构缺失时 ensureStructure 补建；正常路径不写，防万一）
+== 7. material_price_version_ref（doApprove.advancePointer）—— 该客户全部指针
+== 8. material_price_review（doApprove 置 APPROVED + reviewed_by/at/comment）—— 本版本这些料号的审核行
+== 9. 更新批次基线（doApprove 新建 job + job_item；复位时按「本次新建的 id」处理，这里只记基线）
+== 10. 备份文件行数自检见 shell：wc -l <dir>/*.csv
+ROLLBACK

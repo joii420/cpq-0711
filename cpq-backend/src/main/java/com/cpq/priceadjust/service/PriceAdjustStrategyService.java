@@ -233,7 +233,7 @@ public class PriceAdjustStrategyService {
 
     public void putMaterials(String customerNo, PutMaterialsRequest req, UUID actorId) {
         List<ReviewRef> toRecompute = doPutMaterials(customerNo, req, actorId);
-        dispatchRecompute(customerNo, toRecompute);
+        dispatchEnqueue(customerNo, toRecompute);
     }
 
     @Transactional
@@ -515,26 +515,45 @@ public class PriceAdjustStrategyService {
         return s;
     }
 
-    /** 该客户全部 PENDING 料号标 QUEUED（即时 UI 反馈，同 B6 既定手法）并返回待异步派发清单。 */
+    /**
+     * 该客户全部「待处理」审核行标 QUEUED（**含正在 COMPUTING 的** —— 它们用的是旧配置，由试算的条件完成丢弃），
+     * 返回受影响行清单（计数 + 要唤起的版本）。
+     *
+     * <p>task-260920 B-16（D-4 收编）：一条 UPDATE 标记 + 一条 SELECT 取清单，条数与行数无关（原先逐条 persist）。
+     */
     private List<ReviewRef> markPendingForRecompute(String customerNo) {
-        List<MaterialPriceReview> pending = MaterialPriceReview.list(
-            "customerNo = ?1 and status = ?2", customerNo, MaterialPriceReview.STATUS_PENDING);
-        List<ReviewRef> refs = new ArrayList<>();
-        for (MaterialPriceReview r : pending) {
-            r.budgetStatus = MaterialPriceReview.BUDGET_QUEUED;
-            r.persist();
-            refs.add(new ReviewRef(r.versionId, r.materialNo));
-        }
+        MaterialPriceReview.update("budgetStatus = ?1, updatedAt = ?2 where customerNo = ?3 and status = ?4",
+            MaterialPriceReview.BUDGET_QUEUED, OffsetDateTime.now(), customerNo, MaterialPriceReview.STATUS_PENDING);
+        @SuppressWarnings("unchecked")
+        List<Object[]> rows = em.createNativeQuery(
+                "SELECT version_id, material_no FROM material_price_review WHERE customer_no = :c AND status = 'PENDING'")
+            .setParameter("c", customerNo)
+            .getResultList();
+        List<ReviewRef> refs = new ArrayList<>(rows.size());
+        for (Object[] r : rows) refs.add(new ReviewRef((UUID) r[0], (String) r[1])); // pure in-memory
         return refs;
     }
 
-    /** 🔒 async 派发必须放在写库事务之外（同 B3/B5 既定模式），此方法本身非 @Transactional。 */
+    /**
+     * task-260920 B-16（D-4 收编）：已标 QUEUED 的行交给后台试算循环 —— 只唤起对应版本的循环（未在跑 ⇒ 启动；
+     * 在跑 ⇒ 置重扫）。🚫 不再逐条 {@code runAsync(processMaterial)}。此方法本身非 @Transactional（事务提交后调用）。
+     */
     private void dispatchRecompute(String customerNo, List<ReviewRef> refs) {
         if (refs.isEmpty()) return;
-        CustomerPriceAdjustStrategy s = CustomerPriceAdjustStrategy.findByCustomerNo(customerNo);
-        BigDecimal threshold = s != null ? s.costDiffThreshold : BigDecimal.ZERO;
-        for (ReviewRef ref : refs) {
-            managedExecutor.runAsync(() -> budgetService.processMaterial(ref.versionId(), customerNo, threshold, ref.materialNo()));
+        Set<UUID> versionIds = new LinkedHashSet<>();
+        for (ReviewRef ref : refs) versionIds.add(ref.versionId()); // pure in-memory
+        budgetService.requestBudgetRun(versionIds);
+    }
+
+    /**
+     * 「指定料号」新增的料号：还没有审核行，对它们走同一套批量进池判定后再唤起试算循环（异步）。
+     */
+    private void dispatchEnqueue(String customerNo, List<ReviewRef> added) {
+        if (added.isEmpty()) return;
+        Map<UUID, List<String>> byVersion = new LinkedHashMap<>();
+        for (ReviewRef ref : added) byVersion.computeIfAbsent(ref.versionId(), k -> new ArrayList<>()).add(ref.materialNo());
+        for (Map.Entry<UUID, List<String>> e : byVersion.entrySet()) { // one pending version per customer in practice
+            budgetService.enqueueMaterialsAndRun(e.getKey(), customerNo, e.getValue());
         }
     }
 

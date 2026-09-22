@@ -1,0 +1,188 @@
+{
+  "ac26a": {
+    "V": "V26092202",
+    "groupAtStart": {
+      "ready": 49,
+      "queued": 1129
+    },
+    "groupAfterJob": {
+      "queued": 1101,
+      "computing": 1
+    },
+    "approveStatus": 202,
+    "jobId": "1d521d23-0aa9-4df8-9988-273fb6502d9d",
+    "job": {
+      "status": "SUCCESS",
+      "finished_at": "2026-09-22 08:54:10.016534+00",
+      "total_count": 2,
+      "failed_count": 0,
+      "success_count": 2
+    },
+    "cmp": [
+      {
+        "m": "PERF600-B00598",
+        "budget_qa": "9118.200000000000",
+        "budget_status": "READY",
+        "budget_updated": "2026-09-22 08:53:53.389504+00",
+        "pre": "0.000000000000",
+        "after": "9118.200000000000",
+        "excelNull": true,
+        "modal": "PERF600-B00598 — 9118.2 —（缺数据：核价侧）"
+      },
+      {
+        "m": "PERF600-B00599",
+        "budget_qa": "9118.200000000000",
+        "budget_status": "READY",
+        "budget_updated": "2026-09-22 08:53:56.84233+00",
+        "pre": "0.000000000000",
+        "after": "9118.200000000000",
+        "excelNull": true,
+        "modal": "PERF600-B00599 — 9118.2 —（缺数据：核价侧）"
+      }
+    ],
+    "lockLines": [
+      "2026-09-22 01:54:01.090 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-2) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 budget-loop worker=1 material=T260907T-B00049 取得依据单锁，等待 1194 ms",
+      "2026-09-22 01:54:07.159 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-16) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 job=1d521d23-0aa9-4df8-9988-273fb6502d9d item=688365da-c4f2-4c54-a6f3-341e6cae5b1e 等待依据单锁（当前持有者：budget-loop worker=3 material=PERF0909-B00053）",
+      "2026-09-22 01:54:07.284 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-4) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 budget-loop worker=3 material=PERF0909-B00054 等待依据单锁（当前持有者：null）",
+      "2026-09-22 01:54:07.284 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-16) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 job=1d521d23-0aa9-4df8-9988-273fb6502d9d item=688365da-c4f2-4c54-a6f3-341e6cae5b1e 取得依据单锁，等待 124 ms",
+      "2026-09-22 01:54:07.901 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-12) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 compute-now review=9489e6ef-887a-4a21-a595-85d64a788e95 material=T260907T-B01832 取得依据单锁，等待 723 ms",
+      "2026-09-22 01:54:07.901 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-2) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 budget-loop worker=1 material=T260907T-B00055 等待依据单锁（当前持有者：null）",
+      "2026-09-22 01:54:07.953 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-2) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 budget-loop worker=1 material=T260907T-B00055 取得依据单锁，等待 52 ms",
+      "2026-09-22 01:54:07.953 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-6) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 compute-now review=9489e6ef-887a-4a21-a595-85d64a788e95 material=T260907T-B01832 等待依据单锁（当前持有者：budget-loop worker=1 material=T260907T-B00055）",
+      "2026-09-22 01:54:08.061 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-16) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 job=1d521d23-0aa9-4df8-9988-273fb6502d9d item=f8c1deb5-2812-4f67-bb4d-4eae4f7751ec 等待依据单锁（当前持有者：null）",
+      "2026-09-22 01:54:08.062 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-4) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 budget-loop worker=3 material=PERF0909-B00054 取得依据单锁，等待 777 ms",
+      "2026-09-22 01:54:09.019 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-4) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 budget-loop worker=3 material=PERF0909-B00055 等待依据单锁（当前持有者：null）",
+      "2026-09-22 01:54:09.019 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-16) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 job=1d521d23-0aa9-4df8-9988-273fb6502d9d item=f8c1deb5-2812-4f67-bb4d-4eae4f7751ec 取得依据单锁，等待 957 ms",
+      "2026-09-22 01:54:09.196 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-2) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 budget-loop worker=1 material=T260907T-B00056 等待依据单锁（当前持有者：null）",
+      "2026-09-22 01:54:09.196 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-6) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 compute-now review=9489e6ef-887a-4a21-a595-85d64a788e95 material=T260907T-B01832 取得依据单锁，等待 1243 ms",
+      "2026-09-22 01:54:09.723 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-4) [price-adjust-lock] quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 budget-loop worker=3 material=PERF0909-B00055 取得依据单锁，等待 703 ms",
+      "2026-09-22 01:54:10.212 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-2) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 budget-loop worker=1 material=T260907T-B00056 取得依据单锁，等待 1015 ms",
+      "2026-09-22 01:54:11.080 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-16) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 review-detail review=9489e6ef-887a-4a21-a595-85d64a788e95 等待依据单锁（当前持有者：budget-loop worker=1 material=T260907T-B00056）",
+      "2026-09-22 01:54:11.523 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (price-adjust-budget-2) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 budget-loop worker=1 material=T260907T-B00057 等待依据单锁（当前持有者：null）",
+      "2026-09-22 01:54:11.523 INFO  [com.cpq.pri.ser.BasisQuotationLocks] (executor-thread-16) [price-adjust-lock] quotation=22b14b66-b3e7-47f8-9898-e1ee4b7944e9 review-detail review=9489e6ef-887a-4a21-a595-85d64a788e95 取得依据单锁，等待 442 ms"
+    ]
+  },
+  "listSeq": [
+    {
+      "ev": "send",
+      "t": 1790067228773,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790067228774,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067230124,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067230287,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790067230944,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00598"
+    },
+    {
+      "ev": "send",
+      "t": 1790067230972,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00598"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067231168,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00598"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067231194,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00598"
+    },
+    {
+      "ev": "send",
+      "t": 1790067233888,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00599"
+    },
+    {
+      "ev": "send",
+      "t": 1790067233910,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00599"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067234183,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00599"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067234193,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B00599"
+    },
+    {
+      "ev": "send",
+      "t": 1790067242371,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790067242372,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067243645,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067243774,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790067244422,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B0059"
+    },
+    {
+      "ev": "send",
+      "t": 1790067244456,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B0059"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067245149,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B0059"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067245580,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B0059"
+    },
+    {
+      "ev": "send",
+      "t": 1790067247034,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B0059"
+    },
+    {
+      "ev": "recv",
+      "t": 1790067247705,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=PERF600-B0059"
+    }
+  ]
+}
