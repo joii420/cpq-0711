@@ -14,7 +14,7 @@ import type { ReviewRowDTO, ReviewStatus } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
 import { DISPLAY_SCALE, toDecimal, type DecimalString } from '../../../utils/precision';
 import {
-  approveEnabledWhen, approveHint, computeNowAndWait, nextListPollDelay, rejectEnabledWhen,
+  approveEnabledWhen, approveHint, computeNowAndWait, createLatestGate, loadLatest, nextListPollDelay, rejectEnabledWhen,
   MSG_COMPUTE_SLOW, MSG_NOT_PENDING, MSG_SUPERSEDED,
   type ComputeOutcome,
 } from './reviewCompute';
@@ -76,24 +76,34 @@ const PriceAdjustReviewPage: React.FC = () => {
   const pollRef = useRef<number | null>(null);
   const [pageHidden, setPageHidden] = useState(() => typeof document !== 'undefined' && document.hidden);
 
+  /**
+   * 🔒 F-7 / AC-30: every list load (first screen, typing a keyword, 查询, paging, 只看标红, silent poll,
+   * refresh after a failure / approve / reject) goes through this one function, and only the most recently
+   * started request may write the table, the header count, the counters and the page number. An older
+   * request answering late (e.g. the first-screen full list arriving after a keyword search, or the
+   * StrictMode duplicate) is discarded — including its failure, which then shows no error.
+   */
+  const listGateRef = useRef(createLatestGate());
   const load = useCallback(async (p = 1, opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
-    try {
-      const res = await priceAdjustService.getReviews({
-        page: p, size: PAGE_SIZE, status,
-        keyword: keyword.trim() || undefined,
-        breachedOnly: breachedOnly || undefined,
-      });
-      setRows(res.content || []);
-      setTotal(res.totalElements || 0);
-      setNotComputedTotal(res.notComputedTotal ?? 0);
-      setExcludedByNotComputed(res.excludedByNotComputed ?? 0);
-      setPage(p);
-    } catch (e: any) {
-      if (!opts?.silent) message.error(e?.message || '加载待办池失败');
-    } finally {
-      if (!opts?.silent) setLoading(false);
-    }
+    await loadLatest(listGateRef.current, () => priceAdjustService.getReviews({
+      page: p, size: PAGE_SIZE, status,
+      keyword: keyword.trim() || undefined,
+      breachedOnly: breachedOnly || undefined,
+    }), {
+      onData: (res) => {
+        setRows(res.content || []);
+        setTotal(res.totalElements || 0);
+        setNotComputedTotal(res.notComputedTotal ?? 0);
+        setExcludedByNotComputed(res.excludedByNotComputed ?? 0);
+        setPage(p);
+      },
+      onError: (e: any) => {
+        if (!opts?.silent) message.error(e?.message || '加载待办池失败');
+      },
+      // latest request only: clears a spinner left by an earlier non-silent request that went stale
+      onSettled: () => setLoading(false),
+    });
   }, [status, keyword, breachedOnly]);
 
   useEffect(() => { load(1); }, [status, breachedOnly, load]);

@@ -209,3 +209,45 @@ export async function runSequentialCompute<R extends { reviewId: string }>(
   }
   return outcomes;
 }
+
+// ───────────────────────────── list load: only the latest request lands (F-7 / AC-30) ─────────────────────────────
+
+/**
+ * Monotonic request counter. begin() stamps a new request; isLatest(seq) is true only for the most
+ * recently begun one. Any earlier request that resolves later is stale.
+ */
+export function createLatestGate() {
+  let latest = 0;
+  return {
+    begin: () => ++latest,
+    isLatest: (seq: number) => seq === latest,
+  };
+}
+export type LatestGate = ReturnType<typeof createLatestGate>;
+
+/**
+ * 🔒 F-7 / AC-30: run one list load and let its outcome land ONLY if no newer load began meanwhile.
+ * Stale successes are dropped (table / header count / counters / page untouched) and stale failures
+ * are dropped silently (no error toast). onSettled (clears the loading flag) also runs only for the
+ * latest request, so an older request can't switch the spinner off while a newer one is in flight.
+ * Returns whether this call's outcome was applied.
+ */
+export async function loadLatest<T>(
+  gate: LatestGate,
+  fetcher: () => Promise<T>,
+  handlers: { onData: (data: T) => void; onError: (e: unknown) => void; onSettled?: () => void },
+): Promise<boolean> {
+  const seq = gate.begin();
+  try {
+    const data = await fetcher();
+    if (!gate.isLatest(seq)) return false;
+    handlers.onData(data);
+    return true;
+  } catch (e) {
+    if (!gate.isLatest(seq)) return false;
+    handlers.onError(e);
+    return true;
+  } finally {
+    if (gate.isLatest(seq)) handlers.onSettled?.();
+  }
+}

@@ -1,0 +1,79 @@
+__  ____  __  _____   ___  __ ____  ______ 
+ --/ __ \/ / / / _ | / _ \/ //_/ / / / __/ 
+ -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \   
+--\___\_\____/_/ |_/_/|_/_/|_|\____/___/   
+2026-09-21 23:35:23.856 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-21 23:35:24.149 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-21 23:35:24.195 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-21 23:35:24.425 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-21 23:35:24.426 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-21 23:35:25.244 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-21 23:35:25.296 INFO  [io.qua.sch.run.SimpleScheduler] (main) Simple scheduler is disabled by config property and will not be started
+2026-09-21 23:35:25.382 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-21 23:35:25.388 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-09-21 23:35:25.476 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-21 23:35:25.547 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-21 23:35:26.050 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-21 23:35:26.089 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-21 23:35:26.122 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-21 23:35:26.142 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-21 23:35:26.144 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-21 23:35:26.393 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-21 23:35:26.455 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.971s. Listening on: http://0.0.0.0:8295
+2026-09-21 23:35:26.456 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-09-21 23:35:26.456 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-09-21 23:35:56.329 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:35:56.380 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: t260920-accept-43482dfe
+2026-09-21 23:35:56.630 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] 试算名额：后台=3 点击即算/重算=2
+2026-09-21 23:46:05.705 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:46:05.743 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: t260920-accept-43482dfe
+2026-09-21 23:46:09.487 INFO  [com.cpq.pri.ser.PriceAdjustReviewService] (executor-thread-3) [perf] review-detail N=0 sql=2
+2026-09-21 23:46:09.487 WARN  [com.cpq.pri.ser.PriceAdjustReviewService] (executor-thread-3) [price-adjust-review] review=72914b12-1a45-4f0c-bd93-7a6dcffc03de 判断依据单缺失/该单不在活单范围内，adjustedComputed=false
+2026-09-21 23:46:17.652 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-1) [price-adjust-budget] review=4647c0d0-d858-469d-8052-10436c040295 material=T260920-43482dfe-A-0001 开始试算
+2026-09-21 23:46:18.117 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (price-adjust-budget-1) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-21 23:46:18.165 ERROR [com.cpq.quo.ser.CardSnapshotService] (price-adjust-budget-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-21 23:46:18.165 WARN  [com.cpq.quo.ser.CardSnapshotService] (price-adjust-budget-1) [seed-editrows] comp=efb4862d-145c-4785-a826-68d1a92f67ec 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-21 23:46:18.273 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-1) [b0-upgrade] li=52d9d486-09de-4d70-902a-05bce370dfb4 quotation=T260920-43482dfe-A 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-21 23:46:18.273 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-1) [perf] upgrade li=52d9d486-09de-4d70-902a-05bce370dfb4 quotation=a9476455-4fc5-424e-acf1-e7b672b28725 lines=3 dryRun=true sql=24 ms=540
+2026-09-21 23:46:18.345 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-1) [price-adjust-budget] review=4647c0d0-d858-469d-8052-10436c040295 material=T260920-43482dfe-A-0001 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-21 23:46:19.150 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-1) [price-adjust-budget] review=cb1bb8dd-19c4-4391-81c8-582169150382 material=T260920-43482dfe-A-0002 开始试算
+2026-09-21 23:46:19.549 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (price-adjust-budget-1) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-21 23:46:19.584 ERROR [com.cpq.quo.ser.CardSnapshotService] (price-adjust-budget-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-21 23:46:19.584 WARN  [com.cpq.quo.ser.CardSnapshotService] (price-adjust-budget-1) [seed-editrows] comp=efb4862d-145c-4785-a826-68d1a92f67ec 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-21 23:46:19.683 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-1) [b0-upgrade] li=c693b4c5-1e4d-4601-9e87-7137bdeb308b quotation=T260920-43482dfe-A 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-21 23:46:19.683 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-1) [perf] upgrade li=c693b4c5-1e4d-4601-9e87-7137bdeb308b quotation=a9476455-4fc5-424e-acf1-e7b672b28725 lines=3 dryRun=true sql=24 ms=470
+2026-09-21 23:46:19.720 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-1) [price-adjust-budget] review=cb1bb8dd-19c4-4391-81c8-582169150382 material=T260920-43482dfe-A-0002 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-21 23:46:20.678 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-1) [price-adjust-budget] review=dfcc3d95-abc4-442d-a652-4f8e275d4cb6 material=T260920-43482dfe-B-0001 开始试算
+2026-09-21 23:48:19.063 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-2) [price-adjust-budget] review=8a621045-e266-43cf-88e1-6fee068ad532 material=T260920-43482dfe-A-0003 开始试算
+2026-09-21 23:48:19.404 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (price-adjust-budget-2) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-21 23:48:19.442 ERROR [com.cpq.quo.ser.CardSnapshotService] (price-adjust-budget-2) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-21 23:48:19.443 WARN  [com.cpq.quo.ser.CardSnapshotService] (price-adjust-budget-2) [seed-editrows] comp=efb4862d-145c-4785-a826-68d1a92f67ec 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-21 23:48:19.574 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-2) [b0-upgrade] li=6ff51570-7779-4b31-907b-3587d202650c quotation=T260920-43482dfe-A 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-21 23:48:19.574 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (price-adjust-budget-2) [perf] upgrade li=6ff51570-7779-4b31-907b-3587d202650c quotation=a9476455-4fc5-424e-acf1-e7b672b28725 lines=3 dryRun=true sql=24 ms=465
+2026-09-21 23:48:19.619 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (price-adjust-budget-2) [price-adjust-budget] review=8a621045-e266-43cf-88e1-6fee068ad532 material=T260920-43482dfe-A-0003 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-21 23:48:20.635 INFO  [com.cpq.pri.ser.PriceAdjustReviewService] (executor-thread-3) [perf] review-detail N=1 sql=2
+2026-09-21 23:48:20.892 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-3) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-21 23:48:20.910 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-21 23:48:20.910 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-3) [seed-editrows] comp=efb4862d-145c-4785-a826-68d1a92f67ec 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-21 23:48:20.989 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [b0-upgrade] li=6ff51570-7779-4b31-907b-3587d202650c quotation=T260920-43482dfe-A 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-21 23:48:20.989 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-3) [perf] upgrade li=6ff51570-7779-4b31-907b-3587d202650c quotation=a9476455-4fc5-424e-acf1-e7b672b28725 lines=3 dryRun=true sql=24 ms=353
+2026-09-21 23:50:54.106 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:50:54.140 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-21 23:51:15.288 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:51:15.327 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-21 23:51:36.472 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:51:36.510 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-21 23:51:57.689 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:51:57.729 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-21 23:52:18.839 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-21 23:52:18.891 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-22 00:27:01.570 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-22 00:27:01.616 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-22 00:27:23.700 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-22 00:27:23.753 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-22 00:27:45.390 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-22 00:27:45.429 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-22 00:28:07.013 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-22 00:28:07.052 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-22 00:28:28.642 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
+2026-09-22 00:28:28.687 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
