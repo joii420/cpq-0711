@@ -1,0 +1,22 @@
+2026-09-21 20:16:26.243 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 启动收尾：中断批次 0 个 []
+2026-09-21 20:16:26.293 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 预算续跑：待续跑版本 1 个 [06656cfc-606c-40ba-9129-68f9d21ce1b4]
+2026-09-21 20:16:26.516 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] versionId=06656cfc-606c-40ba-9129-68f9d21ce1b4 异步续跑预算
+2026-09-21 20:16:26.758 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] versionId=06656cfc-606c-40ba-9129-68f9d21ce1b4 进池：范围=1 续跑跳过=0 进池=1（其中直接就绪=0，新建行=1）直接推进指针=0
+2026-09-21 20:16:27.855 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [perf] budget-compute version=06656cfc-606c-40ba-9129-68f9d21ce1b4 groups=1 materials=1 workers=1 ms=1047
+2026-09-21 20:16:27.909 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] versionId=06656cfc-606c-40ba-9129-68f9d21ce1b4 done: 进池=1（直接就绪=0） 直接推进指针=0 续跑跳过=0 试算就绪=1 试算失败=0 结果丢弃重排=0 被他方处理=0 轮次=1 耗时=1137ms
+[T260920-EVIDENCE AC-18] [2026-09-21T20:16:35.690771002] S1-1 采样：在跑更新批次=0；夹具以外的待处理版本=CUST-0001/V26090801 未计算=0 无审核且无指针=0；CUST-0729-FV2/V26080501 未计算=0 无审核且无指针=0；CUST-0002/V26090101 未计算=0 无审核且无指针=0；CUST-0729-QA/V26080514 未计算=0 无审核且无指针=0
+2026-09-21 20:16:35.710 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 启动收尾：中断批次 0 个 []
+2026-09-21 20:16:35.732 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 启动收尾：残留「计算中」审核行 2 条重置为未计算
+2026-09-21 20:16:35.763 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 预算续跑：待续跑版本 1 个 [6b3d5c22-6506-47b7-b748-06f4b5224123]
+2026-09-21 20:16:35.790 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] versionId=6b3d5c22-6506-47b7-b748-06f4b5224123 异步续跑预算
+[T260920-EVIDENCE AC-18] [2026-09-21T20:16:37.271895739] v=6b3d5c22-6506-47b7-b748-06f4b5224123 卡住行=[T260920-a493da14-S-0001, T260920-a493da14-S-0003] → READY/READY；未收敛=0 用时=1477ms；待处理行=4；dryRun(v)=2
+[T260920-EVIDENCE cleanup] [2026-09-21T20:16:41.155502068] 客户 T260920-a493da14 自建数据已按 id 清理（报价单 1 张）
+[T260920-EVIDENCE AC-16] [2026-09-21T20:16:54.947233835] S1-1 采样：在跑更新批次=0；夹具以外的待处理版本=CUST-0001/V26090801 未计算=0 无审核且无指针=0；CUST-0729-FV2/V26080501 未计算=0 无审核且无指针=0；CUST-0002/V26090101 未计算=0 无审核且无指针=0；CUST-0729-QA/V26080514 未计算=0 无审核且无指针=0
+2026-09-21 20:16:54.979 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 启动收尾：中断批次 0 个 []
+2026-09-21 20:16:55.048 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] 预算续跑：待续跑版本 1 个 [fd0965c5-b410-4ea4-803a-53db31d538bb]
+2026-09-21 20:16:55.090 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] versionId=fd0965c5-b410-4ea4-803a-53db31d538bb 异步续跑预算
+[T260920-EVIDENCE AC-16] [2026-09-21T20:16:59.819018917] v=fd0965c5-b410-4ea4-803a-53db31d538bb QUEUED 行 T260920-9743670c-S-0001/T260920-9743670c-S-0002 → READY/READY；未收敛=0；dryRun(v)=2；反向夹具 vc dryRun=0 指纹前=e3a0090e847f42214c5ddb3dafff07ed 后=e3a0090e847f42214c5ddb3dafff07ed
+[T260920-EVIDENCE cleanup] [2026-09-21T20:17:03.854247860] 客户 T260920-9743670c 自建数据已按 id 清理（报价单 1 张）
+[T260920-EVIDENCE cleanup] [2026-09-21T20:17:04.452675340] 客户 T260920-db86abe0 自建数据已按 id 清理（报价单 1 张）
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 41.67 s -- in com.cpq.priceadjust.ac260920.Ac260920StartupResumeTest
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0

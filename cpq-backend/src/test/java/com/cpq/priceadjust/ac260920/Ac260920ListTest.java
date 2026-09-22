@@ -49,15 +49,15 @@ class Ac260920ListTest {
             fx.insertReview(v2, fx.material("PR", 1), "PENDING", "READY", null, null);
             T920Api api = T920Api.anonymous();
 
-            JsonNode all = T920Api.unwrap(api.list(T920Api.q("customerNo", fx.customerNo, "page", 1, "size", 50)));
+            JsonNode all = T920Api.unwrap(api.list(T920Api.q("customerNo", fx.customerNo, "status", "PENDING", "page", 1, "size", 50)));
             JsonNode voided = T920Api.unwrap(api.list(T920Api.q("customerNo", fx.customerNo, "status", "VOIDED", "page", 1, "size", 50)));
-            T920Evidence.log("AC-27", "全部: totalElements=" + all.path("totalElements") + " notComputedTotal=" + all.path("notComputedTotal")
+            T920Evidence.log("AC-27", "status=PENDING: totalElements=" + all.path("totalElements") + " notComputedTotal=" + all.path("notComputedTotal")
                 + "；status=VOIDED: totalElements=" + voided.path("totalElements") + " notComputedTotal=" + voided.path("notComputedTotal")
                 + "；VOIDED 行=" + voided.path("content"));
-            assertEquals(7, all.path("totalElements").asInt(-1), "前提：本客户 7 行都能列出");
+            assertEquals(4, all.path("totalElements").asInt(-1), "前提：按「待处理」筛选列出本客户 4 行待处理（列表默认即按待处理筛选，首轮以不带 status 期望 7 行是用例前提写错）");
             assertTrue(all.has("notComputedTotal"), "api.md §1.1：返回体应有 notComputedTotal");
             assertEquals(3, all.path("notComputedTotal").asInt(-1),
-                "AC-27①：只数待处理行里的 QUEUED/COMPUTING（3），不计已作废的 3 行 QUEUED");
+                "AC-27①（阳性对照）：待处理筛选下 QUEUED/COMPUTING 共 3 行被计入");
             assertEquals(3, voided.path("totalElements").asInt(-1), "前提：按「已作废」筛选能取到这 3 行（非空样本）");
             assertEquals(0, voided.path("notComputedTotal").asInt(-1), "AC-27①：筛选已作废时 notComputedTotal = 0");
             for (JsonNode r : voided.path("content")) {

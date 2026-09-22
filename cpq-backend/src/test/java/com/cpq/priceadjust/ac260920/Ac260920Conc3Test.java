@@ -96,6 +96,7 @@ class Ac260920Conc3Test {
             long queuedAtSupersede = db.count("SELECT count(*) FROM material_price_review WHERE version_id = :v "
                 + "AND status = 'PENDING' AND budget_status = 'QUEUED'", "v", a);
             bStarted.set(true);
+            long tBStart = System.currentTimeMillis();
             UUID b = T920Api.anonymous().generateVersion(fx.customerNo);
             long tB = System.currentTimeMillis();
 
@@ -111,7 +112,8 @@ class Ac260920Conc3Test {
             }
             long bReviews = db.count("SELECT count(*) FROM material_price_review WHERE version_id = :v", "v", b);
             long bNotSettled = fx.notSettled(b);
-            T920Evidence.log("AC-17", "A=" + a + " B=" + b + "；三个线程同时在算 A=" + three + " 线程=" + aThreads
+            T920Evidence.log("AC-17", "A=" + a + " B=" + b + "；生成 B 请求耗时=" + (tB - tBStart) + "ms（发出=" + new java.sql.Timestamp(tBStart)
+                + " 返回=" + new java.sql.Timestamp(tB) + "）；三个线程同时在算 A=" + three + " 线程=" + aThreads
                 + "；作废时刻 A 的 QUEUED 行=" + queuedAtSupersede + "；A 分布=" + aDist + "；停止日志=" + stops.stream().map(m -> m.group(0)).toList()
                 + "；各线程最后一次开始算 A 的时刻 - tB(ms)=" + lastAStartPerThread.entrySet().stream()
                 .map(e -> e.getKey() + ":" + (e.getValue() - tB)).toList() + "；B 审核行=" + bReviews + " B 未收敛=" + bNotSettled);

@@ -84,6 +84,8 @@ public class PriceAdjustBudgetService {
     @Inject ComparisonViewService comparisonViewService;
     @Inject MaterialVersionUpgradeService materialVersionUpgradeService;
     @Inject BasisQuotationLocks quotationLocks;
+    /** 问题-1（AC-17）：按版本的公平读写锁 —— 每个执行 FOR SHARE 的事务是读者，生成新版本是写者。 */
+    @Inject VersionSupersedeGate versionGate;
     @Inject TransactionManager transactionManager;
 
     @ConfigProperty(name = "cpq.price-adjust.budget.concurrency", defaultValue = "3")
@@ -286,7 +288,9 @@ public class PriceAdjustBudgetService {
         try {
             EnqueueResult er = null;
             try {
-                er = enqueueScope(versionId);
+                try (VersionSupersedeGate.Handle g = versionGate.read(versionId, "budget-enqueue")) {
+                    er = enqueueScope(versionId);
+                }
             } catch (Exception e) {
                 LOG.errorf(e, "[price-adjust-budget] versionId=%s 进池失败（继续处理已有的未计算行）", versionId);
             }
@@ -354,7 +358,9 @@ public class PriceAdjustBudgetService {
     @ActivateRequestContext
     void enqueueThenRun(UUID versionId, String customerNo, List<String> materials) {
         try {
-            enqueueMaterials(versionId, customerNo, materials);
+            try (VersionSupersedeGate.Handle g = versionGate.read(versionId, "budget-enqueue-added")) {
+                enqueueMaterials(versionId, customerNo, materials);
+            }
         } catch (Exception e) {
             LOG.errorf(e, "[price-adjust-budget] versionId=%s 新增料号进池失败", versionId);
         }
@@ -1009,7 +1015,7 @@ public class PriceAdjustBudgetService {
             if (!preempt(row.id(), ComputeMode.LOOP.allowed)) {
                 return isVersionPending(versionId) ? ItemResult.SKIPPED : ItemResult.STOP;
             }
-            return computeTxSafe(row.id());
+            return computeTxSafe(row.id(), versionId, null, whoItem);
         } finally {
             releasePermit(true);
         }
@@ -1037,15 +1043,21 @@ public class PriceAdjustBudgetService {
         return n == 1;
     }
 
-    /** {@link #computeTx} 的兜底包装：事务本身抛异常（含事务超时）⇒ 另开事务条件地记 FAILED。 */
-    private ItemResult computeTxSafe(UUID reviewId) {
+    /**
+     * {@link #computeTx} 的兜底包装：事务本身抛异常（含事务超时）⇒ 另开事务条件地记 FAILED。
+     * 问题-1（AC-17）：两个事务各自在<b>开始前取版本读锁、提交后放</b>（{@link VersionSupersedeGate}），让排队的生成请求
+     * 只等在途的这一次，而不是被首尾交叠的 FOR SHARE 饿死。调用方此刻已持名额与依据单锁、已完成抢占，且没有打开的事务。
+     */
+    private ItemResult computeTxSafe(UUID reviewId, UUID versionId, BigDecimal thresholdOverride, String who) {
         try {
-            return computeTx(reviewId, null);
+            try (VersionSupersedeGate.Handle g = versionGate.read(versionId, who)) {
+                return computeTx(reviewId, thresholdOverride);
+            }
         } catch (Exception e) {
             if (VersionNotPendingException.isCauseOf(e)) return ItemResult.STOP;
             String msg = PriceAdjustFailureTranslator.forBudget(e);
             LOG.errorf(e, "[price-adjust-budget] review=%s 试算事务异常（%s）", reviewId, msg);
-            try {
+            try (VersionSupersedeGate.Handle g = versionGate.read(versionId, who + " mark-failed")) {
                 return markFailedIfComputing(reviewId, msg) ? ItemResult.FAILED : ItemResult.STOP;
             } catch (Exception x) {
                 LOG.errorf(x, "[price-adjust-budget] review=%s 记录预算失败时再次异常", reviewId);
@@ -1245,7 +1257,7 @@ public class PriceAdjustBudgetService {
                 return now != null ? now.budgetStatus() : null;
             }
             try {
-                workerPool.execute(() -> computeClaimed(reviewId, b.basisQuotationId(), who));
+                workerPool.execute(() -> computeClaimed(reviewId, b.versionId(), b.basisQuotationId(), who));
             } catch (RejectedExecutionException e) {
                 LOG.errorf(e, "[price-adjust-budget] review=%s 派发试算失败，退回未计算", reviewId);
                 releaseClaim(reviewId);
@@ -1258,7 +1270,7 @@ public class PriceAdjustBudgetService {
         try {
             workerPool.execute(() -> {
                 try {
-                    computeWithLock(reviewId, b.basisQuotationId(), mode.allowed, null, who);
+                    computeWithLock(reviewId, b.versionId(), b.basisQuotationId(), mode.allowed, null, who);
                 } finally {
                     acceptedCompute.remove(reviewId);
                 }
@@ -1273,12 +1285,12 @@ public class PriceAdjustBudgetService {
 
     /** 已由请求线程抢占（COMPUTING）的行：取锁 → 试算事务 → 条件完成 → 放锁。 */
     @ActivateRequestContext
-    void computeClaimed(UUID reviewId, UUID basisQuotationId, String who) {
+    void computeClaimed(UUID reviewId, UUID versionId, UUID basisQuotationId, String who) {
         // 名额 → 锁 → 试算事务 → 条件完成 → 放锁 → 还名额。等名额被中断（进程关闭）⇒ 行保持 COMPUTING，由下次启动的
         // B-12 收尾重置为 QUEUED（本线程不再写库）。
         if (!acquirePermit(false, who)) return;
         try (BasisQuotationLocks.Handle h = quotationLocks.acquire(basisQuotationId, who)) {
-            computeTxSafe(reviewId);
+            computeTxSafe(reviewId, versionId, null, who);
         } catch (Exception e) {
             LOG.errorf(e, "[price-adjust-budget] review=%s 试算异常", reviewId);
         } finally {
@@ -1288,30 +1300,22 @@ public class PriceAdjustBudgetService {
 
     /** 完整一条：取锁 → 抢占 → 试算事务 → 条件完成 → 放锁。 */
     @ActivateRequestContext
-    ItemResult computeWithLock(UUID reviewId, UUID basisQuotationId, Set<String> allowed, BigDecimal thresholdOverride,
-                               String who) {
+    ItemResult computeWithLock(UUID reviewId, UUID versionId, UUID basisQuotationId, Set<String> allowed,
+                               BigDecimal thresholdOverride, String who) {
         // 名额（点击即算 / 重算额度）→ 锁 → 抢占 → 试算事务 → 条件完成 → 放锁 → 还名额
         if (!acquirePermit(false, who)) return ItemResult.INTERRUPTED;
         try {
-            return computeWithLockHeld(reviewId, basisQuotationId, allowed, thresholdOverride, who);
+            return computeWithLockHeld(reviewId, versionId, basisQuotationId, allowed, thresholdOverride, who);
         } finally {
             releasePermit(false);
         }
     }
 
-    private ItemResult computeWithLockHeld(UUID reviewId, UUID basisQuotationId, Set<String> allowed,
+    private ItemResult computeWithLockHeld(UUID reviewId, UUID versionId, UUID basisQuotationId, Set<String> allowed,
                                            BigDecimal thresholdOverride, String who) {
         try (BasisQuotationLocks.Handle h = quotationLocks.acquire(basisQuotationId, who)) {
             if (!preempt(reviewId, allowed)) return ItemResult.SKIPPED;
-            if (thresholdOverride == null) return computeTxSafe(reviewId);
-            try {
-                return computeTx(reviewId, thresholdOverride);
-            } catch (Exception e) {
-                if (VersionNotPendingException.isCauseOf(e)) return ItemResult.STOP;
-                String msg = PriceAdjustFailureTranslator.forBudget(e);
-                LOG.errorf(e, "[price-adjust-budget] review=%s 试算事务异常（%s）", reviewId, msg);
-                return markFailedIfComputing(reviewId, msg) ? ItemResult.FAILED : ItemResult.STOP;
-            }
+            return computeTxSafe(reviewId, versionId, thresholdOverride, who);
         }
     }
 
@@ -1334,12 +1338,15 @@ public class PriceAdjustBudgetService {
      */
     @ActivateRequestContext
     boolean processMaterial(UUID versionId, String customerNo, BigDecimal costDiffThreshold, String materialNo) {
-        EnqueueResult er = enqueueMaterials(versionId, customerNo, List.of(materialNo));
+        EnqueueResult er;
+        try (VersionSupersedeGate.Handle g = versionGate.read(versionId, "processMaterial-enqueue")) {
+            er = enqueueMaterials(versionId, customerNo, List.of(materialNo));
+        }
         if (er.versionMissing) return false;
         if (er.versionNotPending) throw new VersionNotPendingException(versionId);
         ReviewBrief b = loadBriefByMaterial(versionId, materialNo);
         if (b == null) return false;
-        ItemResult r = computeWithLock(b.id(), b.basisQuotationId(), ComputeMode.RECOMPUTE.allowed,
+        ItemResult r = computeWithLock(b.id(), b.versionId(), b.basisQuotationId(), ComputeMode.RECOMPUTE.allowed,
             costDiffThreshold != null ? costDiffThreshold : BigDecimal.ZERO, "processMaterial material=" + materialNo);
         if (r == ItemResult.STOP) throw new VersionNotPendingException(versionId);
         return true;

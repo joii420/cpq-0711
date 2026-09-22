@@ -1,0 +1,4 @@
+[2026-09-21T19:50:17.494062903] reject[FAILED] → 409 {"code":409,"message":"部分料号尚未算出金额，整批拒绝","data":{"invalidItems":[{"reviewId":"adc5d0b1-d3bb-46e3-b5de-07ac5a14542c","materialNo":"T260920-bbd2800f-G-0002","reason":"计算失败(T260920 注入的失败原因)"}],"code":"REVIEW_BUDGET_NOT_READY"}}
+[2026-09-21T19:50:17.592021670] reject[QUEUED] → 409 {"code":409,"message":"部分料号尚未算出金额，整批拒绝","data":{"invalidItems":[{"reviewId":"15437a86-3138-4648-b5fe-f810bc3fa32d","materialNo":"T260920-bbd2800f-G-0003","reason":"预算未算完(QUEUED)"}],"code":"REVIEW_BUDGET_NOT_READY"}}
+[2026-09-21T19:50:17.758997347] reject[COMPUTING] → 409 {"code":409,"message":"部分料号尚未算出金额，整批拒绝","data":{"invalidItems":[{"reviewId":"04a2b035-32d0-4839-9eee-ed0ec4b073f8","materialNo":"T260920-bbd2800f-G-0004","reason":"预算未算完(COMPUTING)"}],"code":"REVIEW_BUDGET_NOT_READY"}}
+[2026-09-21T19:50:17.866909237] 阳性对照 reject(r5 READY) = 200 

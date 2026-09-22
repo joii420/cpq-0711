@@ -1,0 +1,65 @@
+before 2026-09-21 20:15:37 PDT
+BEGIN
+                  id                  | version_no | status  
+--------------------------------------+------------+---------
+ 06656cfc-606c-40ba-9129-68f9d21ce1b4 | V26090101  | PENDING
+(1 row)
+
+ROLLBACK
+BEGIN
+ material_no | status | budget_status | budget_error | created_at | updated_at 
+-------------+--------+---------------+--------------+------------+------------
+(0 rows)
+
+ROLLBACK
+BEGIN
+ material_no | version_id | updated_at 
+-------------+------------+------------
+(0 rows)
+
+ROLLBACK
+BEGIN
+ md5 | count 
+-----+-------
+     |     0
+(1 row)
+
+ROLLBACK
+BEGIN
+ material_scope_mode | enabled 
+---------------------+---------
+ ALL                 | t
+(1 row)
+
+ material_no |              version_id              |          updated_at           
+-------------+--------------------------------------+-------------------------------
+ 3120011203  | 8e5893f6-0b2b-4d52-8b19-66bff5206044 | 2026-08-10 01:48:10.883725+00
+(1 row)
+
+ count 
+-------
+    10
+(1 row)
+
+ROLLBACK
+BEGIN
+                  id                  | version_no |  vstatus   | material_no |  status  | budget_status |          updated_at           
+--------------------------------------+------------+------------+-------------+----------+---------------+-------------------------------
+ b8d9733a-e222-46c6-990b-f79281ee4ebe | V26080601  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-06 07:04:54.11963+00
+ 9332bb4e-2ce8-40ed-a796-33551dc97ee6 | V26080602  | SUPERSEDED | 3120011203  | VOIDED   | READY         | 2026-08-06 11:11:04.927722+00
+ 6ef33476-8f7e-4654-a788-859aba7456da | V26080603  | SUPERSEDED | 3120011203  | VOIDED   | READY         | 2026-08-07 00:34:09.189653+00
+ 7e8a9df4-c5d5-43c5-8a5d-f7d3e2c2f6d4 | V26080604  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-07 00:34:09.69299+00
+ 1a0293bd-8030-43ad-a039-a5a4360e30ff | V26080607  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-07 01:01:38.463572+00
+ 40b40795-6780-489e-be19-ba4f80b23799 | V26080608  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-07 06:22:21.452248+00
+ b95ad65d-9b16-41f8-badd-d5b93e377dfe | V26080701  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-07 07:27:55.917198+00
+ a6a2e769-555e-44a9-a398-adae62ad8059 | V26080702  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-08 01:11:17.622042+00
+ ba004291-a939-4683-a3b0-add4ae3d55f6 | V26080901  | SUPERSEDED | 3120011203  | APPROVED | READY         | 2026-08-10 01:47:53.761636+00
+ ce50c9c3-8f94-4773-a90d-cf7831b8d399 | V26080902  | SUPERSEDED | 3120011203  | VOIDED   | READY         | 2026-09-02 01:00:59.169387+00
+(10 rows)
+
+        all_cust2_reviews         
+----------------------------------
+ 904b3d9ead6032db964f4ee8ad5a7b6d
+(1 row)
+
+ROLLBACK

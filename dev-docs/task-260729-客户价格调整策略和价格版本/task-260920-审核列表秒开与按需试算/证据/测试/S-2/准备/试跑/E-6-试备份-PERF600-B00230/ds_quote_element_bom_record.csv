@@ -1,0 +1,1 @@
+id,quotation_id,origin_id,base_row_fingerprint,base_version_no,material_no,material_part_no,item_seq,element_code,content_pct,loss_rate,gross_usage,gross_usage_unit,net_usage,net_usage_unit,recovery_discount,recovery_qty,extend_column,element_price,customer_no,source,created_at,created_by,updated_at,updated_by,import_batch_id

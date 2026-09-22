@@ -61,6 +61,7 @@ class Ac260920EnqueueParityTest {
 
             Decision oldD;
             Decision newD;
+            utx.setTransactionTimeout(Integer.getInteger("t260920.ac2.txTimeoutSec", 1800));
             utx.begin();
             try {
                 em.joinTransaction();
@@ -112,6 +113,9 @@ class Ac260920EnqueueParityTest {
         int pointerK;
         Set<String> scope;
         String bumped;
+        // 测试事务自身的超时：旧判定须原样逐料号调用（正泰 3698 个），默认 60 s 不够；与实现无关
+        utx.setTransactionTimeout(Integer.getInteger("t260920.ac2.txTimeoutSec", 1800));
+        long txStart = System.currentTimeMillis();
         utx.begin();
         try {
             em.joinTransaction();
@@ -165,10 +169,12 @@ class Ac260920EnqueueParityTest {
             pointerK = k;
         } finally {
             rollback();
+            utx.setTransactionTimeout(0);
         }
+        long txMillis = System.currentTimeMillis() - txStart;
         Set<String> overlap = new TreeSet<>(newD.pooled());
         overlap.retainAll(newD.advanced());
-        T920Evidence.log("AC-2", "正泰全量（测试库）最新版本创建时刻≈克隆时点 " + clone + "；范围料号数=" + scope.size()
+        T920Evidence.log("AC-2", "正泰全量（测试库）最新版本创建时刻≈克隆时点 " + clone + "；回滚事务耗时=" + txMillis + "ms（测试事务超时设为 " + Integer.getInteger("t260920.ac2.txTimeoutSec", 1800) + "s，是测试侧设置，不是实现）；范围料号数=" + scope.size()
             + "（AC 实查 3698）；目标版本加价元素=" + bumped
             + "；旧 进池=" + oldD.pooled().size() + " 推进=" + oldD.advanced().size()
             + "；新 进池=" + newD.pooled().size() + " 推进=" + newD.advanced().size() + "；新两集合交集=" + overlap.size());
