@@ -1,0 +1,154 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 436 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 993 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2454,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 25 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 771 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.priceadjust.ac260918.Ac260918T19SmallQuoteRegressionTest
+2026-09-22 06:16:32.677 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-22 06:16:32.700 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-22 06:16:32.843 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-22 06:16:33.323 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-22 06:16:33.437 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-22 06:16:33.735 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-22 06:16:33.852 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-22 06:16:34.258 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-22 06:16:34.567 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 428 migrations (execution time 00:00.158s)
+2026-09-22 06:16:34.796 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 445
+2026-09-22 06:16:34.797 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-22 06:16:34.813 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-22 06:16:34.890 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-22 06:16:34.890 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-22 06:16:35.485 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-22 06:16:35.533 INFO  [io.qua.sch.run.SimpleScheduler] (main) Simple scheduler is disabled by config property and will not be started
+2026-09-22 06:16:35.617 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-22 06:16:35.625 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-09-22 06:16:35.696 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-22 06:16:35.811 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-22 06:16:36.268 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-22 06:16:36.300 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-22 06:16:36.327 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 06:16:36.346 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 06:16:36.348 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-22 06:16:36.643 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-22 06:16:36.715 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.707s. Listening on: http://localhost:55136
+2026-09-22 06:16:36.715 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-22 06:16:36.715 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (/home/joii/.m2/repository/net/bytebuddy/byte-buddy-agent/1.17.8/byte-buddy-agent-1.17.8.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+2026-09-22 06:16:38.273 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] 试算名额：后台=1 点击即算/重算=2
+2026-09-22 06:16:38.709 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [perf] budget-enqueue customer=RP0918A-a345e0e3 N=1 pooled=1 advanced=0 sql=13 ms=433
+2026-09-22 06:16:38.710 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] versionId=a922c63e-07cc-4b17-9afb-92086f6b55ae 进池：范围=1 续跑跳过=0 进池=1（其中直接就绪=0，新建行=1）直接推进指针=0
+2026-09-22 06:16:38.863 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=01e809fd-ec5d-4d2c-98b0-004ea9937665 material=RP0918A-a345e0e3-S19-0005 开始试算
+2026-09-22 06:16:39.346 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (main) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-22 06:16:39.417 ERROR [com.cpq.quo.ser.CardSnapshotService] (main) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 06:16:39.418 WARN  [com.cpq.quo.ser.CardSnapshotService] (main) [seed-editrows] comp=a3b83a23-e5ed-4456-aa99-22de95ec3cc1 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 06:16:39.549 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [b0-upgrade] li=a2868c78-da20-47b1-89d4-9a6980c8ac39 quotation=RP0918A-a345e0e3-S19 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=true
+2026-09-22 06:16:39.550 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (main) [perf] upgrade li=a2868c78-da20-47b1-89d4-9a6980c8ac39 quotation=c7b24cbd-6abd-4ec2-852d-9ff198da32cc lines=12 dryRun=true sql=24 ms=606
+2026-09-22 06:16:39.611 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (main) [price-adjust-budget] review=01e809fd-ec5d-4d2c-98b0-004ea9937665 material=RP0918A-a345e0e3-S19-0005 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 06:16:40.823 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] executeJob jobId=9d2e74fe-f97e-4c72-be98-6ece9d06e503 items=1 retry=false
+2026-09-22 06:16:40.944 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=9d2e74fe-f97e-4c72-be98-6ece9d06e503 批量预渲染完成：0/1 个 line item 命中预渲染结果
+2026-09-22 06:16:41.254 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (executor-thread-2) [perf] revision-write quotation=c7b24cbd-6abd-4ec2-852d-9ff198da32cc kind=INITIAL ms=16
+2026-09-22 06:16:41.407 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-2) [ds-record] 绑定解析：入参组件 1，命中 0，不参与 1（sql=3，与组件数无关）
+2026-09-22 06:16:41.448 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-2) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 06:16:41.448 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-2) [seed-editrows] comp=a3b83a23-e5ed-4456-aa99-22de95ec3cc1 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 06:16:41.521 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-2) [b0-upgrade] li=a2868c78-da20-47b1-89d4-9a6980c8ac39 quotation=RP0918A-a345e0e3-S19 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=1 editRowsCleaned=0 subtotal 28893.734567890000->28894.73456789 dryRun=false
+2026-09-22 06:16:41.521 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-2) [perf] upgrade li=a2868c78-da20-47b1-89d4-9a6980c8ac39 quotation=c7b24cbd-6abd-4ec2-852d-9ff198da32cc lines=12 dryRun=false sql=27 ms=476
+2026-09-22 06:16:41.584 INFO  [com.cpq.pri.ser.CurrentPeriodRevisionWriter] (executor-thread-2) [perf] revision-write quotation=c7b24cbd-6abd-4ec2-852d-9ff198da32cc kind=CURRENT ms=17
+2026-09-22 06:16:41.656 INFO  [com.cpq.pri.ser.PriceAdjustJobExecutionService] (executor-thread-2) [price-adjust-job] jobId=9d2e74fe-f97e-4c72-be98-6ece9d06e503 finalized status=SUCCESS total=1 success=1 failed=0 conflict=0 stale=0
+2026-09-22 06:16:41.696 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_JOB_SUMMARY recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-22 06:16:41.716 INFO  [quarkus-mailer] (executor-thread-2) Sending email 调价批次执行完成：RP0918A-a345e0e3 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户【RP0918A-a345e0e3】价格版本【RP8Aa345e0e3-TGT】批量更新已完成，共 1 条：成功 1，失败 0，冲突 0。全部成功，无需处理。
+html body: 
+<empty>
+2026-09-22 06:16:41.748 INFO  [com.cpq.not.ser.NotificationService] (executor-thread-2) Created notification type=PRICE_ADJUST_QUOTATION_REVIEW recipientId=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-22 06:16:41.748 INFO  [quarkus-mailer] (executor-thread-2) Sending email 报价单价格已按新版本调整，请复核【RP0918A-a345e0e3-S19】 from noreply@cpq-system.com to [admin@cpq-system.com] (cc: [], bcc: []), text body: 
+客户价格版本【RP8Aa345e0e3-TGT】更新涉及您的报价单【RP0918A-a345e0e3-S19】 的 1 个料号行，此前手工调整的价格可能已被覆盖，请复核。
+html body: 
+<empty>
+[RP0918A-EVIDENCE] 写入 /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/测试/S-BE/AC-19/fingerprint-branch.json
+[RP0918A-EVIDENCE] 写入 /tmp/claude-1000/-home-joii-project-cpq/1234ea1d-d943-453a-923b-3a43224020de/scratchpad/postmerge-462488f9/dev-docs/task-260729-客户价格调整策略和价格版本/repair-260918-大单升版超时与涨跌率显示/证据/测试/S-BE/run-20260922-061641/AC-19-fingerprint-branch.json
+[RP0918A-EVIDENCE AC-19] [2026-09-22T06:16:41.968128455] 与基线比较：逐项一致
+[RP0918A-EVIDENCE cleanup] [2026-09-22T06:16:44.804239731] 客户 RP0918A-a345e0e3 自建数据已按 id 清理完毕（报价单 1 张）
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 12.62 s -- in com.cpq.priceadjust.ac260918.Ac260918T19SmallQuoteRegressionTest
+2026-09-22 06:16:44.923 INFO  [io.quarkus] (main) cpq-backend stopped in 0.056s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  31.313 s
+[INFO] Finished at: 2026-09-22T06:16:44-07:00
+[INFO] ------------------------------------------------------------------------

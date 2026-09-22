@@ -1,0 +1,144 @@
+{
+  "startedAt": "2026-09-22T13:04:46.947Z",
+  "blocked": [],
+  "apiCalls": [
+    {
+      "url": "/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING",
+      "status": 200,
+      "totalElements": 4545,
+      "notComputedTotal": 0,
+      "rows": [
+        {
+          "m": "PERF600-B00011",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00012",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00021",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00022",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00023",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        }
+      ]
+    },
+    {
+      "url": "/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING",
+      "status": 200,
+      "totalElements": 4545,
+      "notComputedTotal": 0,
+      "rows": [
+        {
+          "m": "PERF600-B00011",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00012",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00021",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00022",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        },
+        {
+          "m": "PERF600-B00023",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        }
+      ]
+    },
+    {
+      "url": "/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING&keyword=PERF600-B00599",
+      "status": 200,
+      "totalElements": 1,
+      "notComputedTotal": 0,
+      "rows": [
+        {
+          "m": "PERF600-B00599",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        }
+      ]
+    },
+    {
+      "url": "/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING&keyword=PERF600-B00599",
+      "status": 200,
+      "totalElements": 1,
+      "notComputedTotal": 0,
+      "rows": [
+        {
+          "m": "PERF600-B00599",
+          "b": "READY",
+          "qc": null,
+          "qa": "9118.2"
+        }
+      ]
+    },
+    {
+      "url": "/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING&keyword=T260907T-B01843",
+      "status": 200,
+      "totalElements": 1,
+      "notComputedTotal": 0,
+      "rows": [
+        {
+          "m": "T260907T-B01843",
+          "b": "READY",
+          "qc": null,
+          "qa": null
+        }
+      ]
+    },
+    {
+      "url": "/api/cpq/price-adjust/reviews?page=1&size=20&status=PENDING&keyword=T260907T-B01843",
+      "status": 200,
+      "totalElements": 1,
+      "notComputedTotal": 0,
+      "rows": [
+        {
+          "m": "T260907T-B01843",
+          "b": "READY",
+          "qc": null,
+          "qa": null
+        }
+      ]
+    }
+  ],
+  "login": 200,
+  "firstRowsMs": 3050,
+  "header": "共 4545 条",
+  "row_PERF600-B00599": " 正泰 PERF600-B00599 批量件599 （首次） → V26092203 QT-20260911-0842 2026-09-11 — → 9118.2 — — 🔴1 🟠0 / 1列 ⚪1 待处理",
+  "row_T260907T-B01843": " 正泰 T260907T-B01843 批量件1843 （首次） → V26092203 QT-20260908-0628 2026-09-09 — → — — — 🔴1 🟠0 / 1列 ⚪1 待处理",
+  "finishedAt": "2026-09-22T13:04:55.349Z"
+}

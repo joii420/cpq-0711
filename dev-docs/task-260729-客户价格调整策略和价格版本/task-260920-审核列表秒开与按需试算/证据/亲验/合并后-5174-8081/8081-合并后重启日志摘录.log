@@ -1,0 +1,237 @@
+# 共享 8081（主工作区 cpq-backend，quarkus:dev，默认 profile → cpq_db_0724）合并 462488f9 后自动重启的日志摘录
+# 来源：8081 进程 stdout（pid 60999，/proc/60999/fd/1）自 2026-09-22 05:55 PDT 起的全部行；截取时刻 2026-09-22 06:13:55 PDT
+2026-09-22 05:57:05.742 WARN  [io.qua.dep.dev.JavaCompilationProvider] (vert.x-worker-thread-44) /home/joii/project/cpq/cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceAdjustReviewService.java uses or overrides a deprecated API., line -1 in /home/joii/project/cpq/cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceAdjustReviewService.java
+2026-09-22 05:57:05.742 WARN  [io.qua.dep.dev.JavaCompilationProvider] (vert.x-worker-thread-44) Recompile with -Xlint:deprecation for details., line -1 in /home/joii/project/cpq/cpq-backend/src/main/java/com/cpq/priceadjust/service/PriceAdjustReviewService.java
+2026-09-22 05:57:05.774 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-44) File change detected: /home/joii/project/cpq/cpq-backend/src/main/resources/application.properties
+2026-09-22 05:57:05.776 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-44) Restarting quarkus due to changes in application.properties, PriceAdjustJobExecutionService$1.class, PriceAdjustStartupRecovery$RevisionFix.class, ReviewListItemDTO.class, PriceAdjustComparisonColumnService$CostingSource.class, PriceAdjustStrategyService$ReviewRef.class, MaterialVersionUpgradeService$S0GuardOutcome.class, ReviewDetailDTO$ColumnResult.class, PriceAdjustStartupRecovery.class, ImpactResultDTO$VersionPath.class, ReviewDetailDTO$ElementChange.class, MaterialVersionUpgradeService$PerfProbe.class, PriceAdjustVersionGenerationService$GenerateResult.class, ImpactResultDTO.class, PriceAdjustBudgetService$BasisLine.class, PriceAdjustVersionGenerationService.class, PriceAdjustBudgetService$VersionNotPendingException.class, MaterialVersionUpgradeService$RowUpdateOutcome.class, PriceAdjustReviewService$ApproveResult.class, PriceAdjustBudgetService$DryRunSnapshot.class, ImpactResultDTO$BreachedMaterial.class, PriceAdjustComparisonColumnService.class, PriceAdjustStrategyService$PutStrategyOutcome.class, PriceAdjustComparisonColumnService$PutResult.class, PriceAdjustBudgetService.class, ReviewDetailDTO.class, PriceAdjustJobExecutionService$GroupState.class, MaterialVersionUpgradeService.class, PriceAdjustBudgetService$EffectivePrice.class, PriceAdjustComparisonColumnService$CostingResolution.class, PriceAdjustJobExecutionService$GroupKey.class, PriceAdjustReviewResource.class, PriceAdjustReviewService.class, ReviewDetailDTO$QuotationRef.class, PriceAdjustJobExecutionService.class, PriceAdjustStrategyService.class, BasisQuotationLocks$Entry.class, PriceAdjustBudgetService$QueuedRow.class, VersionSupersedeGate.class, BasisQuotationLocks$Handle.class, PriceAdjustBudgetService$ReviewBrief.class, VersionSupersedeGate$Handle.class, PriceAdjustBudgetService$Group.class, PriceAdjustBudgetService$EnqueuePlan.class, PriceAdjustBudgetService$ItemResult.class, PriceAdjustBudgetService$VersionRun.class, PriceAdjustBudgetService$BasisRow.class, BasisQuotationLocks.class, PriceAdjustBudgetService$PoolRow.class, ReviewPageResult.class, PriceAdjustBudgetService$PassCounters.class, PriceAdjustBudgetService$ComputeMode.class, PriceAdjustBudgetService$EnqueueResult.class, PriceAdjustBudgetService$BudgetOutcome.class, VersionSupersedeGate$1.class, ComputeNowResponse.class, ImpactResultDTO$MaterialAmount.class, BudgetConcurrencyMeter.class, BasisQuotationLocks$1.class, PriceAdjustBudgetService$ScopeContext.class, PriceAdjustComparisonColumnService$ReviewRef.class.
+2026-09-22 05:57:05.813 DEBUG [com.cpq.dat.quo.QuotationImportExecutorProducer] (Quarkus Main Thread) [task-260907] QuotationImportExecutor 已随应用生命周期关闭
+2026-09-22 05:57:05.814 DEBUG [com.cpq.bas.v6.ser.MaterializeExecutorProducer] (Quarkus Main Thread) [repair-260829] MaterializeExecutor 已随应用生命周期关闭
+2026-09-22 05:57:05.847 INFO  [io.quarkus] (Quarkus Main Thread) cpq-backend stopped in 0.067s
+__  ____  __  _____   ___  __ ____  ______ 
+ --/ __ \/ / / / _ | / _ \/ //_/ / / / __/ 
+ -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \   
+--\___\_\____/_/ |_/_/|_/_/|_|\____/___/   
+2026-09-22 05:57:10.346 WARN  [io.qua.config] (Quarkus Main Thread) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-22 05:57:10.533 INFO  [org.fly.cor.FlywayExecutor] (Quarkus Main Thread) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_0724 (PostgreSQL 16.13)
+2026-09-22 05:57:10.942 INFO  [org.fly.cor.int.com.DbValidate] (Quarkus Main Thread) Successfully validated 428 migrations (execution time 00:00.277s)
+2026-09-22 05:57:11.190 INFO  [org.fly.cor.int.com.DbMigrate] (Quarkus Main Thread) Current version of schema "public": 445
+2026-09-22 05:57:11.191 WARN  [org.fly.cor.int.com.DbMigrate] (Quarkus Main Thread) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-22 05:57:11.204 INFO  [org.fly.cor.int.com.DbMigrate] (Quarkus Main Thread) Schema "public" is up to date. No migration necessary.
+2026-09-22 05:57:11.337 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-22 05:57:11.338 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-22 05:57:11.627 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-22 05:57:11.705 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (Quarkus Main Thread) [BnfTableMetaSyncer] startup sync OK: 52 entries upserted
+2026-09-22 05:57:11.862 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (Quarkus Main Thread) [price-adjust-recovery] 启动收尾：中断批次 0 个 []
+2026-09-22 05:57:11.947 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (Quarkus Main Thread) [price-adjust-recovery] 预算续跑：待续跑版本 1 个 [04b70b9b-a805-43a4-8fac-9f66feb8daf7]
+2026-09-22 05:57:11.999 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (Quarkus Main Thread) [price-adjust-budget] 试算名额：后台=3 点击即算/重算=2
+2026-09-22 05:57:12.000 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (Quarkus Main Thread) [price-adjust-recovery] versionId=04b70b9b-a805-43a4-8fac-9f66feb8daf7 异步续跑预算
+2026-09-22 05:57:12.102 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (Quarkus Main Thread) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-22 05:57:12.182 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (Quarkus Main Thread) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-22 05:57:12.458 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [perf] budget-enqueue customer=CUST-0004 N=4558 pooled=7 advanced=0 sql=9 ms=455
+2026-09-22 05:57:12.458 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] versionId=04b70b9b-a805-43a4-8fac-9f66feb8daf7 进池：范围=4558 续跑跳过=4551 进池=7（其中直接就绪=0，新建行=7）直接推进指针=0
+2026-09-22 05:57:12.459 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (Quarkus Main Thread) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-22 05:57:12.494 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-22 05:57:12.514 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 05:57:12.557 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 05:57:12.558 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (Quarkus Main Thread) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-22 05:57:12.592 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=703d6fdd-3c14-4f61-becf-16c66c7a1d34 material=PERF600-B00011 开始试算
+2026-09-22 05:57:12.851 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (Quarkus Main Thread) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-22 05:57:12.862 INFO  [io.quarkus] (Quarkus Main Thread) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 7.012s. Listening on: http://localhost:8081
+2026-09-22 05:57:12.862 INFO  [io.quarkus] (Quarkus Main Thread) Profile dev activated. Live Coding activated.
+2026-09-22 05:57:12.862 INFO  [io.quarkus] (Quarkus Main Thread) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-09-22 05:57:12.863 INFO  [io.qua.dep.dev.RuntimeUpdatesProcessor] (vert.x-worker-thread-44) Live reload total time: 8.399s 
+2026-09-22 05:57:12.896 WARN  [io.qua.ver.htt.run.QuarkusErrorHandler] (vert.x-eventloop-thread-2) Worker thread pool exhaustion, no more worker threads available - returning a `503 - SERVICE UNAVAILABLE` response.
+2026-09-22 05:57:13.379 ERROR [io.qua.hib.orm.run.sch.SchemaManagementIntegrator] (Hibernate post-boot validation thread for <default>) Failed to validate Schema: Schema validation: missing table [mat_composite_process]
+2026-09-22 05:57:13.463 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-09-22 05:57:13.696 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:13.804 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=27a10eef-82b5-4db2-849e-c3de1f187bf3 component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:13.927 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:13.928 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:14.244 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(customer_no, ''::character varying)]; ignoring index [uq_annual_discount]
+2026-09-22 05:57:14.245 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(target_no, ''::character varying)]; ignoring index [uq_annual_discount]
+2026-09-22 05:57:14.245 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(discount_order, 0)]; ignoring index [uq_annual_discount]
+2026-09-22 05:57:14.246 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(calc_version, ''::character varying)]; ignoring index [uq_auxiliary_energy]
+2026-09-22 05:57:14.247 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(calc_version, ''::character varying)]; ignoring index [uq_capacity]
+2026-09-22 05:57:14.247 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(voltage_level, ''::character varying)]; ignoring index [uq_electricity_price]
+2026-09-22 05:57:14.248 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(version_no, ''::character varying)]; ignoring index [uq_electricity_price]
+2026-09-22 05:57:14.248 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(source_url, ''::character varying)]; ignoring index [uq_eps_name_url]
+2026-09-22 05:57:14.248 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(material_part_no, ''::character varying)]; ignoring index [uq_element_bom_v6]
+2026-09-22 05:57:14.249 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(element_code, ''::character varying)]; ignoring index [uq_eps2_cust_elem]
+2026-09-22 05:57:14.249 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE((source_id)::text, ''::text)]; ignoring index [idx_edpl_target]
+2026-09-22 05:57:14.249 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(element_code, ''::character varying)]; ignoring index [idx_epsl_target]
+2026-09-22 05:57:14.250 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(material_part_no, ''::character varying)]; ignoring index [uq_element_bom_item]
+2026-09-22 05:57:14.250 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(seq_no, 0)]; ignoring index [uq_element_bom_item]
+2026-09-22 05:57:14.250 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(component_no, ''::character varying)]; ignoring index [uq_element_bom_item]
+2026-09-22 05:57:14.250 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(part_no, ''::character varying)]; ignoring index [uq_element_bom_item]
+2026-09-22 05:57:14.250 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE((source_id)::text, ''::text)]; ignoring index [uq_element_daily]
+2026-09-22 05:57:14.251 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(customer_id, '00000000-0000-0000-0000-000000000000'::uuid)]; ignoring index [uq_exchange_rate_full]
+2026-09-22 05:57:14.251 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(material_no, ''::character varying)]; ignoring index [uq_fee_config]
+2026-09-22 05:57:14.251 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(customer_no, ''::character varying)]; ignoring index [uq_fee_config]
+2026-09-22 05:57:14.252 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(region, ''::character varying)]; ignoring index [uq_fee_config]
+2026-09-22 05:57:14.252 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(effective_date, '1900-01-01'::date)]; ignoring index [uq_fee_config]
+2026-09-22 05:57:14.252 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(pricing_version_no, ''::character varying)]; ignoring index [uq_fee_config]
+2026-09-22 05:57:14.252 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(material_no, ''::character varying)]; ignoring index [uq_labor_rate]
+2026-09-22 05:57:14.252 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(labor_grade, ''::character varying)]; ignoring index [uq_labor_rate]
+2026-09-22 05:57:14.252 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(characteristic, ''::character varying)]; ignoring index [uq_material_bom_v6]
+2026-09-22 05:57:14.253 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(customer_no, ''::character varying)]; ignoring index [uq_material_version_mgmt]
+2026-09-22 05:57:14.253 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(characteristic, ''::character varying)]; ignoring index [uq_material_bom_item]
+2026-09-22 05:57:14.253 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(bom_version, ''::character varying)]; ignoring index [uq_material_bom_item]
+2026-09-22 05:57:14.254 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(seq_no, 0)]; ignoring index [uq_material_bom_item]
+2026-09-22 05:57:14.254 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(component_no, ''::character varying)]; ignoring index [uq_material_bom_item]
+2026-09-22 05:57:14.254 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(part_no, ''::character varying)]; ignoring index [uq_material_bom_item]
+2026-09-22 05:57:14.255 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(price_type, ''::character varying)]; ignoring index [uq_production_energy]
+2026-09-22 05:57:14.255 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(equipment_no, ''::character varying)]; ignoring index [uq_production_energy]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(calc_version, ''::character varying)]; ignoring index [uq_production_energy]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(calc_version, ''::character varying)]; ignoring index [uq_tooling_cost]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(cost_type, ''::character varying)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(customer_no, ''::character varying)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(supplier_no, ''::character varying)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(finished_material_no, ''::character varying)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(operation_no, ''::character varying)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(seq_no, 0)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.256 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(discount_order, 0)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.257 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(item_seq, 0)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.257 INFO  [org.hib.orm.core] (Hibernate post-boot validation thread for <default>) HHH000475: Cannot locate column information using identifier [COALESCE(effective_date, '1900-01-01'::date)]; ignoring index [uq_unit_price]
+2026-09-22 05:57:14.274 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=27a10eef-82b5-4db2-849e-c3de1f187bf3 quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:14.274 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=27a10eef-82b5-4db2-849e-c3de1f187bf3 quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=1540
+2026-09-22 05:57:14.325 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=703d6fdd-3c14-4f61-becf-16c66c7a1d34 material=PERF600-B00011 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:14.326 ERROR [io.qua.hib.orm.run.sch.SchemaManagementIntegrator] (Hibernate post-boot validation thread for <default>) The following SQL may resolve the database issues, as generated by the Hibernate schema migration tool. WARNING: You must manually verify this SQL is correct, this is a best effort guess, do not copy/paste it without verifying that it does what you expect.
+
+alter table if exists composite_process_def alter column code set data type varchar(255);
+alter table if exists composite_process_def alter column description set data type varchar(255);
+alter table if exists composite_process_def alter column icon set data type varchar(255);
+alter table if exists composite_process_def alter column name set data type varchar(255);
+alter table if exists composite_process_def alter column status set data type varchar(255);
+alter table if exists costing_bom_tree_config alter column name set data type varchar(255);
+alter table if exists costing_order alter column costing_order_number set data type varchar(255);
+alter table if exists costing_order alter column status set data type varchar(255);
+alter table if exists ddl_operation_history alter column default_value set data type varchar(255);
+alter table if exists ddl_operation_history alter column error_message set data type varchar(255);
+alter table if exists ddl_operation_history alter column migration_content set data type varchar(255);
+alter table if exists element alter column element_code set data type varchar(255);
+alter table if exists element alter column element_name set data type varchar(255);
+alter table if exists element alter column element_no set data type varchar(255);
+alter table if exists element alter column status set data type varchar(255);
+alter table if exists element_daily_price_log alter column action set data type varchar(255);
+alter table if exists element_daily_price_log alter column changed_by_name set data type varchar(255);
+alter table if exists element_daily_price_log alter column element_name set data type varchar(255);
+alter table if exists element_price_source alter column description set data type varchar(255);
+alter table if exists element_price_source alter column source_name set data type varchar(255);
+alter table if exists element_price_source alter column source_type set data type varchar(255);
+alter table if exists element_price_source alter column source_url set data type varchar(255);
+alter table if exists element_price_source alter column status set data type varchar(255);
+alter table if exists element_price_strategy alter column customer_no set data type varchar(255);
+alter table if exists element_price_strategy alter column element_code set data type varchar(255);
+alter table if exists element_price_strategy alter column method set data type varchar(255);
+alter table if exists element_price_strategy alter column status set data type varchar(255);
+alter table if exists element_price_strategy alter column window_unit set data type varchar(255);
+alter table if exists element_price_strategy_log alter column action set data type varchar(255);
+alter table if exists element_price_strategy_log alter column changed_by_name set data type varchar(255);
+alter table if exists element_price_strategy_log alter column customer_no set data type varchar(255);
+alter table if exists element_price_strategy_log alter column element_code set data type varchar(255);
+create table mat_composite_process (id uuid not null, created_at timestamp(6) with time zone, created_by uuid, def_code varchar(255), hf_part_no varchar(255), is_current boolean, param_values jsonb, part_version integer, participating_parts jsonb, seq_no integer, primary key (id));
+create table mat_part_model (id uuid not null, glb_url TEXT not null, is_current boolean not null, label varchar(255), mesh_count integer, metadata JSONB, part_no varchar(64) not null, size_kb integer, thumbnail_url TEXT, uploaded_at timestamp(6) with time zone not null, uploaded_by uuid, version integer not null, vertices integer, primary key (id));
+alter table if exists material_recipe alter column code set data type varchar(255);
+alter table if exists material_recipe alter column name set data type varchar(255);
+alter table if exists material_recipe alter column recipe_type set data type varchar(255);
+alter table if exists material_recipe alter column spec_label set data type varchar(255);
+alter table if exists material_recipe alter column status set data type varchar(255);
+alter table if exists material_recipe alter column symbol set data type varchar(255);
+alter table if exists material_recipe_composition alter column element_code set data type varchar(255);
+alter table if exists material_recipe_composition alter column element_name set data type varchar(255);
+alter table if exists material_recipe_composition alter column element_no set data type varchar(255);
+alter table if exists material_recipe_config alter column config_no set data type varchar(255);
+alter table if exists material_recipe_config alter column status set data type varchar(255);
+alter table if exists material_recipe_element alter column element_code set data type varchar(255);
+alter table if exists material_recipe_element alter column element_name set data type varchar(255);
+alter table if exists material_recipe_element alter column element_no set data type varchar(255);
+alter table if exists notification alter column content set data type varchar(255);
+alter table if exists operation_log alter column summary set data type varchar(255);
+alter table if exists quotation_line_item alter column discount_rate_applied set data type numeric(5,2);
+alter table if exists quotation_line_item alter column discount_source set data type varchar(64);
+alter table if exists quotation_line_process alter column process_no set data type varchar(255);
+alter table if exists quotation_view_structure alter column view_kind set data type varchar(255);
+alter table if exists sel_part_signature alter column config_fingerprint set data type varchar(64);
+alter table if exists sel_part_signature alter column config_signature_text set data type varchar(255);
+alter table if exists component_sql_view drop constraint if exists uq_csv_component_view_name;
+alter table if exists component_sql_view add constraint uq_csv_component_view_name unique (component_id, sql_view_name);
+alter table if exists cpq_feature_field drop constraint if exists UK1k4ksvldgtp8m1od8w9usuohl;
+alter table if exists cpq_feature_field add constraint UK1k4ksvldgtp8m1od8w9usuohl unique (group_id, code);
+alter table if exists cpq_feature_value drop constraint if exists UKblssaj4w4stng87rkxl06ccg0;
+alter table if exists cpq_feature_value add constraint UKblssaj4w4stng87rkxl06ccg0 unique (field_id, code);
+alter table if exists mat_part_model drop constraint if exists UK50rfnadnge1r5jp8ca7ia0kw;
+alter table if exists mat_part_model add constraint UK50rfnadnge1r5jp8ca7ia0kw unique (part_no, version);
+alter table if exists model_config drop constraint if exists UKe9664402bavugvh51lre46n2x;
+alter table if exists model_config add constraint UKe9664402bavugvh51lre46n2x unique (subject_type, subject_key, version);
+alter table if exists product_config_option drop constraint if exists UKbmluil95xvv7qu5hr7nvc7go6;
+alter table if exists product_config_option add constraint UKbmluil95xvv7qu5hr7nvc7go6 unique (template_id, code);
+alter table if exists product_config_option_value drop constraint if exists UKhuir7uyejtnjyyskdprb6u6n2;
+alter table if exists product_config_option_value add constraint UKhuir7uyejtnjyyskdprb6u6n2 unique (option_id, code);
+alter table if exists product_config_template_version drop constraint if exists UKh2i8q8t1q8nfb8oqj4ra0dqv0;
+alter table if exists product_config_template_version add constraint UKh2i8q8t1q8nfb8oqj4ra0dqv0 unique (template_id, version);
+alter table if exists semantic_edge drop constraint if exists UKj6y5fg00l5yig45316fuaroos;
+alter table if exists semantic_edge add constraint UKj6y5fg00l5yig45316fuaroos unique (from_node_id, to_node_id, edge_kind);
+alter table if exists semantic_edge_key drop constraint if exists UKiinhafv98a0aetudn6gms04g5;
+alter table if exists semantic_edge_key add constraint UKiinhafv98a0aetudn6gms04g5 unique (edge_id, seq);
+alter table if exists semantic_node drop constraint if exists UKih0v6ylsajkvmciknbcsq6xp2;
+alter table if exists semantic_node add constraint UKih0v6ylsajkvmciknbcsq6xp2 unique (node_key, dialect);
+alter table if exists semantic_node_column drop constraint if exists UK8fdjht1va7los6gr8r8md6f6e;
+alter table if exists semantic_node_column add constraint UK8fdjht1va7los6gr8r8md6f6e unique (node_id, db_column);
+alter table if exists semantic_tab_view drop constraint if exists UK99ll3j874pyvx9nlld3t0ycxe;
+alter table if exists semantic_tab_view add constraint UK99ll3j874pyvx9nlld3t0ycxe unique (tab_type, variant_key, dialect);
+alter table if exists semantic_tab_view_column drop constraint if exists UKdsvi8ekmw61oluw7em96uw6op;
+alter table if exists semantic_tab_view_column add constraint UKdsvi8ekmw61oluw7em96uw6op unique (view_id, column_id);
+alter table if exists semantic_tab_view_node drop constraint if exists UKf7ppu45749svgy3kyp7nrgdx9;
+alter table if exists semantic_tab_view_node add constraint UKf7ppu45749svgy3kyp7nrgdx9 unique (view_id, node_id);
+
+2026-09-22 05:57:14.398 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=95cc8992-18cb-4158-8d10-1bf71895931e material=PERF600-B00012 开始试算
+2026-09-22 05:57:14.764 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:14.814 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=998bf67c-8f1b-4062-a62e-50e2b9c4bc8d component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:14.874 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:14.875 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:15.003 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=998bf67c-8f1b-4062-a62e-50e2b9c4bc8d quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:15.004 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=998bf67c-8f1b-4062-a62e-50e2b9c4bc8d quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=556
+2026-09-22 05:57:15.033 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=95cc8992-18cb-4158-8d10-1bf71895931e material=PERF600-B00012 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:15.142 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=40a89d2a-27b1-42d3-aa21-1285d1379faf material=PERF600-B00021 开始试算
+2026-09-22 05:57:15.532 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:15.573 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=e98a3835-aedb-4434-86ce-b377b48a0fac component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:15.612 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:15.613 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:15.715 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=e98a3835-aedb-4434-86ce-b377b48a0fac quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:15.715 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=e98a3835-aedb-4434-86ce-b377b48a0fac quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=484
+2026-09-22 05:57:15.743 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=40a89d2a-27b1-42d3-aa21-1285d1379faf material=PERF600-B00021 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:15.830 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=454edc11-028e-442b-bfda-15d0574752d0 material=PERF600-B00022 开始试算
+2026-09-22 05:57:16.055 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:16.085 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=b7576cae-96f2-4617-9700-1cf00d54712a component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:16.119 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:16.120 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:16.253 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=b7576cae-96f2-4617-9700-1cf00d54712a quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:16.253 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=b7576cae-96f2-4617-9700-1cf00d54712a quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=363
+2026-09-22 05:57:16.284 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=454edc11-028e-442b-bfda-15d0574752d0 material=PERF600-B00022 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:16.375 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=5ceb0393-8e7e-4ba5-882a-8014aa4ecf24 material=PERF600-B00023 开始试算
+2026-09-22 05:57:16.671 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:16.699 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=86ce9d1e-2cd7-4cd3-b29d-0f551f9d611b component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:16.762 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:16.762 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:16.908 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=86ce9d1e-2cd7-4cd3-b29d-0f551f9d611b quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:16.909 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=86ce9d1e-2cd7-4cd3-b29d-0f551f9d611b quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=477
+2026-09-22 05:57:16.940 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=5ceb0393-8e7e-4ba5-882a-8014aa4ecf24 material=PERF600-B00023 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:17.020 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=ef51c033-0750-4908-9367-eab657941890 material=PERF600-B00598 开始试算
+2026-09-22 05:57:17.314 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:17.328 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=cfc76bb3-22d4-44a4-9a68-28577fc62e92 component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:17.360 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:17.361 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:17.474 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=cfc76bb3-22d4-44a4-9a68-28577fc62e92 quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:17.475 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=cfc76bb3-22d4-44a4-9a68-28577fc62e92 quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=412
+2026-09-22 05:57:17.527 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=ef51c033-0750-4908-9367-eab657941890 material=PERF600-B00598 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:17.587 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=0afabce1-cb79-4fde-9475-44a7a8cb618d material=PERF600-B00599 开始试算
+2026-09-22 05:57:17.874 DEBUG [com.cpq.quo.ser.dsr.DsSheetBindingResolver] (executor-thread-1) [ds-record] 绑定解析：入参组件 1，命中 1，不参与 0（sql=3，与组件数无关）
+2026-09-22 05:57:17.911 DEBUG [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] element_price 同步：line=d3222631-0b5d-42a7-abb5-aa0b9104750c component=98ee51d1-832e-4881-aa3d-e9512824cc14 元素 1 个 → 0 行（sql=1）
+2026-09-22 05:57:17.962 ERROR [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [card-snapshot] rowKeyFieldsMapFromScope: TemplateRenderScope 未打开，无法从冻结快照取 rowKeyFields（理论不达，检查调用链是否漏 open；本次降级为无行键）
+2026-09-22 05:57:17.962 WARN  [com.cpq.quo.ser.CardSnapshotService] (executor-thread-1) [seed-editrows] comp=98ee51d1-832e-4881-aa3d-e9512824cc14 行对齐校验失败/豁免 1 行（已跳过，未回种），成功 0 行，baseRows=1 row_data=1
+2026-09-22 05:57:18.100 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [b0-upgrade] li=d3222631-0b5d-42a7-abb5-aa0b9104750c quotation=QT-20260911-0842 升版完成：versionPrices=1 priceBearingComponents=1 rowsChanged=2 editRowsCleaned=0 subtotal 0E-12->9118.2 dryRun=true
+2026-09-22 05:57:18.100 INFO  [com.cpq.pri.ser.MaterialVersionUpgradeService] (executor-thread-1) [perf] upgrade li=d3222631-0b5d-42a7-abb5-aa0b9104750c quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 lines=1200 dryRun=true sql=28 ms=452
+2026-09-22 05:57:18.138 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] review=0afabce1-cb79-4fde-9475-44a7a8cb618d material=PERF600-B00599 READY columns=1 breached=1 amber=0 missing=1 stale=0
+2026-09-22 05:57:18.167 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [perf] budget-group quotation=5f641c55-8387-4eee-a7ff-a78f312bbf06 materials=7 ms=5652
+2026-09-22 05:57:18.168 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [perf] budget-compute version=04b70b9b-a805-43a4-8fac-9f66feb8daf7 groups=1 materials=7 workers=1 ms=5653
+2026-09-22 05:57:18.195 INFO  [com.cpq.pri.ser.PriceAdjustBudgetService] (executor-thread-1) [price-adjust-budget] versionId=04b70b9b-a805-43a4-8fac-9f66feb8daf7 done: 进池=7（直接就绪=0） 直接推进指针=0 续跑跳过=4551 试算就绪=7 试算失败=0 结果丢弃重排=0 被他方处理=0 轮次=1 耗时=5716ms
