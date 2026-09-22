@@ -66,7 +66,7 @@ test('R3 · 冷缓存逐条串行重算抽样料号（「重算」入口）', as
   const ver = process.env.S2_VERSION_ID!, sampleFile = process.env.S2_SAMPLE!;
   expect(ver && sampleFile && fs.existsSync(sampleFile), '需要 S2_VERSION_ID（V2）与 S2_SAMPLE（R2 导出件上 ac13_tool sample 的输出）').toBeTruthy();
   const mats = fs.readFileSync(sampleFile, 'utf8').split('\n').filter(l => l.includes('\t')).map(l => l.split('\t')[1].trim());
-  expect(mats.length, '抽样非空（200+20）').toBe(220);
+  expect(mats.length, '抽样非空（200+20；续跑时 S2_SAMPLE_EXPECT 指定剩余条数）').toBe(Number(process.env.S2_SAMPLE_EXPECT || '220'));
   await apiLogin(page);
   const r3Start = sql<{ t: string }>(`select now()::text t`)[0].t;
   R.R3 = { r3Start, n: mats.length }; evid('R3-开始时刻.txt', r3Start + '\n'); save(OUT);
@@ -79,35 +79,56 @@ test('R3 · 冷缓存逐条串行重算抽样料号（「重算」入口）', as
 
 test('R4 · AC-23 三张大单编辑页：页签数 / 各页签行数 / 「加载中…」', async ({ page }) => {
   test.skip(STEP !== 'R4-AC23', '非本步');
+  test.setTimeout(900_000);
   await apiLogin(page);
-  const blocked = await guardWrites(page, []);            // 打开编辑页可能触发自动保存 —— 一律拦下并记录（autosave 被拦不影响渲染计数）
+  // 主线定的放行名单：GET + batch-expand（只读语义）放行；ensure-card-values、保存 / 自动保存及其它一切写请求拦截并逐条记录
+  const blocked: string[] = [];
+  await page.route('**/api/**', async r => {
+    const q = r.request();
+    if (q.method() === 'GET' || /\/auth\/(login|refresh)|\/components\/batch-expand/.test(q.url())) return r.fallback();
+    blocked.push(`${new Date().toISOString()} ${q.method()} ${q.url()}`); return r.abort();
+  });
   const side = oldSide ? 'old-8081' : 'new-8130';
   R.ac23 = { side, quotes: {} };
   for (const qn of [Q0628, Q0629, Q0842]) {
     const qid = sql<{ id: string }>(`select id::text from quotation where quotation_number='${qn}'`)[0].id;
     await page.goto(`/quotations/${qid}/edit`);
-    await page.waitForLoadState('networkidle', { timeout: 180_000 }).catch(() => {});
-    await page.waitForTimeout(5000);
-    const tabs = page.locator('.ant-tabs-tab:visible');
-    const tabNames = (await tabs.allInnerTexts()).map(t => t.replace(/\s+/g, ''));
-    const perTab: Record<string, any> = {};
-    for (let i = 0; i < tabNames.length; i++) {
-      await tabs.nth(i).click().catch(() => {});
-      await page.waitForTimeout(1500);
-      const pane = page.locator('.ant-tabs-tabpane-active').last();
-      perTab[tabNames[i]] = {
-        domRows: await pane.locator('tr.ant-table-row').count(),
-        totalText: (await pane.getByText(/共\s*\d+\s*(条|行|项)/).first().innerText().catch(() => '')).replace(/\s+/g, ''),
-        loading: await page.getByText('加载中…').count(),
-      };
+    await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
+    await page.getByRole('button', { name: /下一步/ }).first().click();          // 第 1 步 → 第 2 步「添加产品」（探针实测：点步骤条不跳转）
+    const cards = page.locator('.qt-product-card');
+    await expect(cards.first()).toBeVisible({ timeout: 120_000 });
+    await page.waitForLoadState('networkidle', { timeout: 120_000 }).catch(() => {});
+    await page.waitForTimeout(3000);
+    const totalText = (await page.getByText(/共\s*\d+\s*条/).first().innerText().catch(() => '')).replace(/\s+/g, '');
+    const cardCountOnPage = await cards.count();
+    const firstTabs = (await cards.first().locator('.qt-tab-btn').allInnerTexts()).map(t => t.replace(/\s+/g, ''));
+    const sample: any[] = [];
+    for (let c = 0; c < Math.min(3, cardCountOnPage); c++) {
+      const card = cards.nth(c);
+      const title = (await card.locator('.qt-tab-header').first().evaluate(e => (e.parentElement?.parentElement?.querySelector('*')?.textContent || '')).catch(() => '')).replace(/\s+/g, ' ').slice(0, 60);
+      const tabs = card.locator('.qt-tab-btn');
+      const names = (await tabs.allInnerTexts()).map(t => t.replace(/\s+/g, ''));
+      const rows: Record<string, number> = {};
+      for (let i = 0; i < names.length; i++) {
+        await tabs.nth(i).click();
+        await page.waitForLoadState('networkidle', { timeout: 60_000 }).catch(() => {});
+        await page.waitForTimeout(1200);
+        rows[names[i]] = await card.locator('tbody tr:not(.ant-table-measure-row)').count();
+      }
+      sample.push({ idx: c, title, tabs: names, rows });
     }
-    R.ac23.quotes[qn] = { tabCount: tabNames.length, tabNames, perTab, loadingTotal: await page.getByText('加载中…').count() };
+    const loading = await page.getByText('加载中…').count();
+    R.ac23.quotes[qn] = { totalText, cardCountOnPage, tabCount: firstTabs.length, firstTabs, sample, loading };
     await shot(page, `AC-23-${side}-${qn}`);
     save(OUT);
   }
   R.ac23.blockedWrites = blocked; save(OUT);
-  for (const qn of [Q0628, Q0629, Q0842]) expect(R.ac23.quotes[qn].tabCount, `${qn} 页签数非 0（否则比较是空对空）`).toBeGreaterThan(0);
-  // 判据（新旧两份结果逐项相等 + 「加载中…」= 0）在两侧都跑完后由报告比对两个 JSON；⚠️ 虚拟滚动下 domRows 只是可见行数，两侧同口径才可比
+  evid(`AC-23-${side}-被拦请求.txt`, blocked.join('\n') + '\n');
+  for (const qn of [Q0628, Q0629, Q0842]) {
+    expect(R.ac23.quotes[qn].tabCount, `${qn} 页签数非 0（否则比较是空对空）`).toBeGreaterThan(0);
+    expect(R.ac23.quotes[qn].sample.length, `${qn} 取样卡片非空`).toBeGreaterThan(0);
+  }
+  // 新旧逐项比对在两侧都跑完后由报告比对两个 JSON；「加载中…」应为 0（两侧分别记录）
 });
 
 test('R4 · AC-26 后台在算 0842 组时「计算」2 个 → 通过 → 逐位 + 锁日志 + 其余行串行复算', async ({ page }) => {

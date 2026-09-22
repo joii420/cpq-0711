@@ -1,0 +1,47 @@
+{
+  "identity": {
+    "step": "R4-AC23",
+    "frontend": {
+      "url": "http://localhost:5230",
+      "cwd": "/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend"
+    },
+    "backendPort": 8130,
+    "log": "",
+    "oldSide": false
+  },
+  "listSeq": [],
+  "ac23": {
+    "side": "new-8130",
+    "quotes": {
+      "QT-20260908-0628": {
+        "tabCount": 0,
+        "tabNames": [],
+        "perTab": {},
+        "loadingTotal": 0
+      },
+      "QT-20260909-0629": {
+        "tabCount": 0,
+        "tabNames": [],
+        "perTab": {},
+        "loadingTotal": 0
+      },
+      "QT-20260911-0842": {
+        "tabCount": 0,
+        "tabNames": [],
+        "perTab": {},
+        "loadingTotal": 0
+      }
+    },
+    "stepText": "2添加产品",
+    "blockedWrites": [
+      "POST http://localhost:5230/api/cpq/quotations/22b14b66-b3e7-47f8-9898-e1ee4b7944e9/ensure-card-values",
+      "POST http://localhost:5230/api/cpq/quotations/22b14b66-b3e7-47f8-9898-e1ee4b7944e9/ensure-card-values",
+      "POST http://localhost:5230/api/cpq/quotations/86afe265-05ec-4fd2-a71c-9be36e3f70fc/ensure-card-values",
+      "POST http://localhost:5230/api/cpq/quotations/86afe265-05ec-4fd2-a71c-9be36e3f70fc/ensure-card-values",
+      "POST http://localhost:5230/api/cpq/quotations/5f641c55-8387-4eee-a7ff-a78f312bbf06/ensure-card-values",
+      "POST http://localhost:5230/api/cpq/components/batch-expand",
+      "POST http://localhost:5230/api/cpq/quotations/5f641c55-8387-4eee-a7ff-a78f312bbf06/ensure-card-values",
+      "POST http://localhost:5230/api/cpq/components/batch-expand"
+    ]
+  }
+}

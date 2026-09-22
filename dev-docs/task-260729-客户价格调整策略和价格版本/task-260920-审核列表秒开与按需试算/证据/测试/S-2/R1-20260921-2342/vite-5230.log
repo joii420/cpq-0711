@@ -215,3 +215,405 @@ See this log for the ancestor stack trace.
 2:06:59 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
 2:07:03 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
 2:15:49 AM [vite] (client) hmr update /src/pages/pricing/price-adjust-review/ReviewDetailDrawer.tsx
+2:31:03 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+2:31:15 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+2:31:16 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+2:31:16 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+2:31:16 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+2:31:17 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+2:31:21 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+2:31:21 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+2:31:28 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+2:31:56 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+2:31:57 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+2:31:57 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+2:31:57 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+2:31:58 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+2:32:03 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+2:32:03 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+2:32:09 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+2:32:16 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+2:32:17 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+2:32:17 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+2:32:17 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+2:32:18 AM [vite] (client) [console.error] [Y1.5 expand-driver] batch 整体失败 Error: Network error
+    at buildApiError (http://localhost:5230/src/services/api.ts:22:14)
+    at http://localhost:5230/src/services/api.ts:37:24
+    at async Axios$1.request (http://localhost:5230/node_modules/.vite/deps/axios.js?v=6db2ea04:2537:11)
+    at async batchExpandDriver (http://localhost:5230/src/services/componentService.ts:26:16)
+2:32:18 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+2:32:21 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+2:32:21 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+2:32:23 AM [vite] (client) [console.error] [Y1.5 expand-driver] batch 整体失败 Error: Network error
+    at buildApiError (http://localhost:5230/src/services/api.ts:22:14)
+    at http://localhost:5230/src/services/api.ts:37:24
+    at async Axios$1.request (http://localhost:5230/node_modules/.vite/deps/axios.js?v=6db2ea04:2537:11)
+    at async batchExpandDriver (http://localhost:5230/src/services/componentService.ts:26:16)
+5:37:55 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+5:38:01 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+5:38:03 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+5:38:03 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+5:38:03 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+5:38:04 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+5:38:25 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+5:38:31 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+5:38:33 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+5:38:33 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+5:38:33 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+5:38:34 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+5:39:51 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+5:39:55 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+5:39:56 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+5:39:56 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+5:39:56 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+5:39:57 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+5:40:01 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:40:01 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:40:32 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+5:40:39 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+5:40:40 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+5:40:40 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+5:40:40 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+5:40:41 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+5:40:43 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:40:43 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:41:42 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+5:42:02 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+5:42:03 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+5:42:03 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+5:42:03 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+5:42:05 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+5:42:13 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:42:13 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:43:11 AM [vite] (client) [console.error] Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.
+5:43:15 AM [vite] (client) [console.error] Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead.
+5:43:16 AM [vite] (client) [console.error] Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.
+5:43:16 AM [vite] (client) [console.error] In HTML, <form> cannot be a descendant of <form>.
+This will cause a hydration error.
+
+  ...
+    <Card title={<Space>} extra={<Space>}>
+      <div ref={null} className="ant-card a..." style={{}}>
+        <div>
+        <div className="ant-card-body" style={{}}>
+          <Steps>
+          <InternalForm form={{...}} layout="vertical" onValuesChange={function onValuesChange} initialValues={{...}}>
+            <DisabledContextProvider disabled={false}>
+              <FormProvider validateMessages={{default:"F...", ...}}>
+                <FormProvider$1 validateMessages={{default:"F...", ...}}>
+                  <NoFormStyle status={true}>
+                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>
+>                     <form
+>                       id={undefined}
+>                       style={{}}
+>                       className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr..."
+>                       ref={{current:HTMLFormElement}}
+>                       onSubmit={function onSubmit}
+>                       onReset={function onReset}
+>                     >
+                        ...
+                          <NoFormStyle status={true}>
+                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>
+>                             <form
+>                               id={undefined}
+>                               style={{}}
+>                               className="ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n..."
+>                               ref={{current:null}}
+>                               onSubmit={function onSubmit}
+>                               onReset={function onReset}
+>                             >
+          ...
+
+5:43:16 AM [vite] (client) [console.error] <form> cannot contain a nested <form>.
+See this log for the ancestor stack trace.
+5:43:17 AM [vite] (client) [console.error] Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead.
+5:43:21 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树
+5:43:21 AM [vite] (client) [console.warn] [costing-snapshot] 部分核价行快照未就绪 → 暂显示空(不回落实时兜底);warm 补算 + 刷新后出整棵树

@@ -1,0 +1,17 @@
+== ③b 输入指纹：三张大单全部行 quote_card_values + subtotal
+ quotation_number | lines |             card_fp              
+------------------+-------+----------------------------------
+ QT-20260908-0628 |  1845 | ee5538300d62ce642c27d57b5aa5fc78
+ QT-20260909-0629 |  1845 | 78aecfca2bc390ecbe2035e8eb97e973
+ QT-20260911-0842 |  1200 | 983a9ae2b616bb56f28c62b17c351933
+(3 rows)
+
+== ③b2 输入指纹：三张大单 quotation_line_component_data 的 snapshot_rows / row_data / row_version
+ quotation_number | comp_rows |             comp_fp              
+------------------+-----------+----------------------------------
+ QT-20260908-0628 |     25830 | 423942f51002b2586f33bad9eee7bba7
+ QT-20260909-0629 |     25830 | c3f498ecc98eec76f3f7cc02b1c20820
+ QT-20260911-0842 |      3600 | 9d78941ee658eb3f1555f6c78a64dc15
+(3 rows)
+
+== ③c0 进池集合（本版本有审核行的料号）

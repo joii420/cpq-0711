@@ -1,0 +1,10 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r4.spec.ts:51:1 › R4-AC26A · 趁后台在算 0842 组：计算 598/599 → 通过 → 逐位 + 锁日志
+[1A[2Ke2e/task260920-s2-r4.spec.ts:51:1 › R4-AC26A · 趁后台在算 0842 组：计算 598/599 → 通过 → 逐位 + 锁日志
+[sql-retry] 1 psql: error: connection to server at "10.177.152.12", port 5432 failed: Network is unreachable
+
+[1A[2K
+
+[1A[2K  1 passed (27.4s)

@@ -15,7 +15,7 @@ import * as fs from 'fs';
 import {
   R, M, Q0842, CUST, BASE_URL, BACKEND_PORT, BACKEND_LOG, WORKTREE, evid, save, shot, sql, pendingVersion, review,
   logSize, logSince, listenerCwd, assertNoOtherPlaywright, apiLogin, guardWrites, W_COMPUTE, W_RECOMPUTE, W_IMPACT,
-  gotoReviews, search, rowOf, cellText, drawerOf,
+  gotoReviews, search, rowOf, cellText, drawerOf, generateViaUi,
 } from './task260920-s2.helpers';
 
 // ------------------------------------------------------------------ 用例
@@ -39,35 +39,29 @@ test.beforeAll(async () => {
   save();
 });
 
+// 续跑（R1-0 已成功、只重跑后面的用例）时：V 取 S2_V1_ID 指定的版本，且必须仍是正泰唯一的待处理版本
+test.beforeEach(async () => {
+  if (!V && process.env.S2_V1_ID) {
+    const pv = pendingVersion();
+    expect(pv[0]?.id, 'S2_V1_ID 必须是当前待处理版本').toBe(process.env.S2_V1_ID);
+    V = pv[0];
+  }
+});
+
 test('R1-0 · 生成 V1（🚦写库：作废上一版全部待处理行）+ 记 T₀', async ({ page }) => {
+  test.skip(!!process.env.S2_V1_ID, '续跑：V1 已生成');
   await apiLogin(page);
   const before = pendingVersion();
   expect(before.length, '生成前正泰应恰有 1 个待处理版本').toBe(1);
   R.gen = { before: before[0], willVoid: sql(`select count(*)::int n from material_price_review where version_id='${before[0].id}' and status='PENDING'`)[0] };
-  const blocked = await guardWrites(page, [/\/price-adjust\//]);   // 生成接口路径未在 api.md 登记 ⇒ 限定在 price-adjust 前缀内
-  await page.goto('/pricing'); await page.waitForLoadState('networkidle').catch(() => {});
-  await page.locator('input[placeholder="搜索客户"]').first().fill(CUST.name);
-  await page.locator('.ant-list-item').filter({ hasText: CUST.name }).first().click();
-  await page.locator('.ant-tabs-tab').filter({ hasText: '价格调整策略' }).first().click();
-  const genBtn = page.getByRole('button', { name: /立即生成/ }).first();
-  await expect(genBtn).toBeVisible({ timeout: 30_000 });
-  await shot(page, 'R1-0-生成前');
-  const respP = page.waitForResponse(r => r.request().method() === 'POST' && /\/api\/cpq\/price-adjust\//.test(r.url()), { timeout: 120_000 });
-  await genBtn.click();
-  const confirm = page.locator('.ant-modal:visible, .ant-popover:visible').last();
-  if (await confirm.isVisible({ timeout: 3000 }).catch(() => false)) {
-    await shot(page, 'R1-0-生成确认框');
-    await confirm.getByRole('button', { name: /确\s*定|确\s*认|生\s*成/ }).last().click();
-  }
-  const resp = await respP;
-  T0 = Date.now();
-  R.gen.response = { url: resp.url(), status: resp.status(), body: (await resp.text()).slice(0, 2000), t0: new Date(T0).toISOString() };
-  R.gen.request = { method: resp.request().method(), url: resp.url(), postData: resp.request().postData() };   // R4 · AC-20 复用同一请求
-  evid('生成请求.json', R.gen.request);
-  const after = pendingVersion();
-  expect(after.length).toBe(1);
-  expect(after[0].id, '应生成了新的待处理版本').not.toBe(before[0].id);
-  V = after[0]; R.V1 = V; save();
+  const blocked = await guardWrites(page, [/\/price-adjust\/versions\/generate$/]);
+  const g = await generateViaUi(page, 'R1-0');
+  T0 = g.tReturned ? Date.parse(g.tReturned) : g.t0; V = g.V;   // T₀ = 生成请求返回时刻
+  R.gen.response = { tSend: g.tSend, tReturned: g.tReturned, status: g.status, exchanges: g.exchanges, t0: new Date(T0).toISOString() };
+  R.gen.request = g.request;
+  evid('生成请求.json', g.request);
+  R.V1 = V; save();
+  console.log(`[V1] ${V.version_no} ${V.id} sent=${g.tSend} returned=${g.tReturned}`);
   expect(blocked, `被拦的写请求：${blocked}`).toEqual([]);
 });
 

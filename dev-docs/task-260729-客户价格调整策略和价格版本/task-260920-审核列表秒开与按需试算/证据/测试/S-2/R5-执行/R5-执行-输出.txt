@@ -1,0 +1,83 @@
+BEGIN;
+BEGIN
+SELECT now() AS reset_start_utc;
+        reset_start_utc        
+-------------------------------
+ 2026-09-22 12:37:01.702242+00
+(1 row)
+
+CREATE TEMP TABLE bk_qli  (LIKE quotation_line_item)            ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_qlcd (LIKE quotation_line_component_data)  ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_q    (LIKE quotation)                      ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_qpr  (LIKE quotation_price_revision)       ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_mbom (LIKE ds_quote_material_bom_record)   ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_ebom (LIKE ds_quote_element_bom_record)    ON COMMIT DROP;
+CREATE TABLE
+CREATE TEMP TABLE bk_mpvr (LIKE material_price_version_ref)     ON COMMIT DROP;
+CREATE TABLE
+COPY  bk_qli FROM STDIN WITH CSV HEADER
+COPY 7
+COPY  bk_qlcd FROM STDIN WITH CSV HEADER
+COPY 21
+COPY  bk_q FROM STDIN WITH CSV HEADER
+COPY 1
+COPY  bk_qpr FROM STDIN WITH CSV HEADER
+COPY 2
+COPY  bk_mbom FROM STDIN WITH CSV HEADER
+COPY 0
+COPY  bk_ebom FROM STDIN WITH CSV HEADER
+COPY 0
+COPY  bk_mpvr FROM STDIN WITH CSV HEADER
+COPY 32
+WITH x AS (UPDATE quotation_line_item t SET quote_card_values = b.quote_card_values, costing_card_values = b.costing_card_values,
+       quote_excel_values = b.quote_excel_values, subtotal = b.subtotal, line_unit_price = b.line_unit_price,
+       discount_base_amount = b.discount_base_amount, line_final_price = b.line_final_price,
+       line_discount_amount = b.line_discount_amount, line_total_amount = b.line_total_amount,
+       card_snapshot_at = b.card_snapshot_at, quote_values_at = b.quote_values_at, row_version = b.row_version
+  FROM bk_qli b WHERE t.id = b.id RETURNING 1) SELECT count(*) AS n FROM x 
+SELECT 7 = 7 AS ok 
+R5-1 OK n=7
+WITH x AS (UPDATE quotation_line_component_data t SET snapshot_rows = b.snapshot_rows, row_data = b.row_data, row_version = b.row_version,
+       snapshot_at = b.snapshot_at FROM bk_qlcd b WHERE t.id = b.id RETURNING 1) SELECT count(*) AS n FROM x 
+SELECT 21 = 21 AS ok 
+R5-2 OK n=21
+WITH x AS (UPDATE quotation t SET original_amount = b.original_amount, total_amount = b.total_amount, updated_at = b.updated_at
+  FROM bk_q b WHERE t.id = b.id RETURNING 1) SELECT count(*) AS n FROM x 
+SELECT 1 = 1 AS ok 
+R5-3 OK n=1
+WITH x AS (UPDATE quotation_price_revision t SET sealed = b.sealed, upgraded_material_nos = b.upgraded_material_nos,
+       quote_card_values = b.quote_card_values, costing_card_values = b.costing_card_values, snapshot_rows = b.snapshot_rows,
+       quote_total_amount = b.quote_total_amount, last_updated_at = b.last_updated_at
+  FROM bk_qpr b WHERE t.id = b.id RETURNING 1) SELECT count(*) AS n FROM x 
+SELECT 2 = 2 AS ok 
+R5-4a OK n=2
+WITH x AS (DELETE FROM quotation_price_revision r
+ WHERE r.quotation_id IN (SELECT id FROM bk_q) AND r.id NOT IN (SELECT id FROM bk_qpr) AND r.created_at >= '2026-09-22 08:53:00+00'
+ RETURNING r.id) SELECT count(*) AS n, bool_and(id::text LIKE '0a2b7f7a%') AS idok FROM x 
+SELECT 1 = 1 AND 't' = 't' AS ok 
+R5-4b OK n=1
+WITH x AS (UPDATE ds_quote_material_bom_record t SET element_price = b.element_price, updated_at = b.updated_at FROM bk_mbom b WHERE t.id = b.id RETURNING 1) SELECT count(*) AS n FROM x 
+SELECT 0 = 0 AS ok 
+R5-5a OK n=0
+WITH x AS (UPDATE ds_quote_element_bom_record t SET element_price = b.element_price, updated_at = b.updated_at FROM bk_ebom b WHERE t.id = b.id RETURNING 1) SELECT count(*) AS n FROM x 
+SELECT 0 = 0 AS ok 
+R5-5b OK n=0
+WITH x AS (DELETE FROM material_price_version_ref t WHERE t.customer_no = 'CUST-0004' AND t.material_no = ANY(CAST('{PERF600-B00011,PERF600-B00012,PERF600-B00021,PERF600-B00022,PERF600-B00023,PERF600-B00598,PERF600-B00599}' AS text[]))
+   AND t.id NOT IN (SELECT id FROM bk_mpvr) RETURNING t.id)
+SELECT count(*) AS n, bool_and(left(id::text, 8) IN ('034bed3c','0d33835a','43fad760','b4285175','cde867c7','f12ee8ee','fa1a7b73')) AS idok FROM x 
+SELECT 7 = 7 AND 't' = 't' AS ok 
+R5-6 OK n=7
+全部守卫通过，提交
+COMMIT;
+COMMIT
+SELECT now() AS reset_end_utc;
+        reset_end_utc         
+------------------------------
+ 2026-09-22 12:37:04.66606+00
+(1 row)
+

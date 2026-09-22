@@ -1,0 +1,8 @@
+stop at 2026-09-22 05:47:25 PDT / 12:47:25 UTC
+8130 pid=1879384 /home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-backend java -Dquarkus.http.port=8130 -Dquarkus.scheduler.enabled=false -Dcpq.price-adju
+5230 pid=1805845 /home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend node /home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compu
+ss 8130: []
+ss 5230: []
+进程已退出
+无 5230 vite 进程
+8081/5174 仍在（未碰）：1/1

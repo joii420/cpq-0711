@@ -1,0 +1,14 @@
+BUTTON.qt-tab-btn
+DIV.qt-tab-header
+DIV.qt-tab-section
+DIV.qt-product-card
+DIV.
+DIV.qt-products-list
+DIV.
+DIV.
+DIV.
+----
+<div><div><div class="qt-step2-header"><div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;"><div role="radiogroup" aria-label="segmented control" tabindex="0" aria-orientation="horizontal" class="ant-segmented ant-segmented-sm css-dev-only-do-not-override-ch9ese css-var-_r_0_"><div class="ant-segmented-group"><label class="ant-segmented-item ant-segmented-item-selected"><input class="ant-segmented-item-input" type="radio" checked="" name="_r_1d_" style=""><div class="ant-segmented-item-label" title="📝 报价单">📝 报价单</div></label><label class="ant-segmented-item"><input class="ant-segmented-item-input" type="radio" name="_r_1d_" style=""><div class="ant-segmented-item-label" title="📊 核价单">📊 核价单</div></label><label class="ant-segmented-item"><input class="ant-segmented-item-input" type="radio" name="_r_1d_" style=""><div class="ant-segmented-item-label" title="📈 比对视图">📈 比对视图</div></label></div></div><span title="此区域内的字段可以由用户直接填写" style="padding: 2px 10px; border-radius: 12px; background: rgb(255, 247, 230); color: rgb(212, 107, 8); font-size: 12px;">📝 用户填写区，可编辑</span></div><div style="display: flex; align-items: center; gap: 12px;"><span style="font-size: 12px; color: rgb(140, 140, 140);">视图:</span><div role="radiogroup" aria-label="segmented control" tabindex="0" aria-orientation="horizontal" class="ant-segmented ant-segmented-sm css-dev-only-do-not-override-ch9ese css-var-_r_0_"><div class="ant-segmented-group"><label class="ant-segmented-item ant-segmented-item-selected"><input class="ant-segmented-item-input" type="radio" checked="" name="_r_1e_" style=""><div class="ant-segmented-item-label" title="📋 产品卡片">📋 产品卡片</div></label><label class="ant-segmented-item"><input class="ant-segmented-item-input" type="radio" name="_r_1e_" style=""><div class="ant-segmented-item-label" title="📑 Excel 视图">📑 Excel 视图</div></label></div></div><button data-testid="refresh-basic-data-btn" type="button" class="ant-btn css-dev-only-do-not-override-ch9ese css-var-_r_0_ ant-btn-default ant-btn-color-default ant-btn-variant-outlined"><span class="ant-btn-icon"><span role="img" aria-label="reload" class="anticon anticon-reload"><svg viewBox="64 64 896 896" focusable="false" data-icon="reload" width="1em" height="1em" fill="currentColor" aria-hidden="true"><path d="M909.1 209.3l-56.4 44.1C775.8 155.1 656.2 92 521.9 92 290 92 102.3 279.5 102 511.5 101.7 743.7 289.8 932 521.9 932c181.3 0 335.8-115 394.6-276.1 1.5-4.2-.7-8.9-4.9-10.3l-56.7-19.5a8 8 0 0
+
+blocked=["POST http://localhost:5230/api/cpq/quotations/5f641c55-8387-4eee-a7ff-a78f312bbf06/ensure-card-values","POST http://localhost:5230/api/cpq/quotations/5f641c55-8387-4eee-a7ff-a78f312bbf06/ensure-card-values"]
+加载中=0

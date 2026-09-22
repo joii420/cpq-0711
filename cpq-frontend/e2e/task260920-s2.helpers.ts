@@ -43,7 +43,7 @@ export function evid(name: string, c: unknown) {
   fs.writeFileSync(p, typeof c === 'string' ? c : JSON.stringify(c, null, 2) + '\n', 'utf8');
   return p;
 }
-export function save(name = 'R1-界面结果.json') { evid(name, R); }
+export function save(name = 'R1-界面结果.json') { R.listSeq = LIST_SEQ; evid(name, R); }
 export async function shot(t: Page | Locator, name: string) {
   fs.mkdirSync(EVID, { recursive: true });
   const p = path.join(EVID, `${name}.png`);
@@ -59,10 +59,22 @@ export async function dump(page: Page, tag: string) {
 export function sql<T = any>(q: string): T[] {
   const s = q.trim().replace(/;+\s*$/, '');
   if (!/^(select|with)\b/i.test(s)) throw new Error(`S-2 界面脚本只许 SELECT/WITH：${s.slice(0, 60)}`);
-  const out = execFileSync('psql', ['-h', '10.177.152.12', '-U', 'postgres', '-d', 'cpq_db_0724', '-X', '-A', '-t', '-q',
-    '-v', 'ON_ERROR_STOP=1', '-c', 'SET default_transaction_read_only = on',
-    '-c', `SELECT coalesce(jsonb_agg(q), '[]'::jsonb)::text FROM (${s}) q`],
-    { env: { ...process.env, PGPASSWORD: 'joii5231' }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+  // 本机到库偶发「Network is unreachable」（R3 / R4 各遇到一次）⇒ 只对连接失败重试（只读查询，重试无副作用）
+  let out = '';
+  for (let attempt = 1; ; attempt++) {
+    try {
+      out = execFileSync('psql', ['-h', '10.177.152.12', '-U', 'postgres', '-d', 'cpq_db_0724', '-X', '-A', '-t', '-q',
+        '-v', 'ON_ERROR_STOP=1', '-c', 'SET default_transaction_read_only = on',
+        '-c', `SELECT coalesce(jsonb_agg(q), '[]'::jsonb)::text FROM (${s}) q`],
+        { env: { ...process.env, PGPASSWORD: 'joii5231' }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'] });
+      break;
+    } catch (e: any) {
+      const msg = String(e?.stderr || e?.message || e);
+      if (attempt >= 8 || !/Network is unreachable|could not connect|Connection refused|timeout expired/i.test(msg)) throw e;
+      console.warn(`[sql-retry] ${attempt} ${msg.split('\n')[0]}`);
+      execFileSync('sleep', ['2']);
+    }
+  }
   const lines = out.split('\n').map(x => x.trim()).filter(Boolean);
   if (lines.length !== 1) throw new Error(`psql 输出应恰 1 行：${lines.length}`);
   return JSON.parse(lines[0]);
@@ -130,16 +142,33 @@ export const W_COMPUTE = /\/price-adjust\/reviews\/[0-9a-f-]+\/compute-now$/;
 export const W_RECOMPUTE = /\/price-adjust\/reviews\/[0-9a-f-]+\/recompute-budget$/;
 export const W_IMPACT = /\/price-adjust\/reviews\/impact$/;       // 只读语义的 POST（影响面预览）
 
+/** 列表请求发出 / 返回顺序（主线 2026-09-21 复现的既有竞态：进页全量请求晚于搜索请求返回会覆盖结果）—— 记进证据证明没被过期响应覆盖。 */
+export const LIST_SEQ: any[] = [];
+const LIST_RE = /\/api\/cpq\/price-adjust\/reviews\?/;
+const seqHooked = new WeakSet<Page>();
+function hookListSeq(page: Page) {
+  if (seqHooked.has(page)) return; seqHooked.add(page);
+  page.on('request', r => { if (r.method() === 'GET' && LIST_RE.test(r.url())) LIST_SEQ.push({ ev: 'send', t: Date.now(), url: r.url().replace(/^.*\?/, '?') }); });
+  page.on('response', r => { if (r.request().method() === 'GET' && LIST_RE.test(r.url())) LIST_SEQ.push({ ev: 'recv', t: Date.now(), status: r.status(), url: r.url().replace(/^.*\?/, '?') }); });
+}
+/** 进审核列表页，并**等首屏列表请求返回、网络空闲**后才返回（避免进页全量请求覆盖随后的搜索结果）。 */
 export async function gotoReviews(page: Page) {
+  hookListSeq(page);
+  const firstP = page.waitForResponse(r => r.request().method() === 'GET' && LIST_RE.test(r.url()), { timeout: 60_000 }).catch(() => null);
   await page.goto('/pricing/reviews');
   if (/\/login|change-password/.test(page.url())) { await apiLogin(page); await page.goto('/pricing/reviews'); }
-  await page.waitForLoadState('networkidle').catch(() => {});
+  await firstP;
+  await page.waitForLoadState('networkidle', { timeout: 30_000 }).catch(() => {});
+  await expect(page.locator('tr.ant-table-row').first()).toBeVisible({ timeout: 60_000 });
 }
 export const searchBox = (page: Page) => page.getByPlaceholder('搜索客户 / 料号 / 料号名称');
 export async function search(page: Page, kw: string) {
-  const respP = page.waitForResponse(r => /\/api\/cpq\/price-adjust\/reviews\?/.test(r.url()) && r.request().method() === 'GET', { timeout: 60_000 });
+  hookListSeq(page);
+  const enc = encodeURIComponent(kw);
+  const respP = page.waitForResponse(r => r.request().method() === 'GET' && LIST_RE.test(r.url()) && (kw === '' || r.url().includes(enc) || r.url().includes(kw)), { timeout: 60_000 });
   await searchBox(page).fill(kw); await searchBox(page).press('Enter');
   const resp = await respP; const j = await resp.json();
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});   // 让在途的旧请求落地，之后表格即为本次结果（顺序见 LIST_SEQ）
   return j?.data ?? j;
 }
 export const rowOf = (page: Page, mat: string, vno: string) =>
@@ -158,21 +187,42 @@ export const drawerOf = (page: Page) => page.locator('.ant-drawer:visible').last
 export async function generateViaUi(page: Page, tag: string) {
   const before = pendingVersion();
   expect(before.length, '生成前正泰应恰有 1 个待处理版本').toBe(1);
-  await page.goto('/pricing'); await page.waitForLoadState('networkidle').catch(() => {});
-  await page.locator('input[placeholder="搜索客户"]').first().fill(CUST.name);
-  await page.locator('.ant-list-item').filter({ hasText: CUST.name }).first().click();
+  await page.goto('/pricing'); await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+  // 探针实测（2026-09-21 23:5x）：客户列表首屏 20 条不含正泰，须输入后按回车搜索；页签文字为「价格调整策略 新」；按钮为「⚡立即生成一次」，点击直接 POST /price-adjust/versions/generate
+  const box = page.locator('input[placeholder="搜索客户"]').first();
+  await box.fill(CUST.name); await box.press('Enter');
+  const item = page.locator('.ant-list-item').filter({ hasText: CUST.no }).first();
+  await expect(item).toBeVisible({ timeout: 15_000 });
+  await item.click();
   await page.locator('.ant-tabs-tab').filter({ hasText: '价格调整策略' }).first().click();
   const genBtn = page.getByRole('button', { name: /立即生成/ }).first();
   await expect(genBtn).toBeVisible({ timeout: 30_000 });
-  const respP = page.waitForResponse(r => r.request().method() === 'POST' && /\/api\/cpq\/price-adjust\//.test(r.url()), { timeout: 120_000 });
+  await shot(page, `${tag}-生成前`);
+  const exchanges: any[] = [];
+  const onResp = async (r: any) => {
+    if (r.request().method() === 'POST' && /\/price-adjust\/versions\/generate/.test(r.url()))
+      exchanges.push({ url: r.url(), postData: r.request().postData(), status: r.status(), body: (await r.text().catch(() => '')).slice(0, 1500), at: new Date().toISOString() });
+  };
+  page.on('response', onResp);
+  const tSend = new Date().toISOString();
   await genBtn.click();
-  const confirm = page.locator('.ant-modal:visible, .ant-popover:visible').last();
-  if (await confirm.isVisible({ timeout: 3000 }).catch(() => false)) await confirm.getByRole('button', { name: /确\s*定|确\s*认|生\s*成/ }).last().click();
-  const resp = await respP;
+  let after = pendingVersion();
+  for (let i = 0; i < 240 && after[0]?.id === before[0].id; i++) {
+    // 已有待处理版本时后端可能要求「确认取代」→ 前端弹确认框 → 点确认后再发一次
+    const dlg = page.locator('.ant-modal:visible, .ant-popover:visible, .ant-modal-confirm:visible').last();
+    if (i % 4 === 0 && await dlg.isVisible().catch(() => false)) {
+      await shot(page, `${tag}-生成确认框-${i}`);
+      await dlg.getByRole('button', { name: /确\s*定|确\s*认|取\s*代|生\s*成|继\s*续/ }).last().click().catch(() => {});
+    }
+    await page.waitForTimeout(500);
+    after = pendingVersion();
+  }
+  page.off('response', onResp);
   const t0 = Date.now();
-  const after = pendingVersion();
-  expect(after[0].id, `${tag}：应生成了新的待处理版本`).not.toBe(before[0].id);
-  return { before: before[0], V: after[0], t0, request: { url: resp.url(), postData: resp.request().postData() }, status: resp.status() };
+  await shot(page, `${tag}-生成后`);
+  expect(after[0]?.id, `${tag}：应生成了新的待处理版本；生成交互=${JSON.stringify(exchanges)}`).not.toBe(before[0].id);
+  const ok = [...exchanges].reverse().find(x => x.status < 300) || exchanges[exchanges.length - 1];
+  return { before: before[0], V: after[0], t0, tSend, tReturned: ok?.at, exchanges, request: ok ? { url: ok.url, postData: ok.postData } : null, status: ok?.status };
 }
 /** 等本版本后台试算跑完：待处理行 QUEUED/COMPUTING = 0（AC-12 口径；Q-1 裁决要求 R4 结束前必须等到这一步）。 */
 export async function waitLoopDone(page: Page, verId: string, maxMin = 90) {

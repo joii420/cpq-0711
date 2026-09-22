@@ -77,3 +77,4 @@ __  ____  __  _____   ___  __ ____  ______
 2026-09-22 00:28:07.052 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
 2026-09-22 00:28:28.642 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-3) User logged in: t260920-accept-43482dfe role=PRICING_MANAGER
 2026-09-22 00:28:28.687 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-3) Session created for user: t260920-accept-43482dfe
+2026-09-22 05:38:46.715 INFO  [io.quarkus] (Shutdown thread) cpq-backend stopped in 0.095s

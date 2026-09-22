@@ -1,0 +1,94 @@
+{
+  "ac20": {
+    "mat": "T260907T-B01820",
+    "V3": "V26092202",
+    "V4": "V26092203",
+    "V4id": "04b70b9b-a805-43a4-8fac-9f66feb8daf7",
+    "tClickDb": "2026-09-22 09:07:02.214819+00",
+    "computeNow": {
+      "status": 202,
+      "body": "{\"reviewId\":\"02a71145-5882-441c-ab9b-8992fc77c4b6\",\"budgetStatus\":\"COMPUTING\"}"
+    },
+    "genT0": "2026-09-22 09:07:02.961944+00",
+    "genReturned": "2026-09-22 09:07:04.055532+00",
+    "genStatus": 201,
+    "genBody": "{\"versionId\":\"04b70b9b-a805-43a4-8fac-9f66feb8daf7\",\"versionNo\":\"V26092203\",\"baseDate\":\"2026-09-22\",\"status\":null,\"triggerType\":null,\"createdAt\":null,\"createdBy\":null,\"itemCount\":1,\"budgetJobId\":\"04b70b9b-a805-43a4-8fac-9f66feb8daf7\",\"budgetStatus\":\"QUEUED\",\"progress\":null}",
+    "rowAfter": {
+      "cols": 0,
+      "status": "VOIDED",
+      "updated_at": "2026-09-22 09:07:03.242851+00",
+      "col_created": null,
+      "budget_status": "COMPUTING",
+      "committed_before_gen_return": true
+    },
+    "rowLater": {
+      "cols": 0,
+      "updated_at": "2026-09-22 09:07:03.242851+00",
+      "col_created": null
+    },
+    "rowTextBefore": "<行已不在>",
+    "hasLink": false,
+    "via": "api",
+    "againStatus": 409,
+    "againBody": "{\"code\":409,\"message\":\"该料号已不是待处理状态\",\"data\":{\"invalidItems\":[{\"reviewId\":\"02a71145-5882-441c-ab9b-8992fc77c4b6\",\"materialNo\":\"T260907T-B01820\",\"reason\":\"状态已变化(VOIDED)\"}],\"code\":\"REVIEW_NOT_PENDING\"}}",
+    "toast": false,
+    "bodyLen": 255
+  },
+  "listSeq": [
+    {
+      "ev": "send",
+      "t": 1790068019523,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790068019525,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790068020687,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "recv",
+      "t": 1790068020728,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING"
+    },
+    {
+      "ev": "send",
+      "t": 1790068021386,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01820"
+    },
+    {
+      "ev": "send",
+      "t": 1790068021410,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01820"
+    },
+    {
+      "ev": "recv",
+      "t": 1790068021544,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01820"
+    },
+    {
+      "ev": "recv",
+      "t": 1790068021670,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01820"
+    },
+    {
+      "ev": "send",
+      "t": 1790068023869,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01820"
+    },
+    {
+      "ev": "recv",
+      "t": 1790068023973,
+      "status": 200,
+      "url": "?page=1&size=20&status=PENDING&keyword=T260907T-B01820"
+    }
+  ]
+}

@@ -1,0 +1,44 @@
+
+Running 1 test using 1 worker
+
+[1A[2K[1/1] e2e/task260920-s2-r4.spec.ts:51:1 › R4-AC26A · 趁后台在算 0842 组：计算 598/599 → 通过 → 逐位 + 锁日志
+[1A[2Ke2e/task260920-s2-r4.spec.ts:51:1 › R4-AC26A · 趁后台在算 0842 组：计算 598/599 → 通过 → 逐位 + 锁日志
+psql: error: connection to server at "10.177.152.12", port 5432 failed: Network is unreachable
+	Is the server running on that host and accepting TCP/IP connections?
+
+[1A[2K  1) e2e/task260920-s2-r4.spec.ts:51:1 › R4-AC26A · 趁后台在算 0842 组：计算 598/599 → 通过 → 逐位 + 锁日志 ────────
+
+    Error: Command failed: psql -h 10.177.152.12 -U postgres -d cpq_db_0724 -X -A -t -q -v ON_ERROR_STOP=1 -c SET default_transaction_read_only = on -c SELECT coalesce(jsonb_agg(q), '[]'::jsonb)::text FROM (select count(*) filter (where budget_status='READY')::int ready, count(*) filter (where budget_status='QUEUED')::int queued from material_price_review where version_id='82461c99-c390-4f42-b439-63f811ad7780' and basis_quotation_id=(select id from quotation where quotation_number='QT-20260911-0842')) q
+    psql: error: connection to server at "10.177.152.12", port 5432 failed: Network is unreachable
+    	Is the server running on that host and accepting TCP/IP connections?
+
+
+       at task260920-s2.helpers.ts:62
+
+      60 |   const s = q.trim().replace(/;+\s*$/, '');
+      61 |   if (!/^(select|with)\b/i.test(s)) throw new Error(`S-2 界面脚本只许 SELECT/WITH：${s.slice(0, 60)}`);
+    > 62 |   const out = execFileSync('psql', ['-h', '10.177.152.12', '-U', 'postgres', '-d', 'cpq_db_0724', '-X', '-A', '-t', '-q',
+         |               ^
+      63 |     '-v', 'ON_ERROR_STOP=1', '-c', 'SET default_transaction_read_only = on',
+      64 |     '-c', `SELECT coalesce(jsonb_agg(q), '[]'::jsonb)::text FROM (${s}) q`],
+      65 |     { env: { ...process.env, PGPASSWORD: 'joii5231' }, encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
+        at sql (/home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend/e2e/task260920-s2.helpers.ts:62:15)
+        at /home/joii/project/cpq/.claude/worktrees/task-260920-review-list-lazy-compute/cpq-frontend/e2e/task260920-s2-r4.spec.ts:57:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    e2e/test-results/task260920-s2/task260920-s2-r4-R4-AC26A--8c7c2--组：计算-598-599-→-通过-→-逐位-锁日志/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: e2e/test-results/task260920-s2/task260920-s2-r4-R4-AC26A--8c7c2--组：计算-598-599-→-通过-→-逐位-锁日志/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    e2e/test-results/task260920-s2/task260920-s2-r4-R4-AC26A--8c7c2--组：计算-598-599-→-通过-→-逐位-锁日志/trace.zip
+    Usage:
+
+        npx playwright show-trace e2e/test-results/task260920-s2/task260920-s2-r4-R4-AC26A--8c7c2--组：计算-598-599-→-通过-→-逐位-锁日志/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+[1A[2K  1 failed
+    e2e/task260920-s2-r4.spec.ts:51:1 › R4-AC26A · 趁后台在算 0842 组：计算 598/599 → 通过 → 逐位 + 锁日志 ─────────

@@ -1,0 +1,10 @@
+ds_quote_element_bom_record.csv 0 328
+ds_quote_material_bom_record.csv 0 329
+mpr.csv 7 2144
+mpuj-baseline.csv 7 709
+mpvr.csv 32 4188
+qlcd.csv 21 42069
+qli.csv 7 2400
+qpr.csv 2 11931872
+quotation.csv 1 1154
+qvs.csv 2 12427
