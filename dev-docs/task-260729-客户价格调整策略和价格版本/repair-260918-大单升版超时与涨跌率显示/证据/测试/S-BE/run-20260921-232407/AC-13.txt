@@ -1,0 +1,10 @@
+[2026-09-21T23:27:07.299649319] 结果：dry-small=SUCCESS dry-large=SUCCESS real1-small=SUCCESS real1-large=SUCCESS real2-small=SUCCESS real2-large=SUCCESS 
+[2026-09-21T23:27:07.299936807] [perf] upgrade li=94bc7d95-0672-4286-b796-13e59fc7188c quotation=b48ea59d-a859-4d0d-844f-9d67f2376df8 lines=12 dryRun=true sql=24 ms=405
+[2026-09-21T23:27:07.299995471] [perf] upgrade li=fec9db10-0ec8-48e9-820b-a1216783944d quotation=1735f24a-3fd7-4967-93b9-3f336045d0c2 lines=1000 dryRun=true sql=24 ms=283
+[2026-09-21T23:27:07.300030190] [perf] upgrade li=94bc7d95-0672-4286-b796-13e59fc7188c quotation=b48ea59d-a859-4d0d-844f-9d67f2376df8 lines=12 dryRun=false sql=28 ms=414
+[2026-09-21T23:27:07.300079682] [perf] upgrade li=fec9db10-0ec8-48e9-820b-a1216783944d quotation=1735f24a-3fd7-4967-93b9-3f336045d0c2 lines=1000 dryRun=false sql=28 ms=735
+[2026-09-21T23:27:07.300120862] [perf] upgrade li=041d6d67-aaf7-427f-82a0-b5c89b7f32a0 quotation=b48ea59d-a859-4d0d-844f-9d67f2376df8 lines=12 dryRun=false sql=27 ms=366
+[2026-09-21T23:27:07.300149973] [perf] upgrade li=1ff27923-8014-4ee1-ad6e-4b9d28993317 quotation=1735f24a-3fd7-4967-93b9-3f336045d0c2 lines=1000 dryRun=false sql=27 ms=534
+[2026-09-21T23:27:07.300189664] [perf] revision-write quotation=1735f24a-3fd7-4967-93b9-3f336045d0c2 kind=INITIAL ms=176
+[2026-09-21T23:27:07.300216509] [perf] revision-write quotation=1735f24a-3fd7-4967-93b9-3f336045d0c2 kind=CURRENT ms=185
+[2026-09-21T23:27:07.300240156] [perf] revision-write quotation=1735f24a-3fd7-4967-93b9-3f336045d0c2 kind=CURRENT ms=176
