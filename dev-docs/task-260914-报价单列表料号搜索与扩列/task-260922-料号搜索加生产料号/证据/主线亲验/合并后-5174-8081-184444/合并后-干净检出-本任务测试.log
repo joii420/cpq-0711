@@ -1,0 +1,52 @@
+2026-09-22 18:41:44.551 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-22 18:41:44.575 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-22 18:41:44.723 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-22 18:41:45.200 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-22 18:41:45.339 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-22 18:41:45.562 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-22 18:41:45.670 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-22 18:41:46.055 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-22 18:41:46.359 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 428 migrations (execution time 00:00.132s)
+2026-09-22 18:41:46.572 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 445
+2026-09-22 18:41:46.573 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-22 18:41:46.583 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-22 18:41:46.639 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-22 18:41:46.639 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-22 18:41:47.177 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-22 18:41:47.315 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-22 18:41:47.322 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-09-22 18:41:47.393 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-22 18:41:47.476 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-22 18:41:47.894 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-22 18:41:47.929 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-22 18:41:47.967 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 18:41:47.996 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 18:41:47.997 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-22 18:41:48.211 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-22 18:41:48.265 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-22 18:41:48.341 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.667s. Listening on: http://localhost:55796
+2026-09-22 18:41:48.341 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-22 18:41:48.341 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[AC-6 对照-造数前] partNo=t260922p-prod-xy totalElements=0 ids=[] quotationNumbers=[]
+[AC-6 对照-B也绑定] partNo=t260922p-prod-xy totalElements=2 ids=[e74a304b-97a0-47a4-82ca-bc4d5077b3da, a3da854b-a23e-49a3-97c9-0a57b5f30bd5] quotationNumbers=[T260922P-QA, T260922P-QB]
+[AC-6 造数前①] partNo=t260922p-prod-xy totalElements=0 ids=[] quotationNumbers=[]
+[AC-6 造数前②] partNo=T260922P-PROD-XY totalElements=0 ids=[] quotationNumbers=[]
+[AC-6 造数前③] partNo=PrOd-X totalElements=0 ids=[] quotationNumbers=[]
+[AC-6 造数前④] partNo=T260922P-S1 totalElements=0 ids=[] quotationNumbers=[]
+[AC-6] 造数完成 QA=ab00da21-794d-49a9-bb87-2abf563b7a8b (客户 T260922P-CA)  QB=9d90d601-e9d3-4331-bfa2-260c3616a94b (客户 T260922P-CB)
+[AC-6 ①] partNo=t260922p-prod-xy totalElements=1 ids=[ab00da21-794d-49a9-bb87-2abf563b7a8b] quotationNumbers=[T260922P-QA]
+[AC-6 ②] partNo=T260922P-PROD-XY totalElements=1 ids=[ab00da21-794d-49a9-bb87-2abf563b7a8b] quotationNumbers=[T260922P-QA]
+[AC-6 ③] partNo=PrOd-X totalElements=1 ids=[ab00da21-794d-49a9-bb87-2abf563b7a8b] quotationNumbers=[T260922P-QA]
+[AC-6 ④阳性对照] partNo=T260922P-S1 totalElements=2 ids=[ab00da21-794d-49a9-bb87-2abf563b7a8b, 9d90d601-e9d3-4331-bfa2-260c3616a94b] quotationNumbers=[T260922P-QA, T260922P-QB]
+2026-09-22 18:41:49.590 INFO  [io.quarkus] (main) cpq-backend stopped in 0.020s

@@ -1,0 +1,178 @@
+2026-09-22 18:43:37.959 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-09-22 18:43:37.982 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-09-22 18:43:38.127 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-09-22 18:43:38.574 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-09-22 18:43:38.698 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-09-22 18:43:38.963 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-09-22 18:43:39.083 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-09-22 18:43:39.489 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-09-22 18:43:39.801 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 428 migrations (execution time 00:00.168s)
+2026-09-22 18:43:40.065 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 445
+2026-09-22 18:43:40.065 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-09-22 18:43:40.080 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-09-22 18:43:40.170 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-09-22 18:43:40.171 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-09-22 18:43:40.744 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-09-22 18:43:40.897 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-09-22 18:43:40.904 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-09-22 18:43:40.960 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-09-22 18:43:41.023 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1778 列（3 套数据集）
+2026-09-22 18:43:41.395 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-09-22 18:43:41.457 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=57 edges=89 tabViews=48
+2026-09-22 18:43:41.492 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-09-22 18:43:41.518 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 18:43:41.544 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：57 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-09-22 18:43:41.545 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 153 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-09-22 18:43:41.810 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-09-22 18:43:41.878 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 8.463s. Listening on: http://localhost:55262
+2026-09-22 18:43:41.878 INFO  [io.quarkus] (main) Profile test activated. 
+2026-09-22 18:43:41.878 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-09-22 18:43:42.670 INFO  [com.cpq.cus.ser.CustomerService] (executor-thread-1) Created customer code=CUST-0098 name=T0810 Precision Customer 512800323859079 contacts=1
+2026-09-22 18:43:43.048 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=cf95b16e-6617-49e8-abfa-084dfe2755d8 number=QT-20260922-0877 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:43.130 WARN  [com.cpq.quo.res.QuotationResource] (executor-thread-1) [reconcile-diff] lineItemId=d15dc4d6-6cef-4f4d-9bdb-e598ed4e25a7 componentId=component-a tabName=tab-a rowKey=row-a fieldName=amount frontendValue=98765431.123456789012 backendValue=98765431.123456789011 frontendInputs={quantity=0.000000000001} backendInputs={quantity=0.000000000001} reconciledAt=2026-09-23T01:43:43.129581604Z
+2026-09-22 18:43:43.208 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: diffs.frontendValue must be a decimal string; received numeric token 98765431.123456789012
+2026-09-22 18:43:43.698 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=cf95b16e-6617-49e8-abfa-084dfe2755d8 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:43.747 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=cf95b16e-6617-49e8-abfa-084dfe2755d8 number=QT-20260922-0877
+2026-09-22 18:43:43.828 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=1d5832c7-d6ec-4d15-bc77-123616d73ced number=QT-20260922-0878 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:44.399 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=1d5832c7-d6ec-4d15-bc77-123616d73ced 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:44.429 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=1d5832c7-d6ec-4d15-bc77-123616d73ced number=QT-20260922-0878
+2026-09-22 18:43:44.504 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=c8daab59-f7ac-4c13-aaa1-086824a6d561 number=QT-20260922-0879 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:45.383 INFO  [com.cpq.quo.sna.SnapshotCollectorService] (executor-thread-1) [V212 snapshot] wrote bound_global_variables_snapshot for qid=c8daab59-f7ac-4c13-aaa1-086824a6d561, json-len=2
+2026-09-22 18:43:45.386 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) SubmissionSnapshot written for quotation id=c8daab59-f7ac-4c13-aaa1-086824a6d561 snapshotAt=2026-09-22T18:43:45.343756297-07:00
+2026-09-22 18:43:45.387 DEBUG [com.cpq.quo.ser.QuotationService] (executor-thread-1) [freezeSqlViews] no sql views to freeze for quotation=c8daab59-f7ac-4c13-aaa1-086824a6d561
+2026-09-22 18:43:45.571 INFO  [com.cpq.quo.ser.CostingFreezeService] (executor-thread-1) [CostingFreeze] created costingOrder id=ccf795f8-9469-4214-82d9-e064bcccee12 number=HJ-20260922-1021 quotationId=c8daab59-f7ac-4c13-aaa1-086824a6d561
+2026-09-22 18:43:45.572 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Submitted quotation id=c8daab59-f7ac-4c13-aaa1-086824a6d561 number=QT-20260922-0879 approver=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-22 18:43:45.863 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Copied quotation id=c8daab59-f7ac-4c13-aaa1-086824a6d561 -> id=e767d5c0-61d4-4f54-8818-7a2cd40ff170 number=QT-20260922-0880 template=null sameTemplate=false
+2026-09-22 18:43:46.288 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=c8daab59-f7ac-4c13-aaa1-086824a6d561 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:46.315 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=c8daab59-f7ac-4c13-aaa1-086824a6d561 number=QT-20260922-0879
+2026-09-22 18:43:46.896 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=e767d5c0-61d4-4f54-8818-7a2cd40ff170 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:46.923 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=e767d5c0-61d4-4f54-8818-7a2cd40ff170 number=QT-20260922-0880
+2026-09-22 18:43:46.992 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=487ea140-6b96-46df-b068-d25270f38894 number=QT-20260922-0881 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:47.061 WARN  [com.cpq.quo.ser.QuotationService] (executor-thread-1) [saveDraft-compat] 收到旧全量协议 lineItems（0 行）——删除语义仍为「payload 未出现即删除」。 该字段为 task-260901 的回滚兜底，将在下个版本周期移除。
+2026-09-22 18:43:47.061 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) [saveDraft-diag] id=487ea140-6b96-46df-b068-d25270f38894 protocol=legacy-full lines=0 removed=0 batchStage1=true
+2026-09-22 18:43:47.069 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) [savedraft-invalidate] quotation=487ea140-6b96-46df-b068-d25270f38894 payloadLines=0 upsertEligible=0 cardValuesInvalidated=0 conditional=true
+2026-09-22 18:43:47.164 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Saved draft for quotation id=487ea140-6b96-46df-b068-d25270f38894 userDataVersion=1
+2026-09-22 18:43:47.388 INFO  [com.cpq.pri.ser.PriceReconciler] (executor-thread-1) [price-reconcile] quotation=487ea140-6b96-46df-b068-d25270f38894 linesInScope=0 rowsChanged=0 changedLines=0
+2026-09-22 18:43:47.403 DEBUG [com.cpq.quo.res.QuotationResource] (executor-thread-1) [draft-profile] id=487ea140-6b96-46df-b068-d25270f38894 total=322ms | S1.saveDraft=131ms S2.snapshotRows=64ms S3.priceReconcile=127ms
+2026-09-22 18:43:47.710 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: lineItems[0].productAttributeValues.amount must be a decimal string; received numeric token 98765431.123456789012
+2026-09-22 18:43:47.847 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: lineItems[0].quoteExcelValues.rows[0].amount must be a decimal string; received numeric token 98765431.123456789012
+2026-09-22 18:43:47.993 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: lineItems[0].componentData[0] has no frozen field metadata for templateId=null, componentId=null
+2026-09-22 18:43:48.360 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=487ea140-6b96-46df-b068-d25270f38894 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:48.383 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=487ea140-6b96-46df-b068-d25270f38894 number=QT-20260922-0881
+2026-09-22 18:43:48.461 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb number=QT-20260922-0882 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:48.870 INFO  [com.cpq.quo.sna.SnapshotCollectorService] (executor-thread-1) [V212 snapshot] wrote bound_global_variables_snapshot for qid=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb, json-len=2
+2026-09-22 18:43:48.870 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) SubmissionSnapshot written for quotation id=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb snapshotAt=2026-09-22T18:43:48.845142634-07:00
+2026-09-22 18:43:48.871 DEBUG [com.cpq.quo.ser.QuotationService] (executor-thread-1) [freezeSqlViews] no sql views to freeze for quotation=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb
+2026-09-22 18:43:49.022 INFO  [com.cpq.quo.ser.CostingFreezeService] (executor-thread-1) [CostingFreeze] created costingOrder id=a70b4231-5a22-4f6b-9f42-70e8a093f368 number=HJ-20260922-1022 quotationId=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb
+2026-09-22 18:43:49.022 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Submitted quotation id=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb number=QT-20260922-0882 approver=d1e1147c-a639-4156-aeac-9f938a65ad05
+2026-09-22 18:43:49.724 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:49.747 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=7478a3b8-07dd-47d5-9dc3-d2df9078b8eb number=QT-20260922-0882
+2026-09-22 18:43:49.806 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=6309991c-fd3b-481b-901e-c25a1aef864d number=QT-20260922-0883 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:49.854 WARN  [com.cpq.quo.ser.QuotationService] (executor-thread-1) [saveDraft-compat] 收到旧全量协议 lineItems（0 行）——删除语义仍为「payload 未出现即删除」。 该字段为 task-260901 的回滚兜底，将在下个版本周期移除。
+2026-09-22 18:43:49.854 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) [saveDraft-diag] id=6309991c-fd3b-481b-901e-c25a1aef864d protocol=legacy-full lines=0 removed=0 batchStage1=true
+2026-09-22 18:43:49.859 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) [savedraft-invalidate] quotation=6309991c-fd3b-481b-901e-c25a1aef864d payloadLines=0 upsertEligible=0 cardValuesInvalidated=0 conditional=true
+2026-09-22 18:43:49.935 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Saved draft for quotation id=6309991c-fd3b-481b-901e-c25a1aef864d userDataVersion=1
+2026-09-22 18:43:50.076 INFO  [com.cpq.pri.ser.PriceReconciler] (executor-thread-1) [price-reconcile] quotation=6309991c-fd3b-481b-901e-c25a1aef864d linesInScope=0 rowsChanged=0 changedLines=0
+2026-09-22 18:43:50.085 DEBUG [com.cpq.quo.res.QuotationResource] (executor-thread-1) [draft-profile] id=6309991c-fd3b-481b-901e-c25a1aef864d total=216ms | S1.saveDraft=105ms S2.snapshotRows=25ms S3.priceReconcile=86ms
+2026-09-22 18:43:50.617 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=6309991c-fd3b-481b-901e-c25a1aef864d 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:50.658 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=6309991c-fd3b-481b-901e-c25a1aef864d number=QT-20260922-0883
+2026-09-22 18:43:50.751 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=3aa38e77-8746-4b21-af8e-a9ddd95fede4 number=QT-20260922-0884 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:51.141 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Calculated discount for quotation id=3aa38e77-8746-4b21-af8e-a9ddd95fede4 rate=100 rule=null
+2026-09-22 18:43:51.232 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: originalAmount must be a decimal string; received numeric token 98765431.123456789012
+2026-09-22 18:43:51.343 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) recalculate done for quotation=3aa38e77-8746-4b21-af8e-a9ddd95fede4 lineItems=0 totalAmount=0E-9
+2026-09-22 18:43:51.707 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=3aa38e77-8746-4b21-af8e-a9ddd95fede4 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:51.726 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=3aa38e77-8746-4b21-af8e-a9ddd95fede4 number=QT-20260922-0884
+2026-09-22 18:43:51.798 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=2cb68f22-9824-48c1-8cc3-0fb5da6867d3 number=QT-20260922-0885 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:51.913 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: value must be a decimal string; received numeric token 98765431.123456789012
+2026-09-22 18:43:52.000 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: rowData.amount must be a decimal string; received numeric token 98765431.123456789012
+2026-09-22 18:43:52.340 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=2cb68f22-9824-48c1-8cc3-0fb5da6867d3 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:52.363 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=2cb68f22-9824-48c1-8cc3-0fb5da6867d3 number=QT-20260922-0885
+2026-09-22 18:43:52.428 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Created quotation id=ec9df019-749f-491e-a2a2-c7576617300e number=QT-20260922-0886 customer=d10b3485-ac2e-40e5-8c9b-5e34e120be77
+2026-09-22 18:43:53.021 INFO  [com.cpq.com.ser.ComponentDriverService] (main) [expand-driver cache] evictAll called, estimated entries before evict=0
+2026-09-22 18:43:53.204 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (main) [SqlViewExecutor] driver path=$t0810_p1_material_view rows=1
+2026-09-22 18:43:53.205 DEBUG [com.cpq.con.ser.ConfigureSnapshotService] (main) [quote-bucket] comp=d0be3b5b-d430-4622-919a-f749274a4442 eligible eligible parts=1 bucketEntries=1
+2026-09-22 18:43:53.206 INFO  [com.cpq.con.ser.ConfigureSnapshotService] (main) [quote-bucket] quotation=ec9df019-749f-491e-a2a2-c7576617300e eligibleComps=1 totalComps=2 distinctParts=1
+2026-09-22 18:43:53.257 DEBUG [com.cpq.quo.ser.BomTreeRenderService] (main) [task-0806 B18] driverComps via activeTable(DRAFT) templateId=991f0d77-afba-467e-a41e-275709bb9499 status=DRAFT count=2
+2026-09-22 18:43:53.321 INFO  [com.cpq.com.ser.ComponentDriverService] (main) [Y1.5 expand-driver] componentId=8ba6ac0c-1591-4ab4-921e-b0e61163eb01 code=T0810-P1-TREE-TREE-26adf6 dataDriverPath=$t0810_p1_tree_view (override=false) partNo=null customerId=d10b3485-ac2e-40e5-8c9b-5e34e120be77 partVersion=null lineItemId=null compositeType=null
+2026-09-22 18:43:53.322 DEBUG [com.cpq.com.ser.ComponentDriverService] (main) [expand-driver] lineItemId=null, no lineItem injection for path=$t0810_p1_tree_view
+2026-09-22 18:43:53.361 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (main) [SqlViewExecutor] driver path=$t0810_p1_tree_view rows=0
+2026-09-22 18:43:53.361 INFO  [com.cpq.com.ser.ComponentDriverService] (main) [Y1.5 expand-driver] expanded: id=8ba6ac0c-1591-4ab4-921e-b0e61163eb01 code=T0810-P1-TREE-TREE-26adf6 rows=0 partVersion=null
+2026-09-22 18:43:53.361 INFO  [com.cpq.com.ser.ComponentDriverService] (main) [Y1.5 expand-driver] componentId=d0be3b5b-d430-4622-919a-f749274a4442 code=T0810-P1-TREE-MAT-8e92a8 dataDriverPath=$t0810_p1_material_view (override=false) partNo=null customerId=d10b3485-ac2e-40e5-8c9b-5e34e120be77 partVersion=null lineItemId=null compositeType=null
+2026-09-22 18:43:53.361 DEBUG [com.cpq.com.ser.ComponentDriverService] (main) [expand-driver] lineItemId=null, no lineItem injection for path=$t0810_p1_material_view
+2026-09-22 18:43:53.383 DEBUG [com.cpq.dat.sql.SqlViewExecutor] (main) [SqlViewExecutor] driver path=$t0810_p1_material_view rows=1
+2026-09-22 18:43:53.383 INFO  [com.cpq.com.ser.ComponentDriverService] (main) [Y1.5 expand-driver] expanded: id=d0be3b5b-d430-4622-919a-f749274a4442 code=T0810-P1-TREE-MAT-8e92a8 rows=1 partVersion=null
+2026-09-22 18:43:53.445 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (main) [master-part-type] parts=5 recipeHit=0 materialHit=0 sql=2
+2026-09-22 18:43:53.791 DEBUG [com.cpq.quo.ser.MasterPartTypeService] (executor-thread-1) [master-part-type] parts=5 recipeHit=0 materialHit=0 sql=2
+2026-09-22 18:43:53.806 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 料号「2101110225」在物料表(ds_quote_material)与材质库(material_recipe)中都不存在，不能作为叶子挂入。请先在物料表或材质库中为该料号建档后重试。
+2026-09-22 18:43:54.284 INFO  [com.cpq.quo.ser.dsr.DsQuoteRecordService] (executor-thread-1) [ds-record] quotation=ec9df019-749f-491e-a2a2-c7576617300e 删单清理 _record：扫描 13 张表，命中 0 行（本单无快照行）
+2026-09-22 18:43:54.297 INFO  [com.cpq.quo.ser.QuotationService] (executor-thread-1) Deleted quotation id=ec9df019-749f-491e-a2a2-c7576617300e number=QT-20260922-0886
+[ERROR] Tests run: 9, Failures: 3, Errors: 0, Skipped: 0, Time elapsed: 17.00 s <<< FAILURE! -- in com.cpq.quotation.QuotationPrecisionHttpContractTest
+[ERROR] com.cpq.quotation.QuotationPrecisionHttpContractTest.p1_04_draftAcceptsStringsAndRejectsEveryNumericPrecisionCarrierWithoutWrites -- Time elapsed: 1.468 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Error body must contain field path 'rowData[0].数量': {"code":400,"message":"lineItems[0].componentData[0] has no frozen field metadata for templateId=null, componentId=null"} ==> expected: <true> but was: <false>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertTrue.failNotTrue(AssertTrue.java:69)
+	at org.junit.jupiter.api.AssertTrue.assertTrue(AssertTrue.java:48)
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:204)
+	at com.cpq.common.PrecisionHttpContractSupport.assertBadRequest(PrecisionHttpContractSupport.java:114)
+	at com.cpq.quotation.QuotationPrecisionHttpContractTest.assertRejectedWithoutWrites(QuotationPrecisionHttpContractTest.java:797)
+	at com.cpq.quotation.QuotationPrecisionHttpContractTest.p1_04_draftAcceptsStringsAndRejectsEveryNumericPrecisionCarrierWithoutWrites(QuotationPrecisionHttpContractTest.java:239)
+
+[ERROR] com.cpq.quotation.QuotationPrecisionHttpContractTest.p1_15And16_costingPreviewAndApproveUseTheSameStringContract -- Time elapsed: 1.350 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Unexpected JSON number at $.data.dsBackfill.summary.tables: 0
+	at org.junit.jupiter.api.AssertionUtils.fail(AssertionUtils.java:42)
+	at org.junit.jupiter.api.Assertions.fail(Assertions.java:143)
+	at com.cpq.common.PrecisionHttpContractSupport.assertNoUnexpectedNumericTokens(PrecisionHttpContractSupport.java:94)
+	at com.cpq.common.PrecisionHttpContractSupport.lambda$assertNoUnexpectedNumericTokens$2(PrecisionHttpContractSupport.java:106)
+	at java.base/java.util.Iterator.forEachRemaining(Iterator.java:133)
+	at com.cpq.common.PrecisionHttpContractSupport.assertNoUnexpectedNumericTokens(PrecisionHttpContractSupport.java:106)
+	at com.cpq.common.PrecisionHttpContractSupport.lambda$assertNoUnexpectedNumericTokens$2(PrecisionHttpContractSupport.java:106)
+	at java.base/java.util.Iterator.forEachRemaining(Iterator.java:133)
+	at com.cpq.common.PrecisionHttpContractSupport.assertNoUnexpectedNumericTokens(PrecisionHttpContractSupport.java:106)
+	at com.cpq.common.PrecisionHttpContractSupport.lambda$assertNoUnexpectedNumericTokens$2(PrecisionHttpContractSupport.java:106)
+	at java.base/java.util.Iterator.forEachRemaining(Iterator.java:133)
+	at com.cpq.common.PrecisionHttpContractSupport.assertNoUnexpectedNumericTokens(PrecisionHttpContractSupport.java:106)
+	at com.cpq.common.PrecisionHttpContractSupport.lambda$assertNoUnexpectedNumericTokens$2(PrecisionHttpContractSupport.java:106)
+	at java.base/java.util.Iterator.forEachRemaining(Iterator.java:133)
+	at com.cpq.common.PrecisionHttpContractSupport.assertNoUnexpectedNumericTokens(PrecisionHttpContractSupport.java:106)
+	at com.cpq.common.PrecisionHttpContractSupport.assertNoUnexpectedNumericTokens(PrecisionHttpContractSupport.java:84)
+	at com.cpq.quotation.QuotationPrecisionHttpContractTest.p1_15And16_costingPreviewAndApproveUseTheSameStringContract(QuotationPrecisionHttpContractTest.java:417)
+
+[ERROR] com.cpq.quotation.QuotationPrecisionHttpContractTest.p1_18aTo18e_treeAndDriverDtosHaveNoPrecisionInputsAndReachRealRoutes -- Time elapsed: 2.100 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: Expected 2xx, status=400 body={"code":400,"message":"料号「2101110225」在物料表(ds_quote_material)与材质库(material_recipe)中都不存在，不能作为叶子挂入。请先在物料表或材质库中为该料号建档后重试。","data":{"partNo":"2101110225","cyclePath":[],"code":"LEAF_PART_NOT_IN_MASTER"}} ==> expected: <true> but was: <false>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:158)
+	at org.junit.jupiter.api.AssertionFailureBuilder.buildAndThrow(AssertionFailureBuilder.java:139)
+	at org.junit.jupiter.api.AssertTrue.failNotTrue(AssertTrue.java:69)
+	at org.junit.jupiter.api.AssertTrue.assertTrue(AssertTrue.java:48)
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:204)
+	at com.cpq.quotation.QuotationPrecisionHttpContractTest.assertHandledSuccess(QuotationPrecisionHttpContractTest.java:810)
+	at com.cpq.quotation.QuotationPrecisionHttpContractTest.p1_18aTo18e_treeAndDriverDtosHaveNoPrecisionInputsAndReachRealRoutes(QuotationPrecisionHttpContractTest.java:472)
+
+2026-09-22 18:43:54.565 INFO  [io.quarkus] (main) cpq-backend stopped in 0.027s
+[ERROR] Failures: 
+[ERROR]   QuotationPrecisionHttpContractTest.p1_04_draftAcceptsStringsAndRejectsEveryNumericPrecisionCarrierWithoutWrites:239->assertRejectedWithoutWrites:797 Error body must contain field path 'rowData[0].数量': {"code":400,"message":"lineItems[0].componentData[0] has no frozen field metadata for templateId=null, componentId=null"} ==> expected: <true> but was: <false>
+[ERROR]   QuotationPrecisionHttpContractTest.p1_15And16_costingPreviewAndApproveUseTheSameStringContract:417 Unexpected JSON number at $.data.dsBackfill.summary.tables: 0
+[ERROR]   QuotationPrecisionHttpContractTest.p1_18aTo18e_treeAndDriverDtosHaveNoPrecisionInputsAndReachRealRoutes:472->assertHandledSuccess:810 Expected 2xx, status=400 body={"code":400,"message":"料号「2101110225」在物料表(ds_quote_material)与材质库(material_recipe)中都不存在，不能作为叶子挂入。请先在物料表或材质库中为该料号建档后重试。","data":{"partNo":"2101110225","cyclePath":[],"code":"LEAF_PART_NOT_IN_MASTER"}} ==> expected: <true> but was: <false>
+[ERROR] Tests run: 9, Failures: 3, Errors: 0, Skipped: 0
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cpq-backend: There are test failures.
+[ERROR] 
+[ERROR] See /home/joii/project/cpq/.claude/worktrees/verify-260922-merged/cpq-backend/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException
