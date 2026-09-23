@@ -438,9 +438,11 @@ const QuotationList: React.FC = () => {
         style={{ width: 300 }}
       />
       {/* task-260914 · F-2（AC-1）：独立料号搜索框，紧跟在既有搜索框之后。与左侧框是 AND，
-          与状态页签也是 AND；切页签时本条件保留不清空（AC-7 —— statusFilter 变化不动 partNo）。 */}
+          与状态页签也是 AND；切页签时本条件保留不清空（AC-7 —— statusFilter 变化不动 partNo）。
+          task-260922 · F-1（AC-1）：后端 partNo 加上生产料号一路，提示文字改为「搜索销售/客户/生产料号」；
+          框宽 240 不变 —— 内容区仅 169px，旧文案 214px 已被截断，新文案 148px 可完整显示（任务.md D-4）。 */}
       <Search
-        placeholder="按料号搜索（销售料号/客户料号）"
+        placeholder="搜索销售/客户/生产料号"
         onSearch={(v) => { setPartNo(v); setPage(0); }}
         allowClear
         style={{ width: 240 }}

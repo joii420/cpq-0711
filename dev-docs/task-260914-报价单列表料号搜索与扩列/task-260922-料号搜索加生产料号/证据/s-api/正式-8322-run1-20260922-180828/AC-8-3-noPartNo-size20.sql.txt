@@ -1,0 +1,12 @@
+# AC-8 证据 · 3-noPartNo-size20 · GET http://localhost:8322/api/cpq/quotations?page=0&size=20 · HTTP 200 · 返回 20 行 · 2026-09-22T18:08:54-07:00
+# 日志 /tmp/claude-1000/-home-joii-project-cpq/7abf1578-4e32-4455-9117-2441c6881310/scratchpad/s-api-8322.log 自第 272 行起的窗口
+     1	[Hibernate] select count(*) from quotation q1_0 where 1=1
+     2	[Hibernate] select q1_0.id,q1_0.assigned_approver_id,q1_0.contact_email,q1_0.contact_id,q1_0.contact_name,q1_0.contact_phone,q1_0.costing_card_template_id,q1_0.created_at,q1_0.customer_id,q1_0.customer_template_id,q1_0.delivery_cycle,q1_0.discount_adjustment_reason,q1_0.expected_close_date,q1_0.expiry_date,q1_0.final_discount_rate,q1_0.import_batch_id,q1_0.is_manually_adjusted,q1_0.name,q1_0.opportunity_id,q1_0.original_amount,q1_0.payment_terms,q1_0.priority,q1_0.product_category_id,q1_0.project_name,q1_0.quotation_number,q1_0.quote_type,q1_0.referenced_versions,q1_0.remarks,q1_0.sales_rep_id,q1_0.snapshot_customer_address,q1_0.snapshot_customer_industry,q1_0.snapshot_customer_level,q1_0.snapshot_customer_name,q1_0.snapshot_customer_region,q1_0.source_quotation_id,q1_0.stage,q1_0.status,q1_0.submission_snapshot,q1_0.system_discount_rate,q1_0.tax_amount,q1_0.tax_rate,q1_0.total_amount,q1_0.updated_at,q1_0.user_data_version from quotation q1_0 where 1=1 order by q1_0.updated_at desc offset ? rows fetch first ? rows only
+     3	[Hibernate] select pc1_0.id,pc1_0.code,pc1_0.created_at,pc1_0.description,pc1_0.name,pc1_0.parent_id,pc1_0.sort_order,pc1_0.status,pc1_0.updated_at from product_category pc1_0 where pc1_0.id in (?)
+     4	[Hibernate] select t1_0.id,t1_0.category,t1_0.category_id,t1_0.components_snapshot,t1_0.created_at,t1_0.created_by,t1_0.customer_id,t1_0.description,t1_0.excel_view_config,t1_0.formulas,t1_0.name,t1_0.product_attributes,t1_0.published_at,t1_0.sql_views_snapshot,t1_0.status,t1_0.subtotal_formula,t1_0.template_kind,t1_0.template_series_id,t1_0.template_sql_views_snapshot,t1_0.updated_at,t1_0.usage_note,t1_0.version from template t1_0 where t1_0.id in (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+
+## 条数统计
+总条数: 4
+引用 ds_quote_material: 0
+查 quotation 主表: 2
+ds_quote_material 同文本重复(≥2 次)的语句种数: 0

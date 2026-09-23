@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-22（task-260920 审核列表秒开与按需试算：`/price-adjust/reviews` 新增 `compute-now` 与 `/{id}/row`、列表返回 `notComputedTotal` / `excludedByNotComputed` 与确定排序、`reject` 预算守门、`impact` 新增 `materials[]`、详情 `budgetError`，新配置 `cpq.price-adjust.budget.concurrency` / `interactive-concurrency`，见 12.X.4 补充）**；此前：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-22（task-260922 料号搜索加生产料号：`GET /quotations` 的 `partNo` 增加生产料号一路，并补回写 task-260914 的三个过滤参数）；此前同日 task-260920 审核列表秒开与按需试算：`/price-adjust/reviews` 新增 `compute-now` 与 `/{id}/row`、列表返回 `notComputedTotal` / `excludedByNotComputed` 与确定排序、`reject` 预算守门、`impact` 新增 `materials[]`、详情 `budgetError`，新配置 `cpq.price-adjust.budget.concurrency` / `interactive-concurrency`，见 12.X.4 补充）**；此前：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -2986,7 +2986,7 @@
 > 说明：以下多个端点返回 `QuotationDTO` / `QuotationDTO.LineItemDTO`。为避免重复，`QuotationDTO` 与其嵌套结构的字段清单集中列在本小节末「附：QuotationDTO 字段全表」，各端点响应内容处只标注返回类型。
 
 #### 4.1.1 报价单列表（分页 + 多条件过滤）
-- **功能**：分页查询报价单列表，支持状态、销售、审批人、关键字过滤
+- **功能**：分页查询报价单列表，支持状态、销售、审批人、关键字、料号（销售 / 客户 / 生产料号）、产品分类、报价模板系列过滤。所有条件之间为 AND
 - **方法**: GET
 - **路径**: `/api/cpq/quotations`
 - **鉴权**: 需登录（四角色任一）
@@ -2994,19 +2994,30 @@
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| page | int | 否 | 页码，默认 0 |
+| page | int | 否 | 页码，**从 0 开始**，默认 0（负数按 0 处理） |
 | size | int | 否 | 每页条数，默认 20 |
-| status | String | 否 | 状态码过滤（DRAFT/SUBMITTED/... ） |
+| status | String | 否 | 状态码过滤：`DRAFT` / `SUBMITTED` / `APPROVED` / `SENT` / `ACCEPTED` / `REJECTED` / `EXPIRED` / `CANCELLED` / `COSTING_REJECTED`；其他值返回 **400** |
 | salesRepId | UUID | 否 | 销售代表 ID 过滤 |
 | assignedApproverId | UUID | 否 | 指派审批人 ID 过滤 |
-| keyword | String | 否 | 关键字（报价单号/名称等模糊匹配） |
+| keyword | String | 否 | 关键字，不区分大小写包含匹配**报价单名称 / 报价单号 / 客户快照名**任一 |
+| partNo | String | 否 | 料号模糊搜索（不区分大小写包含匹配）。该单**任一产品行**满足以下任一即命中，同一单只出现一次：① 销售料号 `product_part_no_snapshot`；② 客户料号 `customer_part_no`；③ **生产料号** `ds_quote_material.production_no`，取法与产品卡片「销售料号」徽标相同 —— `customer_no` = **本单客户**的 `customer.code` 且 `material_no` = 该行销售料号（🚨 必须按本单客户过滤，同一销售料号在不同客户下各有一行）。关键字中的 `%` / `_` 按通配符处理。空白 / 不传 = 不过滤 |
+| categoryId | String | 否 | 产品分类过滤：分类 UUID = 该分类；字面量 `NONE` = 未分类（`product_category_id IS NULL`）；其他非法值返回 **400** |
+| templateSeriesId | UUID | 否 | 报价模板过滤，**按模板系列**：命中 `customer_template_id` 属于该 `template.template_series_id` 的全部版本（不是单个模板 ID） |
 
 - **响应内容**: `ApiResponse<PageResult<QuotationDTO>>`
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| data.total | long | 总条数 |
-| data.list | QuotationDTO[] | 当页报价单列表（列表投影，明细字段可能未填充） |
+| data.content | QuotationDTO[] | 当页报价单列表（列表投影，明细字段可能未填充）；含 `categoryName`（产品分类名，无分类或查不到为 `null`）、`templateName`（报价模板名，不含版本号，无模板或查不到为 `null`），由列表查询批量回填 |
+| data.totalElements | long | 满足条件的总条数（与 `content` 使用同一份过滤条件） |
+| data.page | int | 当前页码（从 0 开始） |
+| data.size | int | 每页条数 |
+| data.totalPages | int | 总页数 |
+
+- **错误码**：`400` —— `status` 或 `categoryId` 取值非法（响应体带可读消息）
+- **SQL 条数**：常数，与返回行数无关（count 1 + 主查询 1 + 分类 / 模板名批量回填各 ≤1；带 `partNo` 时另加生产料号反查 1 条）
+
+> 来源任务：`task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号`（本次覆盖同时补上 `task-260914` 漏回写的 `partNo` / `categoryId` / `templateSeriesId`，并把响应字段由过时的 `data.total` / `data.list` 更正为 `data.totalElements` / `data.content`）｜回写日期：2026-09-22
 
 #### 4.1.2 报价单详情
 - **功能**: 按 ID 获取报价单完整详情（含 lineItems、审批历史、DRAFT 漂移检测等）

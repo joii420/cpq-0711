@@ -1,0 +1,6 @@
+RUN_TAG=negctl-master-guard-on
+start=2026-09-23T01:29:36.613Z
+PW_BASE_URL=http://localhost:5174
+PW_BACKEND_URL=http://localhost:8081
+backendUp=true
+Q0(开跑时，仅供人读)=210

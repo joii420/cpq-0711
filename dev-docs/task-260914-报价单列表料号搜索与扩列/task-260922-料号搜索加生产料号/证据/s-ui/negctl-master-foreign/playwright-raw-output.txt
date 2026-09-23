@@ -1,0 +1,47 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Saved auth state for alice → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/alice.json
+[global-setup] Saved auth state for bob → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/bob.json
+
+Running 1 test using 1 worker
+
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/negctl-master-foreign/00-run.txt
+[identity 2026-09-23T01:29:47.522Z] FE=http://localhost:5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend | BE=http://localhost:8081 pid=60999 cwd=/home/joii/project/cpq/cpq-backend
+[⚠️ 负对照轮] 跳过 worktree 正身断言 —— 本轮结果不作为验收证据，只用于证明断言能变红
+[db-identity] api.totalElements=210 SQL Q0(before)=210 SQL Q0(after)=210
+  ✘  1 e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 (12.1s)
+
+
+  1) e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 
+
+    Error: AC-1[1280x900]: 应能按新 placeholder 定位到料号框（恰好 1 个）
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  locator('input[placeholder*="搜索销售/客户/生产料号"]').first()
+    Expected: [32m1[39m
+    Received: [31m0[39m
+    Timeout:  5000ms
+
+    Call log:
+    [2m  - AC-1[1280x900]: 应能按新 placeholder 定位到料号框（恰好 1 个） with timeout 5000ms[22m
+    [2m  - waiting for locator('input[placeholder*="搜索销售/客户/生产料号"]').first()[22m
+    [2m    9 × locator resolved to 0 elements[22m
+    [2m      - unexpected value "0"[22m
+
+
+      374 |     // ① placeholder 逐字
+      375 |     const input = partNoInput(page);
+    > 376 |     await expect(input, `AC-1[${tag}]: 应能按新 placeholder 定位到料号框（恰好 1 个）`).toHaveCount(1);
+          |                                                                          ^
+      377 |     await expect(input, `AC-1[${tag}]: 料号框应可见`).toBeVisible();
+      378 |     const ph = await input.getAttribute('placeholder');
+      379 |     appendEvidence(LOG, `[${tag}] placeholder=${JSON.stringify(ph)}`);
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260922-partno-production.spec.ts:376:74
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/task260922-partno-producti-4274f-r-逐字-框宽-240-带清除按钮-提示文字完整不截断/error-context.md
+
+  1 failed
+    e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 
+[foreign] EXIT=1

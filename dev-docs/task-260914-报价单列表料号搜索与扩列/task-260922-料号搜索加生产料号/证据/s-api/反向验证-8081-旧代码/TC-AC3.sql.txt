@@ -1,0 +1,8 @@
+-- [2026-09-22T18:10:35-07:00] Q1′(3000) 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND (lower(li.product_part_no_snapshot) LIKE '%3000%' OR lower(li.customer_part_no) LIKE '%3000%' OR EXISTS (SELECT 1 FROM customer c JOIN ds_quote_material m ON m.customer_no = c.code WHERE c.id = q.customer_id AND m.material_no = li.product_part_no_snapshot AND lower(m.production_no) LIKE '%3000%')));
+=> 48 / 48
+
+-- [2026-09-22T18:10:35-07:00] Q1′(300001) 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND (lower(li.product_part_no_snapshot) LIKE '%300001%' OR lower(li.customer_part_no) LIKE '%300001%' OR EXISTS (SELECT 1 FROM customer c JOIN ds_quote_material m ON m.customer_no = c.code WHERE c.id = q.customer_id AND m.material_no = li.product_part_no_snapshot AND lower(m.production_no) LIKE '%300001%')));
+=> 33 / 33
+

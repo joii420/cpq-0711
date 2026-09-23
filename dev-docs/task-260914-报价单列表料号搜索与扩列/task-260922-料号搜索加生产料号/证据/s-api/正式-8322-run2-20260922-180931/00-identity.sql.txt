@@ -1,0 +1,8 @@
+-- [2026-09-22T18:09:32-07:00] Q0 (cpq_db_0724) 首采/复采
+SELECT count(*) FROM quotation;
+=> 210 / 210
+
+-- [2026-09-22T18:09:32-07:00] Q0 (cpq_db_test)
+SELECT count(*) FROM quotation;
+=> 143
+

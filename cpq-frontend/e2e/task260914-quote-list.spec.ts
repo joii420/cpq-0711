@@ -192,12 +192,12 @@ test('T-1 · AC-1：工具栏在既有搜索框右侧新增独立料号搜索框
   await loginAsAdmin(page);
   await openQuotationList(page);
 
-  // ① 存在性 + placeholder 全文（AC-1 原文：按料号搜索（销售料号/客户料号））
+  // ① 存在性 + placeholder 全文（task-260922 D-4 / C-1 更正后：搜索销售/客户/生产料号）
   const input = partNoInput(page);
   await expect(input, 'AC-1: 应存在独立料号搜索框').toHaveCount(1);
   const ph = await input.getAttribute('placeholder');
   console.log(`[AC-1] 料号框 placeholder = ${JSON.stringify(ph)}`);
-  expect(ph, 'AC-1: placeholder 应为「按料号搜索（销售料号/客户料号）」').toBe('按料号搜索（销售料号/客户料号）');
+  expect(ph, 'AC-1: placeholder 应为「搜索销售/客户/生产料号」').toBe('搜索销售/客户/生产料号');
 
   // ② 位置：在既有「搜索报价单号/名称/客户」框的**右侧**
   const kwBox = await keywordInput(page).boundingBox();
@@ -233,7 +233,7 @@ test('T-1 · AC-1：工具栏在既有搜索框右侧新增独立料号搜索框
   //    直接 .first() 会抓到隐藏的那个 → 假红。必须先框到料号框自己的 affix wrapper。
   const partNoWrap = page
     .locator('.ant-input-affix-wrapper')
-    .filter({ has: page.locator('input[placeholder*="按料号搜索"]') })
+    .filter({ has: partNoInput(page) })
     .first();
   const clear = partNoWrap.locator('.ant-input-clear-icon, .anticon-close-circle').first();
   await expect(clear, 'AC-1: allowClear 清除按钮应出现').toBeVisible({ timeout: 5_000 });

@@ -1,0 +1,3 @@
+[identity 2026-09-23T01:29:47.522Z] FE=http://localhost:5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend | BE=http://localhost:8081 pid=60999 cwd=/home/joii/project/cpq/cpq-backend
+[⚠️ 负对照轮] 跳过 worktree 正身断言 —— 本轮结果不作为验收证据，只用于证明断言能变红
+[db-identity] api.totalElements=210 SQL Q0(before)=210 SQL Q0(after)=210

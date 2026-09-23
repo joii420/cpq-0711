@@ -125,6 +125,55 @@ public class ProductionPartInfoService {
         return result;
     }
 
+    /**
+     * task-260922 · B-1（AC-2~AC-8）：按<b>生产料号</b>关键字反查报价单 id——
+     * 报价单管理列表「料号搜索」的第三路（前两路销售料号 / 客户料号在 {@code QuotationService.list} 的 HQL 里）。
+     *
+     * <p>链路与 {@link #loadByMaterialNos} <b>同源</b>（卡片「销售料号」徽标的生产料号就是它取的），
+     * 保证「搜得到 = 卡片上看得到」：
+     * <pre>
+     *   quotation.customer_id → customer.code = ds_quote_material.customer_no
+     *   AND quotation_line_item.product_part_no_snapshot = ds_quote_material.material_no
+     *   → production_no 不区分大小写包含关键字
+     * </pre>
+     * 🚨 customer 过滤不可省：同一销售料号在不同客户下各存一行（唯一键 (customer_no, material_no)），
+     * 只按销售料号连会把别的客户的单也搜出来（立项实查：{@code 300021} 正确 40 张，漏过滤得 43 张）。
+     * 🚫 不读已废弃的 {@code material_master} / {@code material_customer_map}（D-3）。
+     *
+     * <p>SQL 条数：恒 1 条（关键字为空时 0 条），与命中单数、行数无关。
+     * 走本类同一个默认数据源 {@link EntityManager}（非 readonly），同一事务内未提交的写入可见。
+     *
+     * @param keyword 原始关键字（未转小写、未加通配符）；为空白则返回空集合且不查库
+     * @return 命中的报价单 id（去重）；无命中返回空集合（调用方须据此跳过 {@code IN}，避免 {@code IN ()}）
+     */
+    @SuppressWarnings("unchecked")
+    public List<java.util.UUID> findQuotationIdsByProductionNoKeyword(String keyword) {
+        if (keyword == null || keyword.isBlank()) {
+            return new ArrayList<>();
+        }
+        // 显式声明同步的实体表：同一事务里尚未 flush 的报价单 / 行项 / 客户写入，
+        // 在本条原生 SQL 执行前必定先 flush（AC-6 同事务造数可见），不依赖原生查询的默认 flush 策略。
+        List<Object> rows = em.createNativeQuery(
+                        "SELECT DISTINCT li.quotation_id FROM quotation_line_item li " +
+                        "  JOIN quotation q          ON q.id = li.quotation_id " +
+                        "  JOIN customer c           ON c.id = q.customer_id " +
+                        "  JOIN ds_quote_material m  ON m.customer_no = c.code " +
+                        "                           AND m.material_no = li.product_part_no_snapshot " +
+                        " WHERE LOWER(m.production_no) LIKE :kw")
+                .unwrap(org.hibernate.query.NativeQuery.class)
+                .addSynchronizedEntityClass(com.cpq.quotation.entity.Quotation.class)
+                .addSynchronizedEntityClass(com.cpq.quotation.entity.QuotationLineItem.class)
+                .addSynchronizedEntityClass(com.cpq.customer.entity.Customer.class)
+                .setParameter("kw", "%" + keyword.toLowerCase() + "%")
+                .getResultList();
+        List<java.util.UUID> ids = new ArrayList<>(rows.size());
+        for (Object o : rows) {             // 纯内存类型归一，无查库
+            if (o == null) continue;
+            ids.add(o instanceof java.util.UUID u ? u : java.util.UUID.fromString(o.toString()));
+        }
+        return ids;
+    }
+
     /** 解析 customer.code —— ds_* 表的 customer_no 列存的是 code，不是 UUID。 */
     public String resolveCustomerCode(java.util.UUID customerId) {
         if (customerId == null) return null;

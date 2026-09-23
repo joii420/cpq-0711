@@ -1,0 +1,47 @@
+[global-setup] Could not save auth state for admin: locator.fill: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('input[placeholder="用户名或邮箱"]')[22m
+
+    at saveStorageState (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/global-setup.ts:69:55)
+    at globalSetup (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/global-setup.ts:105:3) {
+  name: 'TimeoutError'
+}
+[global-setup] Saved auth state for alice → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/alice.json
+[global-setup] Saved auth state for bob → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/bob.json
+
+Running 1 test using 1 worker
+
+=== 立项日之后的现场基准（仅供人读） ===
+Q0 报价单总数            = 210
+Q6 未分类单数            = 117
+Q4 PUBLISHED 报价模板数  = 35
+ACTIVE 分类              = ["T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084","默认分类"]
+[AC-10] 夹具：QT-20260920-0924 → 期望「施耐德5.4模板」；QT-20260909-0654 → 期望「—」
+[行取证] QT-20260920-0924 → {"报价单号":"QT-20260920-0924","名称":"正泰报价单","客户":"正泰","产品分类":"默认分类","报价模板":"施耐德5.4模板","状态":"草稿","总金额":"¥1.71713554","创建日期":"2026-09-20","到期日":"2026-10-20"}
+  ✘  1 e2e/task260914-quote-list.spec.ts:410:1 › T-10 · AC-10：报价模板列显示模板名且不带版本号；无模板的单显示「—」 (7.4s)
+
+
+  1) e2e/task260914-quote-list.spec.ts:410:1 › T-10 · AC-10：报价模板列显示模板名且不带版本号；无模板的单显示「—」 ────────────
+
+    Error: AC-10(D-8): 报价模板列不得带版本号
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeFalsy[2m()[22m
+
+    Received: [31mtrue[39m
+
+      432 |   const nameHasVersion = /v\d|版本/i.test(tplName);
+      433 |   if (!nameHasVersion) {
+    > 434 |     expect(/\bv?\d+\.\d+\b|版本/i.test(cell), 'AC-10(D-8): 报价模板列不得带版本号').toBeFalsy();
+          |                                                                        ^
+      435 |   } else {
+      436 |     console.log(`[AC-10] ⚠️ 该模板名自身含版本样式字符（${tplName}），版本号断言跳过 —— 已在报告里登记`);
+      437 |   }
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914-quote-list.spec.ts:434:72
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/task260914-quote-list-T-10-6df2d-报价模板列显示模板名且不带版本号；无模板的单显示「—」/error-context.md
+
+  1 failed
+    e2e/task260914-quote-list.spec.ts:410:1 › T-10 · AC-10：报价模板列显示模板名且不带版本号；无模板的单显示「—」 ─────────────
+EXIT=1
