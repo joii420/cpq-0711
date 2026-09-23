@@ -190,10 +190,27 @@ public class QuotationService {
         //   WHERE li.quotationId = id ...)`，Hibernate 会先把裸 `id` 解析到子查询根
         //   (QuotationLineItem.id) —— 能编译、但谓词恒为 false，属静默错。
         //   IN 的左侧在外层，无歧义；语义与基准 SQL Q1 的 EXISTS 等价。
+        //
+        // task-260922 B-1（AC-2~AC-8）：加第三路【生产料号】，与上面两路 OR —— 任一命中即命中该单。
+        //   生产料号 = ds_quote_material.production_no，取法与卡片「销售料号」徽标同源
+        //   （ProductionPartInfoService，唯一出处）：本单客户 customer.code = customer_no
+        //   且 行项销售料号快照 = material_no。
+        //   🚨 必须按本单客户过滤：同一销售料号在不同客户下各有一行，只按销售料号连会把
+        //   别的客户的单也搜出来（立项实查 300021：正确 40 张，漏过滤 43 张）。
+        //   实现：ds_quote_material 无 JPA 实体、HQL 连不到 → 先用 1 条原生 SQL 取出生产料号命中的
+        //   报价单 id，再以 `OR id IN (:partNoProdIds)` 并入【同一份】where/params（count 与主查询共用，
+        //   AC-16）。该 SQL 在 count 之前执行一次，与页大小、命中单数无关。
+        //   生产料号这一路无命中 → 不拼 IN（避免非法的 `IN ()`），另两路结果照常。
         if (partNo != null && !partNo.isBlank()) {
-            where.append(" AND id IN (SELECT li.quotationId FROM QuotationLineItem li"
+            List<UUID> partNoProdIds = productionPartInfoService.findQuotationIdsByProductionNoKeyword(partNo);
+            where.append(" AND (id IN (SELECT li.quotationId FROM QuotationLineItem li"
                     + " WHERE LOWER(li.productPartNoSnapshot) LIKE :partNo"
                     + " OR LOWER(li.customerPartNo) LIKE :partNo)");
+            if (!partNoProdIds.isEmpty()) {
+                where.append(" OR id IN :partNoProdIds");
+                params.put("partNoProdIds", partNoProdIds);
+            }
+            where.append(")");
             params.put("partNo", "%" + partNo.toLowerCase() + "%");
         }
         // AC-13/14 + AC-21：产品分类过滤。字面量 NONE = 未分类；

@@ -1,0 +1,56 @@
+=== task-260922 · S-API 用例集 ===
+后端: http://localhost:8322    库: 10.177.152.12/cpq_db_0724    开跑: 2026-09-22T18:10:11-07:00
+证据目录: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run3-TC-AC7-20260922-181011
+SQL 日志: /tmp/claude-1000/-home-joii-project-cpq/7abf1578-4e32-4455-9117-2441c6881310/scratchpad/s-api-8322.log
+存活探针（未登录期望 401）: 401
+  URL     : http://localhost:8322/api/cpq/quotations?page=0&size=1
+  HTTP    : 200
+  验明正身: 接口全量=210  cpq_db_0724.count=210→210  cpq_db_test.count=143
+  启动日志中的库与端口（辅证）:
+    jdbc:postgresql://10.177.152.12:5432/cpq_db_0724
+    Listening on: http://localhost:8322
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC7  【服务 AC】AC-7
+  s0004 / a002 / s000 / zzz9999 → total = Q1 = Q1′；zzz9999 → 200 + 0
+────────────────────────────────────────────────────────────────
+  —— partNo=s0004 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=s0004&page=0&size=20
+  HTTP    : 200
+  Q1=43→43  Q1′=43→43  接口 totalElements=43
+  ✅ PASS  TC-AC7[s0004] — totalElements 43 == Q1 43 == Q1′ 43
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC7[s0004]-逐条 — content 20 条全部 ∈ Q1 集合
+  —— partNo=a002 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=a002&page=0&size=20
+  HTTP    : 200
+  Q1=35→35  Q1′=35→35  接口 totalElements=35
+  ✅ PASS  TC-AC7[a002] — totalElements 35 == Q1 35 == Q1′ 35
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC7[a002]-逐条 — content 20 条全部 ∈ Q1 集合
+  —— partNo=s000 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=s000&page=0&size=20
+  HTTP    : 200
+  Q1=49→49  Q1′=49→49  接口 totalElements=49
+  ✅ PASS  TC-AC7[s000] — totalElements 49 == Q1 49 == Q1′ 49
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC7[s000]-逐条 — content 20 条全部 ∈ Q1 集合
+  —— partNo=zzz9999 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=zzz9999&page=0&size=20
+  HTTP    : 200
+  Q1=0→0  Q1′=0→0  接口 totalElements=0
+  ✅ PASS  TC-AC7[zzz9999] — HTTP 200，totalElements 0 == Q1 == Q1′ 0
+
+────────────────────────────────────────────────────────────────
+S-API(task-260922) 汇总：PASS=7  FAIL=0  未验证=0  不稳定=0
+────────────────────────────────────────────────────────────────
+  PASS|TC-AC7[s0004]|totalElements 43 == Q1 43 == Q1′ 43
+  PASS|TC-AC7[s0004]-逐条|content 20 条全部 ∈ Q1 集合
+  PASS|TC-AC7[a002]|totalElements 35 == Q1 35 == Q1′ 35
+  PASS|TC-AC7[a002]-逐条|content 20 条全部 ∈ Q1 集合
+  PASS|TC-AC7[s000]|totalElements 49 == Q1 49 == Q1′ 49
+  PASS|TC-AC7[s000]-逐条|content 20 条全部 ∈ Q1 集合
+  PASS|TC-AC7[zzz9999]|HTTP 200，totalElements 0 == Q1 == Q1′ 0
+────────────────────────────────────────────────────────────────
+库: 10.177.152.12/cpq_db_0724   后端: http://localhost:8322   时刻: 2026-09-22T18:10:16-07:00
+证据目录: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run3-TC-AC7-20260922-181011

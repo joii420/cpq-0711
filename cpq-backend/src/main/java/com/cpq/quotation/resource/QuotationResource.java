@@ -118,7 +118,13 @@ public class QuotationResource {
             @QueryParam("assignedApproverId") UUID assignedApproverId,
             @QueryParam("keyword") String keyword,
             // ── task-260914 B-1：三个可选新参数（加法式，不传 = 不过滤，对既有调用方零影响）──
-            /** 料号模糊搜索：行项的销售料号或客户料号包含该关键字（不区分大小写）。 */
+            /**
+             * 料号模糊搜索（不区分大小写的包含匹配）：该单任一产品行满足以下任一即命中，同一单只计一次——
+             * ① 销售料号 {@code product_part_no_snapshot}；② 客户料号 {@code customer_part_no}；
+             * ③ 生产料号（task-260922）{@code ds_quote_material.production_no}，取法与卡片「销售料号」徽标相同：
+             * {@code customer_no = 本单客户 customer.code} 且 {@code material_no = 该行销售料号}。
+             * 🚨 ③ 必须按本单客户过滤——同一销售料号在不同客户下各有一行，漏过滤会跨客户串号。
+             */
             @QueryParam("partNo") String partNo,
             /**
              * 产品分类过滤。故意声明为 String 而非 UUID：除分类 UUID 外还要接受

@@ -1,0 +1,16 @@
+-- [2026-09-22T18:09:37-07:00] Q1′ 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND (lower(li.product_part_no_snapshot) LIKE '%3120011203%' OR lower(li.customer_part_no) LIKE '%3120011203%' OR EXISTS (SELECT 1 FROM customer c JOIN ds_quote_material m ON m.customer_no = c.code WHERE c.id = q.customer_id AND m.material_no = li.product_part_no_snapshot AND lower(m.production_no) LIKE '%3120011203%')));
+=> 23 / 23
+
+-- [2026-09-22T18:09:37-07:00] Q1 旧口径 S 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND (lower(li.product_part_no_snapshot) LIKE '%3120011203%' OR lower(li.customer_part_no) LIKE '%3120011203%'));
+=> 23 / 23
+
+-- [2026-09-22T18:09:37-07:00] 生产料号那一路 P 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND EXISTS (SELECT 1 FROM customer c JOIN ds_quote_material m ON m.customer_no = c.code WHERE c.id = q.customer_id AND m.material_no = li.product_part_no_snapshot AND lower(m.production_no) LIKE '%3120011203%'));
+=> 23 / 23
+
+-- [2026-09-22T18:09:37-07:00] 两路交集 I 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND (lower(li.product_part_no_snapshot) LIKE '%3120011203%' OR lower(li.customer_part_no) LIKE '%3120011203%')) AND EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND EXISTS (SELECT 1 FROM customer c JOIN ds_quote_material m ON m.customer_no = c.code WHERE c.id = q.customer_id AND m.material_no = li.product_part_no_snapshot AND lower(m.production_no) LIKE '%3120011203%'));
+=> 23 / 23
+

@@ -1,0 +1,17 @@
+-- [2026-09-22T18:08:38-07:00] Q1′(300021) 首采/复采
+SELECT count(*) FROM quotation q WHERE EXISTS (SELECT 1 FROM quotation_line_item li WHERE li.quotation_id = q.id AND (lower(li.product_part_no_snapshot) LIKE '%300021%' OR lower(li.customer_part_no) LIKE '%300021%' OR EXISTS (SELECT 1 FROM customer c JOIN ds_quote_material m ON m.customer_no = c.code WHERE c.id = q.customer_id AND m.material_no = li.product_part_no_snapshot AND lower(m.production_no) LIKE '%300021%')));
+=> 40 / 40
+
+-- [2026-09-22T18:08:38-07:00] Q-漏客户(300021) 首采/复采
+SELECT count(DISTINCT li.quotation_id) FROM quotation_line_item li JOIN ds_quote_material m ON m.material_no = li.product_part_no_snapshot WHERE lower(m.production_no) LIKE '%300021%';
+=> 43 / 43
+
+-- [2026-09-22T18:08:38-07:00] 点名样本 单号|客户|含S0004行数|本单客户名下该行生产料号含300021的行数
+SELECT q.quotation_number||'|'||c.code||'|'||
+      (SELECT count(*) FROM quotation_line_item li WHERE li.quotation_id=q.id AND lower(li.product_part_no_snapshot)='s0004')||'|'||
+      (SELECT count(*) FROM quotation_line_item li JOIN ds_quote_material m ON m.customer_no=c.code AND m.material_no=li.product_part_no_snapshot
+         WHERE li.quotation_id=q.id AND lower(m.production_no) LIKE '%300021%')
+    FROM quotation q JOIN customer c ON c.id=q.customer_id
+   WHERE q.quotation_number IN ('QT-20260907-0564','QT-20260908-0620','QT-20260910-0806') ORDER BY 1;
+=> QT-20260907-0564|CUST-0001|1|0;QT-20260908-0620|CUST-0001|1|0;QT-20260910-0806|CUST-0001|1|0
+

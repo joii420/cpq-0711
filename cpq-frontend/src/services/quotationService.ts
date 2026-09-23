@@ -264,7 +264,9 @@ export interface TreeDeleteExecResult {
  * `GET /api/cpq/quotations` 的查询参数（task-260914 · F-1）。
  *
  * 三个新参数是**加法式**的（任务.md §6「接口契约变更」），不传 = 不过滤，对既有调用方零影响：
- *  - `partNo`     —— 料号模糊搜索：命中「该单存在任意产品行，其销售料号或客户料号包含此值（不区分大小写）」
+ *  - `partNo`     —— 料号模糊搜索：命中「该单存在任意产品行，其销售料号 / 客户料号 / 生产料号任一包含此值
+ *      （不区分大小写）」，同一单多路命中只计一次。生产料号按**本单客户**取（客户 code + 该行销售料号
+ *      → ds_quote_material.production_no），与产品卡片销售料号徽标同源（task-260922）
  *  - `categoryId` —— 产品分类过滤：UUID = 该分类；字面量 `NONE` = 未分类（product_category_id IS NULL）
  *  - `templateSeriesId` —— 报价模板过滤，**按模板系列**（C-3 裁决）：命中 customer_template_id
  *      属于该 template.template_series_id 的**全部版本**。
@@ -277,7 +279,7 @@ export interface QuotationListParams {
   status?: string;
   salesRepId?: string;
   keyword?: string;
-  /** 料号模糊搜索（销售料号 / 客户料号），不区分大小写 */
+  /** 料号模糊搜索（销售料号 / 客户料号 / 生产料号，任一包含即命中），不区分大小写；生产料号按本单客户取，与卡片徽标同源 */
   partNo?: string;
   /** 产品分类 UUID，或字面量 'NONE' 表示未分类 */
   categoryId?: string;

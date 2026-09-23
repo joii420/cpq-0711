@@ -1,0 +1,149 @@
+=== task-260922 · S-API 用例集 ===
+后端: http://localhost:8322    库: 10.177.152.12/cpq_db_0724    开跑: 2026-09-22T18:09:31-07:00
+证据目录: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run2-20260922-180931
+SQL 日志: /tmp/claude-1000/-home-joii-project-cpq/7abf1578-4e32-4455-9117-2441c6881310/scratchpad/s-api-8322.log
+存活探针（未登录期望 401）: 401
+  URL     : http://localhost:8322/api/cpq/quotations?page=0&size=1
+  HTTP    : 200
+  验明正身: 接口全量=210  cpq_db_0724.count=210→210  cpq_db_test.count=143
+  启动日志中的库与端口（辅证）:
+    jdbc:postgresql://10.177.152.12:5432/cpq_db_0724
+    Listening on: http://localhost:8322
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC2  【服务 AC】AC-2
+  partNo=300001 → total = Q1′(300001)；Q1(300001)=0；content 非空且逐条 ∈ Q1′ 集合
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=300001&page=0&size=20
+  HTTP    : 200
+  Q1′(300001) = 33 → 33    Q1(300001) = 0 → 0    接口 totalElements = 33
+  ✅ PASS  TC-AC2 — totalElements 33 == Q1′ 33，且同分钟旧口径 Q1 = 0（命中全部来自生产料号）
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC2-逐条 — content 20 条全部 ∈ Q1′ 集合（QT-20260909-0794,QT-20260914-0867,QT-20260914-0866…）
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC3  【服务 AC】AC-3
+  partNo=3000 → total = Q1′(3000)，且 > 同时刻 partNo=300001 的 total
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=3000&page=0&size=20
+  HTTP    : 200
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=300001&page=0&size=20
+  HTTP    : 200
+  Q1′(3000) = 48 → 48   Q1′(300001) = 33 → 33   接口: 3000→48  300001→33
+  ✅ PASS  TC-AC3 — totalElements 48 == Q1′(3000) 48
+  ✅ PASS  TC-AC3-严格大于 — 3000→48 > 300001→33（同时刻）
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC3-逐条 — content 20 条全部 ∈ Q1′(3000) 集合
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC4  【服务 AC】AC-4
+  partNo=3120011203 → total = Q1′，≠ S+P；content 无重复
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=3120011203&page=0&size=20
+  HTTP    : 200
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=3120011203&page=0&size=500
+  HTTP    : 200
+  Q1′=23→23  S(旧口径)=23→23  P(生产料号路)=23→23  I(交集)=23→23  S+P=46
+  接口: size=20 → 23   size=500 → 23
+  ✅ PASS  TC-AC4 — totalElements 23 == Q1′ 23（size=20 与 size=500 一致）
+  ✅ PASS  TC-AC4-非求和 — totalElements 23 ≠ S+P 46（交集 23 单只计一次）
+    [page0-size20] LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC4-无重复[page0-size20] — content 20 条、单号无重复、全部 ∈ Q1′
+    [all] LEN=23 DUP=0 OUT=0
+  ✅ PASS  TC-AC4-无重复[all] — content 23 条、单号无重复、全部 ∈ Q1′
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC5  【服务 AC】AC-5
+  partNo=300021&size=100 → ① total = Q1′；② 不含 3 张 CUST-0001 单；③ Q-漏客户 ≠ ①
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=300021&page=0&size=100
+  HTTP    : 200
+  ① Q1′=40→40  接口 totalElements=40  content=40 条
+  ③ Q-漏客户=43→43
+  点名样本（单号|客户|含S0004行数|本客户名下生产料号含300021行数）:
+    QT-20260907-0564|CUST-0001|1|0
+    QT-20260908-0620|CUST-0001|1|0
+    QT-20260910-0806|CUST-0001|1|0
+  ✅ PASS  TC-AC5-③对照 — Q-漏客户 43 ≠ Q1′ 40（样本有效：漏客户过滤的错误实现会得到 43）
+  ✅ PASS  TC-AC5-① — totalElements 40 == Q1′ 40
+  ✅ PASS  TC-AC5-② — 全部 40 条里不含三张点名单（其中有效样本 3/3 张）
+  LEN=40 DUP=0 OUT=0
+  ✅ PASS  TC-AC5-集合 — 全部 40 条 ∈ Q1′ 集合
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC7  【服务 AC】AC-7
+  s0004 / a002 / s000 / zzz9999 → total = Q1 = Q1′；zzz9999 → 200 + 0
+────────────────────────────────────────────────────────────────
+  —— partNo=s0004 ——
+  psql 执行失败(rc=2): psql: error: connection to server at "10.177.152.12", port 5432 failed: Network is unreachable
+	Is the server running on that host and accepting TCP/IP connections?
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=s0004&page=0&size=20
+  HTTP    : 200
+  Q1=43→43  Q1′=→43  接口 totalElements=43
+  ❌ FAIL  TC-AC7[s0004] — 基准 SQL 跑不通
+  —— partNo=a002 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=a002&page=0&size=20
+  HTTP    : 200
+  Q1=35→35  Q1′=35→35  接口 totalElements=35
+  ✅ PASS  TC-AC7[a002] — totalElements 35 == Q1 35 == Q1′ 35
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC7[a002]-逐条 — content 20 条全部 ∈ Q1 集合
+  —— partNo=s000 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=s000&page=0&size=20
+  HTTP    : 200
+  Q1=49→49  Q1′=49→49  接口 totalElements=49
+  ✅ PASS  TC-AC7[s000] — totalElements 49 == Q1 49 == Q1′ 49
+  LEN=20 DUP=0 OUT=0
+  ✅ PASS  TC-AC7[s000]-逐条 — content 20 条全部 ∈ Q1 集合
+  —— partNo=zzz9999 ——
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=zzz9999&page=0&size=20
+  HTTP    : 200
+  Q1=0→0  Q1′=0→0  接口 totalElements=0
+  ✅ PASS  TC-AC7[zzz9999] — HTTP 200，totalElements 0 == Q1 == Q1′ 0
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC8  【服务 AC】AC-8
+  ① partNo=3000&size=20 与 ② size=1 SQL 条数相等；① − ③ ≤ 1；无逐条查 ds_quote_material
+────────────────────────────────────────────────────────────────
+  预热：三种请求各 2 次
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=3000&page=0&size=20
+  HTTP    : 200
+  [1-partNo3000-size20] 返回 20 行 → SQL 5 条（ds_quote_material 1 / 查 quotation 2 / 同文本重复 0）  原文: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run2-20260922-180931/AC-8-1-partNo3000-size20.sql.txt
+  URL     : http://localhost:8322/api/cpq/quotations?partNo=3000&page=0&size=1
+  HTTP    : 200
+  [2-partNo3000-size1] 返回 1 行 → SQL 5 条（ds_quote_material 1 / 查 quotation 2 / 同文本重复 0）  原文: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run2-20260922-180931/AC-8-2-partNo3000-size1.sql.txt
+  URL     : http://localhost:8322/api/cpq/quotations?page=0&size=20
+  HTTP    : 200
+  [3-noPartNo-size20] 返回 20 行 → SQL 4 条（ds_quote_material 0 / 查 quotation 2 / 同文本重复 0）  原文: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run2-20260922-180931/AC-8-3-noPartNo-size20.sql.txt
+  ✅ PASS  TC-AC8-①=② — ① 20 行 / ② 1 行，SQL 同为 5 条
+  ✅ PASS  TC-AC8-①−③≤1 — ① 5 条 − ③ 4 条 = 1 ≤ 1
+  ✅ PASS  TC-AC8-无逐条 — 引用 ds_quote_material 的语句 ① 1 条 = ② 1 条，且无同文本重复
+
+────────────────────────────────────────────────────────────────
+S-API(task-260922) 汇总：PASS=21  FAIL=1  未验证=0  不稳定=0
+────────────────────────────────────────────────────────────────
+  PASS|TC-AC2|totalElements 33 == Q1′ 33，且同分钟旧口径 Q1 = 0（命中全部来自生产料号）
+  PASS|TC-AC2-逐条|content 20 条全部 ∈ Q1′ 集合（QT-20260909-0794,QT-20260914-0867,QT-20260914-0866…）
+  PASS|TC-AC3|totalElements 48 == Q1′(3000) 48
+  PASS|TC-AC3-严格大于|3000→48 > 300001→33（同时刻）
+  PASS|TC-AC3-逐条|content 20 条全部 ∈ Q1′(3000) 集合
+  PASS|TC-AC4|totalElements 23 == Q1′ 23（size=20 与 size=500 一致）
+  PASS|TC-AC4-非求和|totalElements 23 ≠ S+P 46（交集 23 单只计一次）
+  PASS|TC-AC4-无重复[page0-size20]|content 20 条、单号无重复、全部 ∈ Q1′
+  PASS|TC-AC4-无重复[all]|content 23 条、单号无重复、全部 ∈ Q1′
+  PASS|TC-AC5-③对照|Q-漏客户 43 ≠ Q1′ 40（样本有效：漏客户过滤的错误实现会得到 43）
+  PASS|TC-AC5-①|totalElements 40 == Q1′ 40
+  PASS|TC-AC5-②|全部 40 条里不含三张点名单（其中有效样本 3/3 张）
+  PASS|TC-AC5-集合|全部 40 条 ∈ Q1′ 集合
+  FAIL|TC-AC7[s0004]|基准 SQL 跑不通
+  PASS|TC-AC7[a002]|totalElements 35 == Q1 35 == Q1′ 35
+  PASS|TC-AC7[a002]-逐条|content 20 条全部 ∈ Q1 集合
+  PASS|TC-AC7[s000]|totalElements 49 == Q1 49 == Q1′ 49
+  PASS|TC-AC7[s000]-逐条|content 20 条全部 ∈ Q1 集合
+  PASS|TC-AC7[zzz9999]|HTTP 200，totalElements 0 == Q1 == Q1′ 0
+  PASS|TC-AC8-①=②|① 20 行 / ② 1 行，SQL 同为 5 条
+  PASS|TC-AC8-①−③≤1|① 5 条 − ③ 4 条 = 1 ≤ 1
+  PASS|TC-AC8-无逐条|引用 ds_quote_material 的语句 ① 1 条 = ② 1 条，且无同文本重复
+────────────────────────────────────────────────────────────────
+库: 10.177.152.12/cpq_db_0724   后端: http://localhost:8322   时刻: 2026-09-22T18:09:56-07:00
+证据目录: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/正式-8322-run2-20260922-180931

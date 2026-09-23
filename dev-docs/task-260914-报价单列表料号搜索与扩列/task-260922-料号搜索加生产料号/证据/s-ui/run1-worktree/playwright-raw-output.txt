@@ -1,0 +1,870 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Saved auth state for alice → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/alice.json
+[global-setup] Saved auth state for bob → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/bob.json
+
+Running 15 tests using 1 worker
+
+=== 立项日之后的现场基准（仅供人读） ===
+Q0 报价单总数            = 210
+Q6 未分类单数            = 117
+Q4 PUBLISHED 报价模板数  = 35
+ACTIVE 分类              = ["T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084","默认分类"]
+表头(原样) = ["","报价单号","名称","客户","产品分类","报价模板","状态","总金额","创建日期","到期日"]
+工具栏 input placeholders = ["搜索报价单号/名称/客户","搜索销售/客户/生产料号","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)","(无 placeholder)"]
+.ant-select 清单 = ["0:产品分类||产品分类||","1:报价模板||报价模板||","2(pagination):||20/page||"]  → 分类 idx=0 模板 idx=1
+页签区文本 = "全部 草稿 待核价 已驳回 已审核 已发送 已接受 客户已拒绝 已过期"
+分页文本 = "共 210 条 1 2 3 4 5 ••• 11 20 / page"
+按钮区 = [
+  {
+    "order": 0,
+    "zone": "card-head",
+    "text": "导入历史",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 819,
+    "y": 125,
+    "w": 110
+  },
+  {
+    "order": 1,
+    "zone": "card-head",
+    "text": "导入报价数据",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 937,
+    "y": 125,
+    "w": 138
+  },
+  {
+    "order": 2,
+    "zone": "card-head",
+    "text": "新建报价单",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1083,
+    "y": 125,
+    "w": 124
+  },
+  {
+    "order": 3,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 293,
+    "y": 192,
+    "w": 45
+  },
+  {
+    "order": 4,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 538,
+    "y": 272,
+    "w": 12
+  },
+  {
+    "order": 5,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 561,
+    "y": 262,
+    "w": 32
+  },
+  {
+    "order": 6,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 786,
+    "y": 272,
+    "w": 12
+  },
+  {
+    "order": 7,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 809,
+    "y": 262,
+    "w": 32
+  },
+  {
+    "order": 8,
+    "zone": "card-body",
+    "text": "编辑",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 374,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 9,
+    "zone": "card-body",
+    "text": "复制",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 446,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 10,
+    "zone": "card-body",
+    "text": "提交审批",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 518,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 11,
+    "zone": "card-body",
+    "text": "撤回",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 618,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 12,
+    "zone": "card-body",
+    "text": "发送给客户",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 690,
+    "y": 355,
+    "w": 108
+  },
+  {
+    "order": 13,
+    "zone": "card-body",
+    "text": "客户接受",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 804,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 14,
+    "zone": "card-body",
+    "text": "客户拒绝",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1028,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 15,
+    "zone": "card-body",
+    "text": "删除",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1128,
+    "y": 355,
+    "w": 66
+  }
+]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/T-P0-dom-probe.txt
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/01-TP0-列表默认态.png
+  ✓   1 e2e/task260914-quote-list.spec.ts:153:1 › T-P0 · DOM 探针：工具栏 / 页签 / 表头 / 分页形态取证（不服务 AC，供失败时定位选择器） (7.9s)
+[AC-1] 料号框 placeholder = "搜索销售/客户/生产料号"
+[AC-1] 关键字框 = {"x":305,"y":267,"width":229,"height":22}  料号框 = {"x":613,"y":267,"width":169,"height":22}
+[AC-1] 同行判定=true　料号框在既有框右侧/下方=true
+[AC-1] 料号框自身及 4 层祖先宽度 = [169,209,240,240,914]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/02-AC-1-料号框有值态.png
+  ✓   2 e2e/task260914-quote-list.spec.ts:190:1 › T-1 · AC-1：工具栏在既有搜索框右侧新增独立料号搜索框（placeholder / 240px / allowClear） (7.1s)
+  ✘   3 e2e/task260914-quote-list.spec.ts:247:1 › T-5 · AC-5：料号搜 zzz9999 → 0 行 + AntD 默认空态(No data) + 分页区不渲染 + 无红色遮罩 + 无未捕获异常 (30.0s)
+=== 立项日之后的现场基准（仅供人读） ===
+Q0 报价单总数            = 210
+Q6 未分类单数            = 117
+Q4 PUBLISHED 报价模板数  = 35
+ACTIVE 分类              = ["T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084","默认分类"]
+[AC-8] 表头(原样，含勾选列空表头) = ["","报价单号","名称","客户","产品分类","报价模板","状态","总金额","创建日期","到期日"]
+[AC-8] 表头(非空)               = ["报价单号","名称","客户","产品分类","报价模板","状态","总金额","创建日期","到期日"]
+[AC-8] colgroup 宽度 = ["","180px","","","140px","180px","100px","130px","120px","120px"]
+[AC-8] th 实测宽度  = [32,180,0,0,140,180,100,130,120,120]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/AC-8-列宽取证.txt
+[AC-8] 产品分类: colgroup=140px 实测=140 期望=140px → OK
+[AC-8] 报价模板: colgroup=180px 实测=180 期望=180px → OK
+[AC-8] 创建日期: colgroup=120px 实测=120 期望=120px → OK
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/01-AC-8-表头九列.png
+  ✓   4 e2e/task260914-quote-list.spec.ts:312:1 › T-8 · AC-8：9 列的列序与三个新列的列宽（140 / 180 / 120） (7.5s)
+[AC-9] 夹具：有分类单 QT-20260920-0924 → 期望显示「默认分类」；无分类单 QT-20260911-0843 → 期望显示「—」
+[行取证] QT-20260920-0924 → {"报价单号":"QT-20260920-0924","名称":"正泰报价单","客户":"正泰","产品分类":"默认分类","报价模板":"施耐德5.4模板","状态":"草稿","总金额":"¥1.71713554","创建日期":"2026-09-20","到期日":"2026-10-20"}
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/02-AC-9-有分类.png
+[行取证] QT-20260911-0843 → {"报价单号":"QT-20260911-0843","名称":"T0911S3-R10-零回归夹具","客户":"正泰","产品分类":"—","报价模板":"正泰测试模板1","状态":"草稿","总金额":"¥45386.64","创建日期":"2026-09-11","到期日":"2026-10-11"}
+[AC-9] 空分类单元格 = "—" charCodes=[8212]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/03-AC-9-无分类占位.png
+  ✓   5 e2e/task260914-quote-list.spec.ts:376:1 › T-9 · AC-9：产品分类列显示中文分类名；分类为空的存量单显示「—」（非空白/非 undefined/非 UUID） (8.7s)
+[AC-10] 夹具：QT-20260920-0924 → 期望「施耐德5.4模板」；QT-20260909-0654 → 期望「—」
+[行取证] QT-20260920-0924 → {"报价单号":"QT-20260920-0924","名称":"正泰报价单","客户":"正泰","产品分类":"默认分类","报价模板":"施耐德5.4模板","状态":"草稿","总金额":"¥1.71713554","创建日期":"2026-09-20","到期日":"2026-10-20"}
+  ✘   6 e2e/task260914-quote-list.spec.ts:410:1 › T-10 · AC-10：报价模板列显示模板名且不带版本号；无模板的单显示「—」 (9.1s)
+=== 立项日之后的现场基准（仅供人读） ===
+Q0 报价单总数            = 210
+Q6 未分类单数            = 117
+Q4 PUBLISHED 报价模板数  = 35
+ACTIVE 分类              = ["T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084","默认分类"]
+[AC-11] 浏览器时区 = America/Los_Angeles
+[AC-11] 跨零点夹具 QT-20260920-0924：UTC 日=2026-09-21　America/Los_Angeles 本地日=2026-09-20（期望显示本地日）
+[行取证] QT-20260920-0924 → {"报价单号":"QT-20260920-0924","名称":"正泰报价单","客户":"正泰","产品分类":"默认分类","报价模板":"施耐德5.4模板","状态":"草稿","总金额":"¥1.71713554","创建日期":"2026-09-20","到期日":"2026-10-20"}
+[AC-11] 创建日期单元格="2026-09-20" 到期日单元格="2026-10-20"
+[AC-11] 单号内含日期=2026-09-20  该列=2026-09-20
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/01-AC-11-创建日期-跨零点单.png
+  ✓   7 e2e/task260914-quote-list.spec.ts:445:1 › T-11 · AC-11：创建日期按**浏览器本地时区**换算（跨零点单必须显示本地日，🚫 不是 UTC 日） (8.1s)
+[AC-12] .ant-select 清单 = ["0:产品分类||产品分类||","1:报价模板||报价模板||","2(pagination):||20/page||"]
+[AC-12·取证] 表头筛选图标数量 = 0（用户裁决期望 0，非 AC 断言）
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/02-AC-12-分类下拉展开.png
+[AC-12] 分类下拉选项 = ["未分类","默认分类","T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084"]
+[AC-12] SQL ACTIVE 分类 = ["T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084","默认分类"]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/03-AC-12-模板下拉展开.png
+[AC-12] 模板下拉选项(14) = ["报价模板·ds原生v1.0","取值测试模板1","取值测试模板2","施耐德5.4模板","正泰测试模板1","正泰测试模板2","T260902-选配builder模板-113a84","T260902-选配builder模板-1eabc9","T260902-选配builder模板-2e3e69","T260902-选配builder模板-88d970","T260902-选配builder模板-b8b3d8","T260902-选配builder模板-d9e146","T260902-选配builder模板-e38d6d","T260902-选配builder模板-f8eb5f"]
+[AC-12] SQL Q4' 模板系列数 = 14（PUBLISHED 模板版本数 = 35）
+[AC-12] SQL 每系列名称 = ["T260902-选配builder模板-f8eb5f","T260902-选配builder模板-1eabc9","取值测试模板2","正泰测试模板2","取值测试模板1","T260902-选配builder模板-113a84","T260902-选配builder模板-d9e146","报价模板·ds原生v1.0","正泰测试模板1","T260902-选配builder模板-88d970","T260902-选配builder模板-e38d6d","T260902-选配builder模板-2e3e69","T260902-选配builder模板-b8b3d8","施耐德5.4模板"]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/AC-12-下拉选项取证.txt
+[AC-12] 重复选项文本 = []
+[AC-12] 渲染顺序 = ["报价模板·ds原生v1.0","取值测试模板1","取值测试模板2","施耐德5.4模板","正泰测试模板1","正泰测试模板2","T260902-选配builder模板-113a84","T260902-选配builder模板-1eabc9","T260902-选配builder模板-2e3e69","T260902-选配builder模板-88d970","T260902-选配builder模板-b8b3d8","T260902-选配builder模板-d9e146","T260902-选配builder模板-e38d6d","T260902-选配builder模板-f8eb5f"]
+[AC-12] zh-Hans-CN 排序 = ["报价模板·ds原生v1.0","取值测试模板1","取值测试模板2","施耐德5.4模板","正泰测试模板1","正泰测试模板2","T260902-选配builder模板-113a84","T260902-选配builder模板-1eabc9","T260902-选配builder模板-2e3e69","T260902-选配builder模板-88d970","T260902-选配builder模板-b8b3d8","T260902-选配builder模板-d9e146","T260902-选配builder模板-e38d6d","T260902-选配builder模板-f8eb5f"]
+  ✓   8 e2e/task260914-quote-list.spec.ts:505:1 › T-12 · AC-12：分类下拉 = ACTIVE 分类 + 未分类；模板下拉按系列聚合 + 零重名 + 按名称排序(zh-Hans-CN) (9.8s)
+[AC-16 未分类共 N 条] SQL(before)=117  UI「共 N 条」=117  SQL(after)=117
+[AC-16] 第 1 页行数 = 20，未分类共 = 117
+[AC-16] 总页数≈6，将校验的页 = [2,5]
+[AC-16] 第 2 页：行数=20 分类列=["—"]
+[AC-16 第 2 页共 N 条] SQL(before)=117  UI「共 N 条」=117  SQL(after)=117
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/04-AC-16-未分类第2页.png
+[AC-16] 第 5 页：行数=20 分类列=["—"]
+[AC-16 第 5 页共 N 条] SQL(before)=117  UI「共 N 条」=117  SQL(after)=117
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/05-AC-16-未分类第5页.png
+  ✓   9 e2e/task260914-quote-list.spec.ts:590:1 › T-16 · AC-16：「未分类」筛选走服务端 —— 第 2 / 第 5 页每行分类列都是「—」，共 N 条 = 未分类总数 (11.8s)
+[AC-17] 现场基准：Q1(S0004)=43 Q8(∧默认分类)=34 Q9(∧草稿)=31
+  ✘  10 e2e/task260914-quote-list.spec.ts:635:1 › T-17 · AC-17【序列】七步连续操作：逐步断言中间态命中数 + 每次条件变化后页码重置到第 1 页 (1.4m)
+=== 立项日之后的现场基准（仅供人读） ===
+Q0 报价单总数            = 210
+Q6 未分类单数            = 117
+Q4 PUBLISHED 报价模板数  = 35
+ACTIVE 分类              = ["T260902-分类17b-137e2d","T260902-分类17b-5977dc","T260902-分类17b-70997c","T260902-分类17b-d77084","默认分类"]
+[AC-20a] 卡片标题 = {"text":"报价单管理","x":293,"y":128,"h":25}
+[AC-20a] 按钮区快照 = [
+  {
+    "order": 0,
+    "zone": "card-head",
+    "text": "导入历史",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 819,
+    "y": 125,
+    "w": 110
+  },
+  {
+    "order": 1,
+    "zone": "card-head",
+    "text": "导入报价数据",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 937,
+    "y": 125,
+    "w": 138
+  },
+  {
+    "order": 2,
+    "zone": "card-head",
+    "text": "新建报价单",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1083,
+    "y": 125,
+    "w": 124
+  },
+  {
+    "order": 3,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 293,
+    "y": 192,
+    "w": 45
+  },
+  {
+    "order": 4,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 538,
+    "y": 272,
+    "w": 12
+  },
+  {
+    "order": 5,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 561,
+    "y": 262,
+    "w": 32
+  },
+  {
+    "order": 6,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 786,
+    "y": 272,
+    "w": 12
+  },
+  {
+    "order": 7,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 809,
+    "y": 262,
+    "w": 32
+  },
+  {
+    "order": 8,
+    "zone": "card-body",
+    "text": "编辑",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 374,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 9,
+    "zone": "card-body",
+    "text": "复制",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 446,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 10,
+    "zone": "card-body",
+    "text": "提交审批",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 518,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 11,
+    "zone": "card-body",
+    "text": "撤回",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 618,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 12,
+    "zone": "card-body",
+    "text": "发送给客户",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 690,
+    "y": 355,
+    "w": 108
+  },
+  {
+    "order": 13,
+    "zone": "card-body",
+    "text": "客户接受",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 804,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 14,
+    "zone": "card-body",
+    "text": "客户拒绝",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1028,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 15,
+    "zone": "card-body",
+    "text": "删除",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1128,
+    "y": 355,
+    "w": 66
+  }
+]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/AC-20a-按钮区快照-admin.json
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/01-AC-20a-按钮区-admin.png
+[AC-20a] 导入历史: zone=card-head x=819 y=125 w=110 disabled=false
+[AC-20a] 导入报价数据: zone=card-head x=937 y=125 w=138 disabled=false
+[AC-20a] 新建报价单: zone=card-head x=1083 y=125 w=124 disabled=false
+[AC-20a] 视口 1280: 标题y=128 按钮y=[125,125,125] 同行=true 右缘=1207 溢出=false
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/02-AC-20a-视口1280.png
+[AC-20a] 视口 1366: 标题y=128 按钮y=[125,125,125] 同行=true 右缘=1293 溢出=false
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/03-AC-20a-视口1366.png
+[AC-20a] 视口 1440: 标题y=128 按钮y=[125,125,125] 同行=true 右缘=1367 溢出=false
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/04-AC-20a-视口1440.png
+[AC-20a] 视口 1600: 标题y=128 按钮y=[125,125,125] 同行=true 右缘=1527 溢出=false
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/05-AC-20a-视口1600.png
+[AC-20a] 视口 1920: 标题y=128 按钮y=[125,125,125] 同行=true 右缘=1847 溢出=false
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/06-AC-20a-视口1920.png
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/AC-20a-五档视口矩阵.json
+  ✓  11 e2e/task260914-quote-list.spec.ts:713:1 › T-20a · AC-20（上半条）：三按钮位于**卡片标题栏右侧**，五档视口都不换行不溢出 (9.7s)
+[AC-20b·取证] 按钮区快照 = [
+  {
+    "order": 0,
+    "zone": "card-head",
+    "text": "导入历史",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 819,
+    "y": 125,
+    "w": 110
+  },
+  {
+    "order": 1,
+    "zone": "card-head",
+    "text": "导入报价数据",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 937,
+    "y": 125,
+    "w": 138
+  },
+  {
+    "order": 2,
+    "zone": "card-head",
+    "text": "新建报价单",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1083,
+    "y": 125,
+    "w": 124
+  },
+  {
+    "order": 3,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 293,
+    "y": 192,
+    "w": 45
+  },
+  {
+    "order": 4,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 538,
+    "y": 272,
+    "w": 12
+  },
+  {
+    "order": 5,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 561,
+    "y": 262,
+    "w": 32
+  },
+  {
+    "order": 6,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 786,
+    "y": 272,
+    "w": 12
+  },
+  {
+    "order": 7,
+    "zone": "card-body",
+    "text": "",
+    "disabled": false,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 809,
+    "y": 262,
+    "w": 32
+  },
+  {
+    "order": 8,
+    "zone": "card-body",
+    "text": "编辑",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 374,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 9,
+    "zone": "card-body",
+    "text": "复制",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 446,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 10,
+    "zone": "card-body",
+    "text": "提交审批",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 518,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 11,
+    "zone": "card-body",
+    "text": "撤回",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 618,
+    "y": 355,
+    "w": 66
+  },
+  {
+    "order": 12,
+    "zone": "card-body",
+    "text": "发送给客户",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 690,
+    "y": 355,
+    "w": 108
+  },
+  {
+    "order": 13,
+    "zone": "card-body",
+    "text": "客户接受",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 804,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 14,
+    "zone": "card-body",
+    "text": "客户拒绝",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1028,
+    "y": 355,
+    "w": 94
+  },
+  {
+    "order": 15,
+    "zone": "card-body",
+    "text": "删除",
+    "disabled": true,
+    "ariaDisabled": null,
+    "title": "",
+    "x": 1128,
+    "y": 355,
+    "w": 66
+  }
+]
+[AC-20b·取证] hover 文案 = {
+  "导入历史": "{\"tooltip\":\"\",\"title\":\"\"}",
+  "导入报价数据": "{\"tooltip\":\"\",\"title\":\"\"}",
+  "新建报价单": "{\"tooltip\":\"\",\"title\":\"\"}"
+}
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/AC-20b-按钮区A-B快照-admin.json
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/07-AC-20b-按钮区取证-admin.png
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/测试/s-ui/证据/AC-20b-无权限角色禁用态-未验证.md
+[AC-20b] ⚠️ 结论：无权限角色的运行时禁用态 —— **本次未验证**（用户裁决降级，非缺陷）
+  ✓  12 e2e/task260914-quote-list.spec.ts:773:1 › T-20b · AC-20（下半条）取证·**未验证**：按钮区 A/B 快照 + 无权限角色禁用态未验证声明 (9.5s)
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/00-run.txt
+[identity 2026-09-23T01:20:14.688Z] FE=http://localhost:5323 pid=2333345 cwd=/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend | BE=http://localhost:8323 pid=2334026 cwd=/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-backend
+[db-identity] api.totalElements=210 SQL Q0(before)=210 SQL Q0(after)=210
+[1280x900] placeholder="搜索销售/客户/生产料号"
+[1280x900] .ant-input-search 宽=240  祖先链=[{"cls":"ant-input","w":169},{"cls":"ant-input-affix-wrapper","w":209},{"cls":"ant-space-compact","w":240},{"cls":"ant-space-item","w":240},{"cls":"ant-space","w":914}]
+[1280x900] 计算字体=400 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"（canvas 实际采用=14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"；::placeholder 字体=14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"；letter-spacing=normal）
+[1280x900] clientWidth=169 padding=0/0 ⇒ 内容区宽=169
+[1280x900] 新文案「搜索销售/客户/生产料号」测宽=147.78  ≤ 169 ?  true
+[1280x900] (量具对照) 旧文案「按料号搜索（销售料号/客户料号）」测宽=213.89  > 169 ?  true
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-1-1280x900-列表页.png
+[1280x900] 清除按钮：可见=true，点击后值=''
+  ✘  13 e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 (31.0s)
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/00-run.txt
+[identity 2026-09-23T01:21:16.355Z] FE=http://localhost:5323 pid=2333345 cwd=/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend | BE=http://localhost:8323 pid=2334026 cwd=/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-backend
+[db-identity] api.totalElements=210 SQL Q0(before)=210 SQL Q0(after)=210
+[前置] 当前激活页签="全部"
+[①] 改条件前已翻到第 2 页
+[① Q1′('300001')] 2026-09-23T01:21:23.620Z SQL(before)=33  UI「共 N 条」=33  SQL(after)=33
+[①] 当前页码=1
+[①] 当前页行数=20  不在同条件 SQL 结果集里的单号=[]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-①.png
+[②] 改条件前已翻到第 2 页
+[②] 切到草稿后料号框值="300001"
+[② Q1′('300001') ∧ 草稿] 2026-09-23T01:21:25.783Z SQL(before)=28  UI「共 N 条」=28  SQL(after)=28
+[②] 当前页码=1
+[②] 当前页行数=20  不在同条件 SQL 结果集里的单号=[]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-②.png
+[③] 改条件前已翻到第 2 页
+[③ Q1′('s0001') ∧ 草稿] 2026-09-23T01:21:27.774Z SQL(before)=30  UI「共 N 条」=30  SQL(after)=30
+[③] 当前页码=1
+[③] 当前页行数=20  不在同条件 SQL 结果集里的单号=[]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-③.png
+[④] 改条件前已翻到第 2 页
+[④ Q1′('s0001')] 2026-09-23T01:21:29.853Z SQL(before)=35  UI「共 N 条」=35  SQL(after)=35
+[④] 当前页码=1
+[④] 当前页行数=20  不在同条件 SQL 结果集里的单号=[]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-④.png
+[⑤] 改条件前已翻到第 2 页
+[⑤ Q1′('s0001') ∧ 左框「正泰」] 2026-09-23T01:21:32.051Z SQL(before)=33  UI「共 N 条」=33  SQL(after)=33
+[⑤] 当前页码=1
+[⑤] 当前页行数=20  不在同条件 SQL 结果集里的单号=[]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-⑤.png
+[⑥] 改条件前已翻到第 2 页
+[⑥-中间态·仅记录不断言] 清掉料号框、左框仍为「正泰」时 共 N 条=106  页码=1
+[⑥ Q0 全量] 2026-09-23T01:21:35.405Z SQL(before)=210  UI「共 N 条」=210  SQL(after)=210
+[⑥] 当前页码=1
+[⑥] 当前页行数=20  不在同条件 SQL 结果集里的单号=[]
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-⑥.png
+[⑦] 刷新后料号框值=""  页码=1（⑦ 不属「条件变化」，页码只记录）
+[⑦ 刷新后 Q0 全量] 2026-09-23T01:21:40.242Z SQL(before)=210  UI「共 N 条」=210  SQL(after)=210
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-9-⑦.png
+[汇总] 页码断言空跑的步骤=[]
+  ✓  14 e2e/task260922-partno-production.spec.ts:465:1 › T-9 · AC-9：七步序列（料号→草稿→改料号→全部→左框关键字→清空→刷新）每步「共 N 条」= 同分钟基准 SQL，页码回第 1 页 (26.2s)
+[identity 2026-09-23T01:21:41.818Z] FE=http://localhost:5323 pid=2333345 cwd=/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend | BE=http://localhost:8323 pid=2334026 cwd=/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-backend
+[db-identity] api.totalElements=210 SQL Q0(before)=210 SQL Q0(after)=210
+[前置] Q1′('300001') 结果集大小=33
+[前置] QT-20260914-0867 的 S0001 链路（客户, 销售料号, 生产料号）=[["CUST-0004","S0001","300001"]]
+[前置] QT-20260910-0806 的 S0004 链路（客户, 销售料号, 本客户生产料号）=[["CUST-0001","S0004",""]]；漏客户过滤时能命中 '300021' 的行数=1
+[① Q1′('300001')] 2026-09-23T01:21:48.024Z SQL(before)=33  UI「共 N 条」=33  SQL(after)=33
+[①] QT-20260914-0867 在料号 '300001' 的结果列表里（逐页找）=true，所在页=1
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-10-①-列表-料号300001-含QT-20260914-0867.png
+[①] QT-20260914-0867 详情页头部徽标=["销售料号: S0001","销售料号: S0004","销售料号: S0008","销售料号: S0012"]
+[①] S0001 浮层原文=
+生产料号
+料号：
+300001
+名称：
+零件1
+规格：
+—
+尺寸：
+3.5×3.5×0.6
+旧料号：
+8DLX.550.653
+[①] 解析「料号」行="300001"
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/run1-worktree/AC-10-①-QT-20260914-0867-S0001-徽标浮层.png
+[②] 回列表后 URL=http://localhost:5323/quotations  料号框值=""（仅记录）
+[② Q1′('300021')] 2026-09-23T01:21:56.400Z SQL(before)=40  UI「共 N 条」=210  SQL(after)=40
+  ✘  15 e2e/task260922-partno-production.spec.ts:591:1 › T-10 · AC-10：搜得到的单卡片徽标显示该生产料号；搜不到的跨客户单徽标显示「未绑定生产料号」 (16.4s)
+
+
+  1) e2e/task260914-quote-list.spec.ts:247:1 › T-5 · AC-5：料号搜 zzz9999 → 0 行 + AntD 默认空态(No data) + 分页区不渲染 + 无红色遮罩 + 无未捕获异常 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.waitForSelector: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('.ant-table-thead th') to be visible[22m
+
+
+       at task260914.helpers.ts:177
+
+      175 |     await page.goto('/quotations');
+      176 |   });
+    > 177 |   await page.waitForSelector('.ant-table-thead th', { timeout: 60_000 });
+          |              ^
+      178 |   await page.waitForLoadState('networkidle').catch(() => {});
+      179 | }
+      180 |
+        at openQuotationList (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914.helpers.ts:177:14)
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914-quote-list.spec.ts:251:3
+
+    Error Context: test-results/task260914-quote-list-T-5--b5559-No-data-分页区不渲染-无红色遮罩-无未捕获异常/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/task260914-quote-list-T-5--b5559-No-data-分页区不渲染-无红色遮罩-无未捕获异常/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/task260914-quote-list-T-5--b5559-No-data-分页区不渲染-无红色遮罩-无未捕获异常/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/task260914-quote-list.spec.ts:410:1 › T-10 · AC-10：报价模板列显示模板名且不带版本号；无模板的单显示「—」 ────────────
+
+    Error: AC-10(D-8): 报价模板列不得带版本号
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeFalsy[2m()[22m
+
+    Received: [31mtrue[39m
+
+      432 |   const nameHasVersion = /v\d|版本/i.test(tplName);
+      433 |   if (!nameHasVersion) {
+    > 434 |     expect(/\bv?\d+\.\d+\b|版本/i.test(cell), 'AC-10(D-8): 报价模板列不得带版本号').toBeFalsy();
+          |                                                                        ^
+      435 |   } else {
+      436 |     console.log(`[AC-10] ⚠️ 该模板名自身含版本样式字符（${tplName}），版本号断言跳过 —— 已在报告里登记`);
+      437 |   }
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914-quote-list.spec.ts:434:72
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/task260914-quote-list-T-10-6df2d-报价模板列显示模板名且不带版本号；无模板的单显示「—」/error-context.md
+
+  3) e2e/task260914-quote-list.spec.ts:635:1 › T-17 · AC-17【序列】七步连续操作：逐步断言中间态命中数 + 每次条件变化后页码重置到第 1 页 
+
+    TimeoutError: page.waitForSelector: Timeout 60000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('.ant-table-thead th') to be visible[22m
+
+
+       at task260914.helpers.ts:177
+
+      175 |     await page.goto('/quotations');
+      176 |   });
+    > 177 |   await page.waitForSelector('.ant-table-thead th', { timeout: 60_000 });
+          |              ^
+      178 |   await page.waitForLoadState('networkidle').catch(() => {});
+      179 | }
+      180 |
+        at openQuotationList (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914.helpers.ts:177:14)
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914-quote-list.spec.ts:651:3
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/task260914-quote-list-T-17-4a06d-步断言中间态命中数-每次条件变化后页码重置到第-1-页/error-context.md
+
+  4) e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.goto: Test timeout of 30000ms exceeded.
+    Call log:
+    [2m  - navigating to "http://localhost:5323/quotations", waiting until "load"[22m
+
+
+       at task260914.helpers.ts:175
+
+      173 | export async function openQuotationList(page: Page) {
+      174 |   await withListRequest(page, async () => {
+    > 175 |     await page.goto('/quotations');
+          |                ^
+      176 |   });
+      177 |   await page.waitForSelector('.ant-table-thead th', { timeout: 60_000 });
+      178 |   await page.waitForLoadState('networkidle').catch(() => {});
+        at action (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914.helpers.ts:175:16)
+        at withListRequest (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914.helpers.ts:166:21)
+        at openQuotationList (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260914.helpers.ts:174:9)
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260922-partno-production.spec.ts:370:11
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/task260922-partno-producti-4274f-r-逐字-框宽-240-带清除按钮-提示文字完整不截断/error-context.md
+
+  5) e2e/task260922-partno-production.spec.ts:591:1 › T-10 · AC-10：搜得到的单卡片徽标显示该生产料号；搜不到的跨客户单徽标显示「未绑定生产料号」 
+
+    Error: [② Q1′('300021')] UI「共 N 条」应等于同一分钟基准 SQL 现场重算值
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m40[39m
+    Received: [31m210[39m
+
+      167 |     `[${label}] 共享库在采样窗口内被并发写入（${before} → ${after}），本条结论无效，需重跑。🚫 不要据此判产品缺陷`
+      168 |   ).toBe(after);
+    > 169 |   expect(ui, `[${label}] UI「共 N 条」应等于同一分钟基准 SQL 现场重算值`).toBe(before);
+          |                                                         ^
+      170 |   return ui;
+      171 | }
+      172 |
+        at expectTotalEqualsSql (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260922-partno-production.spec.ts:169:57)
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260922-partno-production.spec.ts:677:21
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error Context: test-results/task260922-partno-producti-a4d8f-该生产料号；搜不到的跨客户单徽标显示「未绑定生产料号」/error-context.md
+
+  5 failed
+    e2e/task260914-quote-list.spec.ts:247:1 › T-5 · AC-5：料号搜 zzz9999 → 0 行 + AntD 默认空态(No data) + 分页区不渲染 + 无红色遮罩 + 无未捕获异常 
+    e2e/task260914-quote-list.spec.ts:410:1 › T-10 · AC-10：报价模板列显示模板名且不带版本号；无模板的单显示「—」 ─────────────
+    e2e/task260914-quote-list.spec.ts:635:1 › T-17 · AC-17【序列】七步连续操作：逐步断言中间态命中数 + 每次条件变化后页码重置到第 1 页 
+    e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 
+    e2e/task260922-partno-production.spec.ts:591:1 › T-10 · AC-10：搜得到的单卡片徽标显示该生产料号；搜不到的跨客户单徽标显示「未绑定生产料号」 
+  10 passed (6.8m)
+EXIT=1

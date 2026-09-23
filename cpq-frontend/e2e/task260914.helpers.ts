@@ -242,7 +242,7 @@ export function keywordInput(page: Page): Locator {
 
 /** 🆕 AC-1 料号搜索框。placeholder 取自 AC-1 原文。 */
 export function partNoInput(page: Page): Locator {
-  return page.locator('input[placeholder*="按料号搜索"]').first();
+  return page.locator('input[placeholder*="搜索销售/客户/生产料号"]').first();
 }
 
 /** 输入料号并回车触发查询。 */

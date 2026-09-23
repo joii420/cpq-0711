@@ -1,0 +1,7 @@
+[1280x900] placeholder="搜索销售/客户/生产料号"
+[1280x900] .ant-input-search 宽=240  祖先链=[{"cls":"ant-input","w":169},{"cls":"ant-input-affix-wrapper","w":209},{"cls":"ant-space-compact","w":240},{"cls":"ant-space-item","w":240},{"cls":"ant-space","w":914}]
+[1280x900] 计算字体=400 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"（canvas 实际采用=14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"；::placeholder 字体=14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"；letter-spacing=normal）
+[1280x900] clientWidth=169 padding=0/0 ⇒ 内容区宽=169
+[1280x900] 新文案「搜索销售/客户/生产料号」测宽=147.78  ≤ 169 ?  true
+[1280x900] (量具对照) 旧文案「按料号搜索（销售料号/客户料号）」测宽=213.89  > 169 ?  true
+[1280x900] 清除按钮：可见=true，点击后值=''

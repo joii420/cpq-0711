@@ -1,0 +1,64 @@
+=== task-260922 · S-API 用例集 ===
+后端: http://localhost:8081    库: 10.177.152.12/cpq_db_0724    开跑: 2026-09-22T18:10:32-07:00
+证据目录: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/反向验证-8081-旧代码
+SQL 日志: <未设置>
+存活探针（未登录期望 401）: 401
+  URL     : http://localhost:8081/api/cpq/quotations?page=0&size=1
+  HTTP    : 200
+  验明正身: 接口全量=210  cpq_db_0724.count=210→210  cpq_db_test.count=143
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC2  【服务 AC】AC-2
+  partNo=300001 → total = Q1′(300001)；Q1(300001)=0；content 非空且逐条 ∈ Q1′ 集合
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=300001&page=0&size=20
+  HTTP    : 200
+  Q1′(300001) = 33 → 33    Q1(300001) = 0 → 0    接口 totalElements = 0
+  ❌ FAIL  TC-AC2 — totalElements 0 ≠ Q1′ 33（旧口径 Q1=0）
+  LEN=0 DUP=0 OUT=0
+  ❌ FAIL  TC-AC2-逐条 — data.content 为空 —— AC 要求非空，逐条核对无从谈起
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC3  【服务 AC】AC-3
+  partNo=3000 → total = Q1′(3000)，且 > 同时刻 partNo=300001 的 total
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=3000&page=0&size=20
+  HTTP    : 200
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=300001&page=0&size=20
+  HTTP    : 200
+  Q1′(3000) = 48 → 48   Q1′(300001) = 33 → 33   接口: 3000→0  300001→0
+  ❌ FAIL  TC-AC3 — totalElements 0 ≠ Q1′(3000) 48
+  ❌ FAIL  TC-AC3-严格大于 — 3000→0 不大于 300001→0 —— 像是精确匹配或只匹配了前缀
+  LEN=0 DUP=0 OUT=0
+  ❌ FAIL  TC-AC3-逐条 — content 为空
+
+────────────────────────────────────────────────────────────────
+▶ TC-AC5  【服务 AC】AC-5
+  partNo=300021&size=100 → ① total = Q1′；② 不含 3 张 CUST-0001 单；③ Q-漏客户 ≠ ①
+────────────────────────────────────────────────────────────────
+  URL     : http://localhost:8081/api/cpq/quotations?partNo=300021&page=0&size=100
+  HTTP    : 200
+  ① Q1′=40→40  接口 totalElements=0  content=0 条
+  ③ Q-漏客户=43→43
+  点名样本（单号|客户|含S0004行数|本客户名下生产料号含300021行数）:
+    QT-20260907-0564|CUST-0001|1|0
+    QT-20260908-0620|CUST-0001|1|0
+    QT-20260910-0806|CUST-0001|1|0
+  ✅ PASS  TC-AC5-③对照 — Q-漏客户 43 ≠ Q1′ 40（样本有效：漏客户过滤的错误实现会得到 43）
+  ❌ FAIL  TC-AC5-① — totalElements 0 ≠ Q1′ 40（Q-漏客户=43）
+  ❌ FAIL  TC-AC5-② — content 为空，「不含」的判断无从谈起
+
+────────────────────────────────────────────────────────────────
+S-API(task-260922) 汇总：PASS=1  FAIL=7  未验证=0  不稳定=0
+────────────────────────────────────────────────────────────────
+  FAIL|TC-AC2|totalElements 0 ≠ Q1′ 33（旧口径 Q1=0）
+  FAIL|TC-AC2-逐条|data.content 为空 —— AC 要求非空，逐条核对无从谈起
+  FAIL|TC-AC3|totalElements 0 ≠ Q1′(3000) 48
+  FAIL|TC-AC3-严格大于|3000→0 不大于 300001→0 —— 像是精确匹配或只匹配了前缀
+  FAIL|TC-AC3-逐条|content 为空
+  PASS|TC-AC5-③对照|Q-漏客户 43 ≠ Q1′ 40（样本有效：漏客户过滤的错误实现会得到 43）
+  FAIL|TC-AC5-①|totalElements 0 ≠ Q1′ 40（Q-漏客户=43）
+  FAIL|TC-AC5-②|content 为空，「不含」的判断无从谈起
+────────────────────────────────────────────────────────────────
+库: 10.177.152.12/cpq_db_0724   后端: http://localhost:8081   时刻: 2026-09-22T18:10:36-07:00
+证据目录: /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-api/反向验证-8081-旧代码

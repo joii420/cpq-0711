@@ -1,0 +1,43 @@
+[global-setup] Saved auth state for admin → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/admin.json
+[global-setup] Saved auth state for alice → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/alice.json
+[global-setup] Saved auth state for bob → /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/.auth/bob.json
+
+Running 1 test using 1 worker
+
+[证据] /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/dev-docs/task-260914-报价单列表料号搜索与扩列/task-260922-料号搜索加生产料号/证据/s-ui/negctl-master-guard-on/00-run.txt
+[identity 2026-09-23T01:29:39.335Z] FE=http://localhost:5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend | BE=http://localhost:8081 pid=60999 cwd=/home/joii/project/cpq/cpq-backend
+  ✘  1 e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 (2.5s)
+
+
+  1) e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 
+
+    Error: 🚨 前端 http://localhost:5174 的监听进程 cwd 不在本 worktree（/home/joii/project/cpq/cpq-frontend）⇒ 可能测的是 master 旧代码，属**环境问题**
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"task-260922-partno-production-search"[39m
+    Received string:    [31m"/home/joii/project/cpq/cpq-frontend"[39m
+
+      201 |     appendEvidence('00-环境正身.txt', '[⚠️ 负对照轮] 跳过 worktree 正身断言 —— 本轮结果不作为验收证据，只用于证明断言能变红');
+      202 |   } else {
+    > 203 |     expect(fe.cwd, `🚨 前端 ${BASE_URL} 的监听进程 cwd 不在本 worktree（${fe.cwd || '取不到'}）⇒ 可能测的是 master 旧代码，属**环境问题**`).toContain(
+          |                                                                                                                ^
+      204 |       WORKTREE_MARK
+      205 |     );
+      206 |     expect(be.cwd, `🚨 后端 ${BACKEND_URL} 的监听进程 cwd 不在本 worktree（${be.cwd || '取不到'}）⇒ 可能测的是 master 旧代码，属**环境问题**`).toContain(
+        at assertStackIdentity (/home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260922-partno-production.spec.ts:203:112)
+        at /home/joii/project/cpq/.claude/worktrees/task-260922-partno-production-search/cpq-frontend/e2e/task260922-partno-production.spec.ts:366:9
+
+    Error Context: test-results/task260922-partno-producti-4274f-r-逐字-框宽-240-带清除按钮-提示文字完整不截断/error-context.md
+
+    attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/task260922-partno-producti-4274f-r-逐字-框宽-240-带清除按钮-提示文字完整不截断/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/task260922-partno-producti-4274f-r-逐字-框宽-240-带清除按钮-提示文字完整不截断/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    e2e/task260922-partno-production.spec.ts:361:1 › T-1 · AC-1：两档视口下料号框 placeholder 逐字 / 框宽 240 / 带清除按钮 / 提示文字完整不截断 
+[guard-on] EXIT=1

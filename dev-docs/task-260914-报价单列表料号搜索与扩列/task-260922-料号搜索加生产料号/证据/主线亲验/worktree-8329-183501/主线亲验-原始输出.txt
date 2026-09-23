@@ -1,0 +1,7 @@
+[2026-09-23T01:35:02.467Z] BASE=http://localhost:5329  Q0(cpq_db_0724)=210
+[2026-09-23T01:36:24.340Z] ERR page.waitForSelector: Timeout 60000ms exceeded.
+Call log:
+[2m  - waiting for locator('.ant-table-thead th') to be visible[22m
+
+    at openList (/tmp/claude-1000/-home-joii-project-cpq/7abf1578-4e32-4455-9117-2441c6881310/scratchpad/mainline-verify-260922.cjs:84:14)
+    at async /tmp/claude-1000/-home-joii-project-cpq/7abf1578-4e32-4455-9117-2441c6881310/scratchpad/mainline-verify-260922.cjs:103:24

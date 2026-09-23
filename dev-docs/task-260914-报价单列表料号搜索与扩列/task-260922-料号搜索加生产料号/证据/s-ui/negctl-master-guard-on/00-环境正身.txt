@@ -1,0 +1,1 @@
+[identity 2026-09-23T01:29:39.335Z] FE=http://localhost:5174 pid=60890 cwd=/home/joii/project/cpq/cpq-frontend | BE=http://localhost:8081 pid=60999 cwd=/home/joii/project/cpq/cpq-backend
