@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>编辑页·搜索框·已输入未回车</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+ background:#f5f5f5;color:rgba(0,0,0,.88);font-size:14px;line-height:1.5715;padding:16px}
+a{color:#1677ff;text-decoration:none}
+.note{background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#614700}
+.note b{color:#874d00}
+.bd{background:#f6ffed;border:1px solid #b7eb8f;border-radius:6px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#237804}
+.bd b{color:#135200}
+.bd table{margin-top:8px;font-size:12.5px;background:#fff;border-radius:4px;overflow:hidden;width:100%;border-collapse:collapse}
+.bd th,.bd td{padding:6px 10px;border-bottom:1px solid #f0f0f0;text-align:left;vertical-align:top}
+.wrap{background:#fff;border-radius:8px;box-shadow:0 1px 2px rgba(0,0,0,.06);padding:16px;max-width:1360px;margin:0 auto}
+.bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.seg{display:inline-flex;background:#f5f5f5;border-radius:6px;padding:2px}
+.seg span{padding:3px 12px;border-radius:4px;font-size:13px;color:rgba(0,0,0,.65);white-space:nowrap}
+.seg span.on{background:#fff;color:rgba(0,0,0,.88);box-shadow:0 1px 2px rgba(0,0,0,.1);font-weight:500}
+.spacer{flex:1}
+.pgbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:8px 10px;background:#fafafa;
+ border:1px solid #f0f0f0;border-radius:6px;margin-bottom:12px}
+.search{display:flex;align-items:center;gap:4px;border:1px solid #d9d9d9;border-radius:6px;padding:4px 11px;background:#fff;width:320px}
+.search.focus{border-color:#1677ff;box-shadow:0 0 0 2px rgba(5,145,255,.1)}
+.search input{border:0;outline:0;font-size:14px;flex:1;min-width:0;background:transparent;color:rgba(0,0,0,.88);font-family:inherit}
+.search input::placeholder{color:rgba(0,0,0,.25)}
+.search .ic{color:rgba(0,0,0,.45);font-size:13px}
+.search .clr{color:rgba(0,0,0,.25);font-size:12px;cursor:pointer;visibility:hidden}
+.search.has .clr{visibility:visible}
+.total{color:rgba(0,0,0,.65);font-size:13px;white-space:nowrap}
+.total b{color:rgba(0,0,0,.88)}
+.pg{display:flex;align-items:center;gap:4px}
+.pg i{display:inline-flex;align-items:center;justify-content:center;min-width:24px;height:24px;padding:0 6px;
+ border:1px solid transparent;border-radius:4px;font-style:normal;font-size:13px;color:rgba(0,0,0,.88)}
+.pg i.on{border-color:#1677ff;color:#1677ff;font-weight:500;background:#fff}
+.pg i.dis{color:rgba(0,0,0,.25)}
+.sel{display:inline-flex;align-items:center;gap:6px;border:1px solid #d9d9d9;border-radius:4px;padding:0 8px;height:24px;background:#fff;font-size:13px}
+.jump{font-size:13px;color:rgba(0,0,0,.65);display:flex;align-items:center;gap:6px}
+.jump em{display:inline-block;width:44px;height:24px;border:1px solid #d9d9d9;border-radius:4px;background:#fff}
+.card{border:2px dashed #ffa940;border-radius:8px;margin-bottom:10px;padding:14px 16px;position:relative;background:#fffdf7}
+.stubtag{position:absolute;top:-2px;right:-2px;background:#fa8c16;color:#fff;font-size:11px;padding:2px 8px;border-radius:0 6px 0 6px}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:10px;border-bottom:2px solid #f0f0f0}
+.hl,.hr{display:flex;align-items:center;gap:8px;min-width:0}
+.cpn{font-size:16px;font-weight:700;color:#333;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sku{background:#e3f2fd;color:#1565c0;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:500;white-space:nowrap}
+.pname{font-size:14px;font-weight:600;color:#555;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pname.ro{font-size:16px;font-weight:700;color:#333}
+.part{background:#e6f4ff;color:#0958d9;border:1px solid #91caff;border-radius:4px;padding:2px 10px;font-size:12px;white-space:nowrap;cursor:pointer;position:relative}
+.del{border:1px solid #ffccc7;color:#ff4d4f;background:#fff;border-radius:4px;padding:1px 8px;font-size:12px}
+.body{padding-top:10px;font-size:12px;color:rgba(0,0,0,.45)}
+mark{background:#ffe58f;padding:0 2px;border-radius:2px;color:inherit}
+.pop{position:absolute;right:0;top:30px;z-index:5;background:#fff;border-radius:8px;box-shadow:0 6px 16px rgba(0,0,0,.08),0 3px 6px -4px rgba(0,0,0,.12),0 9px 28px 8px rgba(0,0,0,.05);
+ padding:12px 16px;min-width:280px;color:rgba(0,0,0,.88);cursor:default;text-align:left}
+.pop .t{font-weight:600;margin-bottom:8px;font-size:14px}
+.pop .r{display:flex;font-size:13px;margin-bottom:8px}
+.pop .r:last-child{margin-bottom:0}
+.pop .k{color:#8c8c8c;width:62px;flex-shrink:0}
+.pop .mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+.pop .na{color:rgba(0,0,0,.35)}
+.empty{padding:56px 20px;text-align:center}
+.empty .big{font-size:44px;line-height:1;opacity:.25}
+.empty .t1{margin-top:14px;color:rgba(0,0,0,.88);font-size:15px}
+.empty .t2{margin-top:6px;color:rgba(0,0,0,.45);font-size:13px}
+.btn{display:inline-block;margin-top:14px;padding:4px 15px;border-radius:6px;background:#fff;color:rgba(0,0,0,.88);border:1px solid #d9d9d9;font-size:14px;cursor:pointer}
+.cap{margin:18px 0 8px;font-size:13px;font-weight:600;color:rgba(0,0,0,.88);border-left:3px solid #1677ff;padding-left:8px}
+.hint{font-size:12px;color:#8c8c8c;margin:6px 0 12px}
+.call{display:inline-block;background:#fff1f0;border:1px solid #ffa39e;color:#a8071a;border-radius:4px;padding:1px 6px;font-size:12px;margin-left:6px}
+table.x{width:100%;border-collapse:collapse;font-size:13px}
+table.x th,table.x td{border:1px solid #f0f0f0;padding:6px 10px;text-align:left}
+table.x th{background:#fafafa;font-weight:600}
+.pagehd{border:2px dashed #ffa940;border-radius:8px;padding:12px 16px;margin-bottom:12px;background:#fffdf7;position:relative;font-size:13px;color:rgba(0,0,0,.65)}
+.pagehd b{font-size:16px;color:#333;margin-right:10px}
+.tag{display:inline-block;padding:0 7px;height:22px;line-height:20px;border-radius:4px;font-size:12px;border:1px solid #d9d9d9;background:#fafafa;margin-right:6px}
+.tag.blue{background:#e6f4ff;color:#0958d9;border-color:#91caff}
+</style>
+</head>
+<body>
+<div class="note">本图是 <b>task-260923 报价单内搜索：回车触发 + 生产料号</b> 的视觉基准（📌 当前基准 · 仅搜索框部分，见 <a href="index.html">index.html</a>）。
+示例数据是<b>测试自造单</b>的形态：客户<b>正泰（CUST-0004）</b>，14 个产品，物料取自开发库 <code>ds_quote_material</code> / <code>ds_quote_customer_part</code> 的真实记录；
+S0004~S0007 故意排在第 11~14 位（第 2 页），用来证明搜索是在全部产品里找，不是只在当前页里找。</div><div class="bd"><b>🚧 还原边界 —— 先读这段</b><br>本原型<b>只定义「分页栏里的搜索框」这一块</b>。橙色虚线框是<b>占位示意</b>，不是视觉基准。
+<table><thead><tr><th style="width:52%">📌 本原型<b>定义</b>的（照此还原）</th><th>🚫 本原型<b>不定义</b>的（现状保留，改了即超范围）</th></tr></thead><tbody>
+<tr><td>搜索框提示文字：<b>「销售/客户/生产料号，回车搜索」</b>，框宽不变（320px）</td><td>分页器其余元素（页大小 / 翻页 / 跳页 / 顶部+底部双分页栏位置）—— 以 <code>task-260825</code> 原型为准</td></tr>
+<tr><td><b>只有按回车才搜索</b>；输入过程中列表、计数都不变</td><td>产品卡片的结构与样式、卡片头部徽标（现系统那一张）</td></tr>
+<tr><td>点 ✕ 或把文字删光 → <b>立刻</b>恢复全部，不用回车</td><td>Excel 视图的列结构与取值</td></tr>
+<tr><td>匹配字段新增<b>生产料号</b>（卡片「销售料号」徽标浮层里的那个号）</td><td>命中计数文案「匹配 N 条 / 共 M 条」「共 M 条」（沿用）</td></tr>
+<tr><td>按生产料号命中时，卡片上<b>不额外显示、不高亮</b>生产料号</td><td>销售料号 / 客户产品编号的黄底高亮（沿用，仅编辑页有）</td></tr>
+<tr><td>空态副文案引号里 = <b>最近一次按回车提交的文字</b>（不是框里正在打的字）</td><td>空态标题「未找到匹配的料号」与「清空查询」按钮（沿用）</td></tr>
+</tbody></table></div><div class="wrap"><div class="bar"><div class="seg"><span class="on">📝 报价单</span><span>📊 核价单</span><span>📈 比对视图</span></div><div class="spacer"></div><div class="seg"><span class="on">📋 产品卡片</span><span class="">📑 Excel 视图</span></div></div>
+<div class="pgbar"><div class="search focus has"><span class="ic">🔍</span><input value="30002" readonly placeholder="销售/客户/生产料号，回车搜索"><span class="clr">✕</span></div><span class="call">已输入、未按回车</span><span class="total">共 <b>14</b> 条</span><div class="spacer"></div><div class="pg"><i class="dis">‹</i><i class="on">1</i><i class="">2</i><i>›</i></div><span class="sel">10 条/页 ▾</span><span class="jump">跳至 <em></em> 页</span></div>
+<div class="hint">↑ 框里打了 <code>30002</code>，<b>还没按回车</b>：计数仍是「共 14 条」、分页仍是 2 页、卡片仍是第 1~10 个产品 —— 与打字前<b>完全一样</b>。</div>
+<div class="card"><span class="stubtag">占位示意 · 真实卡片见当前系统，本次不改</span><div class="hd"><div class="hl"><span class="cpn" title="示例客户料号">示例客户料号</span><span class="sku">客户产品编号: A002</span></div><div class="hr"><span class="pname">铆钉</span><span class="part" title="点击查看生产料号详情">销售料号: S0001</span><span class="del">删除</span></div></div><div class="body">第 1 个产品 · 页签条 + 页签表格（略，本次不改）</div></div><div class="card"><span class="stubtag">占位示意 · 真实卡片见当前系统，本次不改</span><div class="hd"><div class="hl"></div><div class="hr"><span class="pname">铆钉配件</span><span class="part" title="点击查看生产料号详情">销售料号: S0002</span><span class="del">删除</span></div></div><div class="body">第 2 个产品 · 页签条 + 页签表格（略，本次不改）</div></div><div class="card"><span class="stubtag">占位示意 · 真实卡片见当前系统，本次不改</span><div class="hd"><div class="hl"></div><div class="hr"><span class="pname">铆钉配件</span><span class="part" title="点击查看生产料号详情">销售料号: S0003</span><span class="del">删除</span></div></div><div class="body">第 3 个产品 · 页签条 + 页签表格（略，本次不改）</div></div>
+<div class="hint">…（第 4~10 个产品卡片略）</div></div>
+</body>
+</html>
