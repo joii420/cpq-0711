@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>取数配置器 · 页签类型 × 可选字段 匹配关系（审核稿）</title>
+<style>
+  :root{
+    --blue:#1677ff; --blue-bg:#e6f0ff; --green:#52c41a; --green-bg:#f6ffed; --orange:#fa8c16;
+    --border:#e5e7eb; --bg:#f5f6f8; --text:#1f2329; --sub:#8a909a; --danger:#ff4d4f;
+    --key:#722ed1; --key-bg:#f9f0ff; --grey:#bfbfbf; --gold:#d48806; --gold-bg:#fffbe6;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text);font-size:13px;}
+  .wrap{max-width:1280px;margin:0 auto;background:#fff;min-height:100vh;box-shadow:0 0 24px rgba(0,0,0,.06);}
+  .top{padding:14px 22px;border-bottom:1px solid var(--border);}
+  .top h1{margin:0;font-size:17px;}
+  .top .meta{color:var(--sub);font-size:12px;margin-top:4px;}
+  .vtabs{display:flex;gap:2px;padding:0 22px;border-bottom:1px solid var(--border);}
+  .vtab{padding:10px 16px;font-size:13px;color:var(--sub);cursor:pointer;border-bottom:2px solid transparent;}
+  .vtab.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600;}
+  .view{padding:18px 22px;display:none;}
+  .view.active{display:block;}
+
+  h2.sec{font-size:15px;margin:22px 0 10px;padding-left:9px;border-left:3px solid var(--blue);}
+  h2.sec:first-child{margin-top:0;}
+  .note{background:#f0f5ff;border:1px solid #adc6ff;border-radius:6px;padding:9px 13px;font-size:12px;color:#1d39c4;margin-bottom:14px;line-height:1.85;}
+  .warnbox{background:var(--gold-bg);border:1px solid #ffe58f;border-radius:6px;padding:9px 13px;font-size:12px;color:#874d00;margin:10px 0;line-height:1.85;}
+  .okbox{background:var(--green-bg);border:1px solid #b7eb8f;border-radius:6px;padding:9px 13px;font-size:12px;color:#237804;margin:10px 0;line-height:1.85;}
+
+  table.m{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:6px;}
+  table.m th,table.m td{border:1px solid var(--border);padding:7px 9px;text-align:left;vertical-align:top;}
+  table.m th{background:#fafbfc;color:var(--sub);font-weight:600;white-space:nowrap;}
+  table.m td.c,table.m th.c{text-align:center;}
+  table.m tr:hover td{background:#fcfdff;}
+  code{background:#f5f6f8;border:1px solid var(--border);border-radius:3px;padding:0 4px;font-family:Consolas,monospace;font-size:11.5px;}
+  .yes{color:var(--green);font-weight:700;font-size:15px;}
+  .no{color:#e0e0e0;font-size:14px;}
+  .chip{display:inline-block;border:1px solid var(--border);border-radius:5px;padding:2px 8px;margin:2px 3px 2px 0;font-size:12px;background:#fff;}
+  .chip.money{border-color:#ffd591;background:#fff7e6;color:#ad4e00;}
+  .chip.key{border-color:#efdbff;background:var(--key-bg);color:var(--key);}
+  .chip.aux{border-color:#ffe58f;background:var(--gold-bg);color:var(--gold);}
+  .tag{font-size:10.5px;border-radius:3px;padding:1px 5px;white-space:nowrap;}
+  .tag.main{color:var(--blue);background:var(--blue-bg);border:1px solid #bcd8ff;}
+  .tag.aux{color:var(--gold);background:var(--gold-bg);border:1px solid #ffe58f;}
+  .tag.lib{color:var(--key);background:var(--key-bg);border:1px solid #efdbff;}
+  .tag.todo{color:var(--danger);background:#fff2f0;border:1px solid #ffccc7;}
+
+  .card{border:1px solid var(--border);border-radius:9px;margin-bottom:16px;overflow:hidden;}
+  .card-h{padding:10px 14px;background:#fafbfc;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .card-h b{font-size:14px;}
+  .card-b{padding:12px 14px;}
+  .row2{display:grid;grid-template-columns:96px 1fr;gap:7px 12px;font-size:12.5px;align-items:start;}
+  .row2 .l{color:var(--sub);padding-top:3px;}
+  .lk{font-size:12.5px;line-height:2;}
+  .lk .arrow{color:var(--key);margin:0 5px;}
+  .foot{padding:14px 22px 30px;color:var(--sub);font-size:11.5px;line-height:1.9;border-top:1px solid var(--border);margin-top:20px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>取数配置器 · 页签类型 × 可选字段 匹配关系</h1>
+    <div class="meta">task-0728 需求澄清第四轮 · 全部映射基于 <code>cpq_db_0724</code> 实测与 17 个报价侧导入 handler 核对 · 供审核</div>
+  </div>
+  <div class="vtabs">
+    <div class="vtab active" data-v="v1">① 总览：6 类页签</div>
+    <div class="vtab" data-v="v2">② Sheet × 页签矩阵</div>
+    <div class="vtab" data-v="v3">③ 逐页签字段（按Sheet分组）</div>
+    <div class="vtab" data-v="v4">④ 查名库 / 表维度</div>
+    <div class="vtab" data-v="v5">⑤ 待确认</div>
+  </div>
+
+<!-- ==================== ① 总览 ==================== -->
+<div class="view active" id="v1">
+  <div class="note">
+    <b>核心模型</b>：用户<b>只选「页签类型」一项</b>；可用字段面板<b>按导入 Sheet 分组</b>展示该页签能取的所有字段。
+    主数据源、判别式、取数锚点、行身份料号全部由页签类型推导，用户不接触表名与 JOIN。<br>
+    <b>行身份料号</b>是关键概念——它既是「这一行代表谁」的标识，也是所有<b>附属源的关联键</b>。
+  </div>
+
+  <h2 class="sec">6 类页签</h2>
+  <table class="m">
+    <thead><tr>
+      <th style="width:78px">页签类型</th><th style="width:158px">主数据源（Sheet → 表 + 判别式）</th>
+      <th style="width:150px">取数锚点</th><th style="width:130px">行身份料号</th>
+      <th>客户 / 版本收窄</th><th style="width:104px">开关</th>
+    </tr></thead>
+    <tbody>
+      <tr>
+        <td><b>主件</b></td>
+        <td>物料主档 / 单重<br><code>material_master</code></td>
+        <td><code>mm.material_no</code><br><span class="tag main">→ hf_part_no</span></td>
+        <td>成品料号</td>
+        <td><b>⚠ 该表无 customer_no / is_current</b>，必须 <code>JOIN material_customer_map ... AND mcm.customer_no=:customerCode</code> 收窄</td>
+        <td>—</td>
+      </tr>
+      <tr>
+        <td><b>材质元素</b></td>
+        <td>物料与元素BOM<br><code>element_bom_item</code></td>
+        <td><code>ebi.material_no</code><br><span class="tag main">→ hf_part_no</span></td>
+        <td><b>材质料号</b><br><code>material_part_no</code></td>
+        <td><code>system_type</code> + <code>is_current</code> + <code>customer_no=:customerCode</code></td>
+        <td>子件闭包<br>价格策略</td>
+      </tr>
+      <tr>
+        <td><b>零件</b></td>
+        <td>自制加工费<br><code>unit_price</code> · <code>PROCESS</code></td>
+        <td><code>up.finished_material_no</code><br><span class="tag main">→ hf_part_no</span></td>
+        <td><b>零件料号</b><br><code>up.code</code></td>
+        <td><code>system_type</code> + <code>is_current</code> + <code>customer_no=:customerCode</code></td>
+        <td>子件闭包</td>
+      </tr>
+      <tr>
+        <td><b>外购件</b></td>
+        <td>物料BOM<br><code>material_bom_item</code> · <code>OUTSOURCED</code></td>
+        <td><code>mbi.material_no</code><br><span class="tag main">→ hf_part_no</span></td>
+        <td><b>组成件料号</b><br><code>component_no</code></td>
+        <td><code>system_type</code> + <code>is_current</code> + <code>customer_no=:customerCode</code></td>
+        <td>子件闭包</td>
+      </tr>
+      <tr style="background:#fffbf0">
+        <td><b>费用类</b><br><span class="tag aux">本轮定义</span></td>
+        <td>来料固定加工费 + 来料其他费用<br><code>unit_price</code> · <code>INCOMING_MATERIAL_*</code></td>
+        <td><code>up.finished_material_no</code><br><span class="tag main">→ hf_part_no</span></td>
+        <td><b>投入料号</b><br><code>up.code</code><br><span style="color:var(--gold)">类型不定</span></td>
+        <td><code>system_type</code> + <code>is_current</code> + <code>customer_no=:customerCode</code></td>
+        <td>子件闭包</td>
+      </tr>
+      <tr style="background:#f0f7ff">
+        <td><b>BOM 树</b><br><span class="tag main">本轮新增</span></td>
+        <td>物料BOM<br><code>material_bom_item</code> · <b>无 characteristic 过滤</b>（边式全子件）</td>
+        <td colspan="2"><b>不用 hf_part_no</b>：输出 <code>material_no</code>(子) / <code>parent_no</code>(父)，用 <code>component_no = ANY(:total_material_no)</code> 收窄</td>
+        <td><code>system_type</code> + <code>is_current</code>，<b>禁用 <code>:customerCode</code></b>（树契约，报价侧.md §5.6）</td>
+        <td>—</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="warnbox">
+    <b>费用类 = 两个「投入料号归属不定」的 Sheet</b>（本轮你的定义）。<br>
+    来料固定加工费 / 来料其他费用的 <code>code</code> 既可能是材质料号、也可能是零件或外购件料号——<b>无法归入任一 typed 页签</b>，故自成一类。
+    正因归属不定，它的<b>查名必须双源兜底</b>：<code>COALESCE(mm.material_name, mr.name)</code>——是材质取材质名，是零件/外购件取物料名。<br>
+    实测：现网 <code>INCOMING_MATERIAL_PROCESS</code> 的 <code>code</code>（<code>00137</code>/<code>992</code>）恰好都是材质，但模型不做此假设。
+  </div>
+
+  <div class="okbox">
+    <b>物料BOM 的三态各归其位</b>（实测 <code>RECIPE 78 / OUTSOURCED 34 / ASSEMBLY 33 / NULL 1</code>）：<br>
+    · <code>OUTSOURCED</code> → <b>外购件</b>页签主源　· <code>RECIPE</code> → <b>材质元素</b>页签附属源　· <code>ASSEMBLY</code> → <b>零件</b>页签附属源<br>
+    · <b>全部三态（不过滤）</b> → <b>BOM 树</b>页签主源（边式全子件，与现网 <code>bom_view</code> 一致）<br>
+    <b>用户从不接触 characteristic 这个词</b>。
+  </div>
+</div>
+
+<!-- ==================== ② 附属源复用矩阵 ==================== -->
+<div class="view" id="v2">
+  <div class="note">
+    可用字段面板<b>按 Sheet 分组</b>。<span class="tag main">主源</span>组的字段直接来自主表；<span class="tag aux">附属源</span>组的字段编译成<b>相关标量子查询</b>挂到主源行上，关联键 = 成品料号 + 本页签的<b>行身份料号</b>。
+  </div>
+
+  <h2 class="sec">Sheet × 页签类型（主 = 主数据源，✓ = 作为附属源可用）</h2>
+  <table class="m">
+    <thead><tr>
+      <th style="width:140px">导入 Sheet</th><th style="width:176px">表 + 判别式</th>
+      <th class="c" style="width:52px">主件</th><th class="c" style="width:66px">材质元素</th><th class="c" style="width:52px">零件</th><th class="c" style="width:60px">外购件</th><th class="c" style="width:56px">费用类</th><th class="c" style="width:58px">BOM树</th>
+      <th>关联键</th>
+    </tr></thead>
+    <tbody>
+      <tr><td><b>物料主档 / 单重</b></td><td><code>material_master</code></td>
+        <td class="c"><span class="tag main">主</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td>
+        <td>BOM树用它做<b>根分支</b>（无父边的成品自身）</td></tr>
+      <tr><td><b>客户料号关系</b></td><td><code>material_customer_map</code></td>
+        <td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>material_no=成品 AND customer_no=:customerCode</code><br><span style="color:var(--sub)">主件页签的客户收窄靠它，同时也是查名库</span></td></tr>
+      <tr><td><b>物料与元素BOM</b><br><span style="color:var(--sub);font-size:11px">含 元素回收折扣（同表补列）</span></td><td><code>element_bom_item</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="tag main">主</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td>—</td></tr>
+      <tr><td><b>物料BOM</b>（材质边）</td><td><code>material_bom_item</code> · <code>RECIPE</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>material_no=成品 AND component_no=材质料号</code><br><span style="color:var(--sub)">实测 1/1 对得上元素BOM 的材质料号</span></td></tr>
+      <tr><td><b>物料BOM</b>（装配边）</td><td><code>material_bom_item</code> · <code>ASSEMBLY</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>material_no=成品 AND component_no=零件料号</code></td></tr>
+      <tr><td><b>物料BOM</b>（外购件）</td><td><code>material_bom_item</code> · <code>OUTSOURCED</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="tag main">主</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td>—</td></tr>
+      <tr style="background:#f0f7ff"><td><b>物料BOM</b>（全部边）</td><td><code>material_bom_item</code> · <b>不过滤</b></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="tag main">主</span></td>
+        <td><code>component_no = ANY(:total_material_no)</code></td></tr>
+      <tr><td><b>自制加工费</b></td><td><code>unit_price</code> · <code>PROCESS</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="tag main">主</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td>—</td></tr>
+      <tr><td><b>电镀费用</b> <span class="tag main">已改零件</span></td><td><code>unit_price</code> · <code>PLATING</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>code = 零件料号</code><span style="color:var(--sub)">（实测挂 S-80011 中间层零件）</span></td></tr>
+      <tr><td><b>电镀方案</b></td><td><code>plating_scheme</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>hf_part_no = 零件料号</code><span style="color:var(--sub)">（无客户列，只加 is_current）</span></td></tr>
+      <tr><td><b>成品其他费用</b></td><td><code>unit_price</code> · <code>FINISHED_MATERIAL_OTHER</code></td>
+        <td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>code = 成品料号</code><span style="color:var(--sub)">（该类型 finished_material_no 为空）</span></td></tr>
+      <tr><td><b>组成件其他费用</b></td><td><code>unit_price</code> · <code>COMPONENT_OTHER</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>finished_material_no=成品 AND code=组成件料号</code></td></tr>
+      <tr><td><b>组装加工费</b></td><td><code>capacity</code></td>
+        <td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td>
+        <td><code>material_no = 成品</code><span style="color:var(--sub)">（无客户列，只加 is_current）</span></td></tr>
+      <tr style="background:#fffbf0"><td><b>来料固定加工费</b></td><td><code>unit_price</code> · <code>INCOMING_MATERIAL_PROCESS</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="tag main">主</span></td><td class="c"><span class="no">—</span></td>
+        <td>行身份 = <code>up.code</code>（投入料号，类型不定）</td></tr>
+      <tr style="background:#fffbf0"><td><b>来料其他费用</b></td><td><code>unit_price</code> · <code>INCOMING_MATERIAL_OTHER</code></td>
+        <td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="tag main">主</span></td><td class="c"><span class="no">—</span></td>
+        <td>同上</td></tr>
+      <tr style="background:#fffdf5"><td><b>来料回收折扣</b> <span class="tag todo">待确认</span></td><td><code>unit_price</code> · <code>INCOMING_MATERIAL_RECYCLE</code></td>
+        <td class="c" colspan="6">你只点名了两个 sheet。这张 sheet 键结构与它们完全相同（成品 + 投入料号，归属同样不定），<b>我推断也应归费用类</b>，请确认。</td>
+        <td>同上</td></tr>
+      <tr style="background:#fafafa;color:var(--sub)"><td>来料年降 / 组装加工费年降 / 年降系数</td><td>—</td>
+        <td class="c" colspan="6">本期<b>不参与配置</b>（已确认）</td><td>—</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warnbox">
+    <b>🚨 附属源一律编译成相关标量子查询，禁用 LEFT JOIN</b>（本方案唯一的强制实现约束）<br>
+    实测粒度差：<code>element_bom_item</code> 4 行 / 3 个(成品,材质)键（细）vs <code>unit_price</code> 每键 1 行（粗）。
+    LEFT JOIN 会让同一笔费用在该材质的<b>每个元素行上重复</b>——显示正确，但<b>勾成小计就重复计算，静默算错钱</b>。
+    标量子查询结构上不可能翻倍行数，且天然满足 §3.6（版本化表禁进带 <code>is_current</code> 的 JOIN ON）。<br>
+    <b>配套</b>：附属源金额列默认不勾小计；手动勾选<b>阻断保存</b>。
+  </div>
+</div>
+
+<!-- ==================== ③ 逐页签字段清单（按 Sheet 分组） ==================== -->
+<div class="view" id="v3">
+  <div class="note">
+    这就是「可用字段」面板的实际内容 —— <b>按导入 Sheet 分组</b>。<span class="tag main">主源</span> 直接来自主表；
+    <span class="tag lib">查名</span> 是码列展开（自动接字典表）；<span class="tag aux">附属源</span> 编译成标量子查询。<b>橙色</b> = 金额类。
+    每组下方还有折叠的「全部列」（该表其余物理列），此处未逐一列出。
+  </div>
+
+  <div class="card">
+    <div class="card-h"><b>主件</b><span style="color:var(--sub);font-size:12px">锚点 mm.material_no · 行身份 = 成品料号</span></div>
+    <div class="card-b"><div class="row2">
+      <span class="l">物料主档/单重<br><span class="tag main">主源</span></span><span>
+        <span class="chip">销售料号</span><span class="chip">物料名称</span><span class="chip">规格</span><span class="chip">尺寸</span>
+        <span class="chip">标准单位</span><span class="chip">单重</span><span class="chip">物料类型</span><span class="chip">用途属性</span><span class="chip">旧料号</span></span>
+      <span class="l">客户料号关系<br><span class="tag aux">附属</span><span class="tag lib">查名</span></span><span class="lk">
+        销售料号 <span class="arrow">▸</span> <span class="chip key">客户料号名称</span><span class="chip key">客户产品编号</span><span class="chip key">报价货币</span><span class="chip key">汇率</span></span>
+      <span class="l">成品其他费用<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">费用要素</span><span class="chip aux money">成品其他费用</span><span class="chip aux">费用比例</span><span class="chip aux">项次</span><span class="chip aux">币种</span></span>
+      <span class="l">组装加工费<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">工序号</span><span class="chip aux">工序名称</span><span class="chip aux">生产类型</span><span class="chip aux">固定工时</span><span class="chip aux">变动工时</span><span class="chip aux money">固定成本</span><span class="chip aux">产能单位</span><span class="chip aux">默认不良率</span></span>
+      <span class="l">开关</span><span style="color:var(--sub)">无</span>
+    </div>
+    <div class="warnbox" style="margin-bottom:0"><b>⚠ 主件的客户收窄是特例</b>：<code>material_master</code> 没有 <code>customer_no</code>/<code>is_current</code>/<code>system_type</code>，编译器必须生成 <code>JOIN material_customer_map ... AND mcm.customer_no=:customerCode</code>，否则返全表。这正是现网 <code>cp_view</code> 的写法。</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><b>材质元素</b><span style="color:var(--sub);font-size:12px">锚点 ebi.material_no · 行身份 = 材质料号 material_part_no</span></div>
+    <div class="card-b"><div class="row2">
+      <span class="l">物料与元素BOM<br><span class="tag main">主源</span></span><span>
+        <span class="chip">项次</span><span class="chip">元素</span><span class="chip">组成含量</span><span class="chip">损耗率</span><span class="chip">毛重</span>
+        <span class="chip">毛用量单位</span><span class="chip">基础用量</span><span class="chip">含量上限%</span><span class="chip">含量下限%</span><span class="chip">工序号</span><span class="chip">特性</span>
+        <span class="chip">回收折扣</span><span class="chip">回收币种</span><span class="chip">回收单位</span><span style="color:var(--sub);font-size:11px">（后三列来自「元素回收折扣」，落同表同行）</span>
+        <span class="chip">归属料号<span style="color:var(--gold)"> ·闭包时</span></span></span>
+      <span class="l">查名展开<br><span class="tag lib">字典</span></span><span class="lk">
+        材质料号 <span class="arrow">▸</span> <span class="chip key">材质名称</span> <span class="tag lib">材质库 → 物料主档</span><br>
+        元素（符号）<span class="arrow">▸</span> <span class="chip key">元素名称</span> <span class="tag lib">元素库 element_code</span><br>
+        工序号 <span class="arrow">▸</span> <span class="chip key">工序名</span> <span class="tag lib">工序库</span></span>
+      <span class="l">物料BOM<br>（材质边）<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">组成数量</span><span class="chip aux">组成单位</span><span class="chip aux">BOM损耗率</span><span class="chip aux">毛重</span><span class="chip aux">净重</span><span class="chip aux">重量单位</span><span class="chip aux">计算类型</span><span class="chip aux">BOM项次</span></span>
+      <span class="l">开关</span><span><span class="chip">子件数据也要</span><span class="chip">元素单价接价格策略 → <span class="chip money" style="margin:0">元素单价</span><span class="chip" style="margin:0">货币</span></span></span>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><b>零件</b><span style="color:var(--sub);font-size:12px">锚点 up.finished_material_no · 行身份 = 零件料号 up.code</span></div>
+    <div class="card-b"><div class="row2">
+      <span class="l">自制加工费<br><span class="tag main">主源</span></span><span>
+        <span class="chip">项次</span><span class="chip money">加工单价</span><span class="chip">计价单位</span><span class="chip">币种</span><span class="chip">损耗率</span>
+        <span class="chip">工序号</span><span class="chip">费用类型</span><span class="chip">换算率</span><span class="chip">规格</span><span class="chip">尺寸</span></span>
+      <span class="l">查名展开<br><span class="tag lib">字典</span></span><span class="lk">
+        零件料号 <span class="arrow">▸</span> <span class="chip key">零件名称</span> <span class="tag lib">物料主档 → 材质库</span><br>
+        工序号 <span class="arrow">▸</span> <span class="chip key">工序名</span> <span class="tag lib">工序库</span></span>
+      <span class="l">电镀费用<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">电镀费用类型</span><span class="chip aux money">电镀费用</span><span class="chip aux">电镀方案号</span><span class="chip aux">币种</span></span>
+      <span class="l">电镀方案<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">电镀元素</span><span class="chip aux">电镀方式</span><span class="chip aux">镀层厚度</span><span class="chip aux">电镀面积</span><span class="chip aux">表面积</span><span class="chip aux">密度</span><span class="chip aux">元素用量</span><span class="chip aux">元素用量单位</span><span class="chip aux">电镀要求</span></span>
+      <span class="l">物料BOM<br>（装配边）<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">组成数量</span><span class="chip aux">组成单位</span><span class="chip aux">BOM损耗率</span><span class="chip aux">毛重</span><span class="chip aux">净重</span></span>
+      <span class="l">开关</span><span><span class="chip">子件数据也要</span></span>
+    </div></div>
+  </div>
+
+  <div class="card">
+    <div class="card-h"><b>外购件</b><span style="color:var(--sub);font-size:12px">锚点 mbi.material_no · 行身份 = 组成件料号 component_no</span></div>
+    <div class="card-b"><div class="row2">
+      <span class="l">物料BOM<br>（外购件）<br><span class="tag main">主源</span></span><span>
+        <span class="chip">项次</span><span class="chip">组成数量</span><span class="chip">组成单位</span><span class="chip">损耗率</span><span class="chip">毛重</span><span class="chip">净重</span>
+        <span class="chip">重量单位</span><span class="chip">基础用量</span><span class="chip">计算类型</span><span class="chip">回收折扣</span><span class="chip">回收币种</span><span class="chip">工序号</span><span class="chip">不良率</span>
+        <span class="chip">归属料号<span style="color:var(--gold)"> ·闭包时</span></span></span>
+      <span class="l">查名展开<br><span class="tag lib">字典</span></span><span class="lk">
+        组成件料号 <span class="arrow">▸</span> <span class="chip key">组成件名称</span> <span class="tag lib">物料主档 → 材质库</span><br>
+        工序号 <span class="arrow">▸</span> <span class="chip key">工序名</span> <span class="tag lib">工序库</span></span>
+      <span class="l">组成件<br>其他费用<br><span class="tag aux">附属</span></span><span>
+        <span class="chip aux">费用要素</span><span class="chip aux money">组成件其他费用</span><span class="chip aux">费用比例</span><span class="chip aux">币种</span></span>
+      <span class="l">开关</span><span><span class="chip">子件数据也要</span></span>
+    </div></div>
+  </div>
+
+  <div class="card" style="border-color:#ffe58f">
+    <div class="card-h" style="background:#fffbf0"><b>费用类</b><span class="tag aux">本轮定义</span><span style="color:var(--sub);font-size:12px">锚点 up.finished_material_no · 行身份 = 投入料号 up.code（类型不定）</span></div>
+    <div class="card-b"><div class="row2">
+      <span class="l">来料固定<br>加工费<br><span class="tag main">主源</span></span><span>
+        <span class="chip">项次</span><span class="chip money">来料加工费</span><span class="chip">计价单位</span><span class="chip">币种</span><span class="chip">损耗</span><span class="chip">费用类型</span><span class="chip">换算率</span></span>
+      <span class="l">来料<br>其他费用<br><span class="tag main">主源</span></span><span>
+        <span class="chip">费用要素</span><span class="chip money">来料其他费用</span><span class="chip">费用比例</span><span class="chip">项次</span><span class="chip">币种</span></span>
+      <span class="l">查名展开<br><span class="tag lib">字典</span></span><span class="lk">
+        投入料号 <span class="arrow">▸</span> <span class="chip key">投入料号名称</span> <span class="tag lib">物料主档 → 材质库（双源兜底）</span><br>
+        <span style="color:var(--sub);font-size:11.5px">正因归属不定，必须双源：是材质取材质名，是零件/外购件取物料名</span><br>
+        工序号 <span class="arrow">▸</span> <span class="chip key">工序名</span> <span class="tag lib">工序库</span></span>
+      <span class="l">开关</span><span><span class="chip">子件数据也要</span></span>
+    </div>
+    <div class="okbox" style="margin-bottom:0"><b>判别式由所选字段推导</b>：只拖了「来料固定加工费」的字段 → <code>price_type='INCOMING_MATERIAL_PROCESS'</code>；两个 sheet 的字段都拖了 → <code>price_type IN (...)</code>，靠「费用要素」列区分行。</div>
+    </div>
+  </div>
+
+  <div class="card" style="border-color:#adc6ff">
+    <div class="card-h" style="background:#f0f7ff"><b>BOM 树</b><span class="tag main">本轮新增</span><span style="color:var(--sub);font-size:12px">树契约，与平铺页签完全不同</span></div>
+    <div class="card-b"><div class="row2">
+      <span class="l">物料BOM<br>（全部边）<br><span class="tag main">主源</span></span><span>
+        <span class="chip">组成数量</span><span class="chip">组成单位</span><span class="chip">损耗率</span><span class="chip">材料毛重</span><span class="chip">材料净重</span><span class="chip">重量单位</span>
+        <span class="chip">项次</span><span class="chip">计算类型</span><span class="chip">特性</span><span class="chip">工序号</span></span>
+      <span class="l">查名展开<br><span class="tag lib">字典</span></span><span class="lk">
+        组成件料号 <span class="arrow">▸</span> <span class="chip key">料件名称</span> <span class="tag lib">物料主档 → 材质库</span></span>
+      <span class="l">输出契约</span><span>
+        <span class="chip key">material_no</span>(子件) ／ <span class="chip key">parent_no</span>(父件) —— <b>不输出 hf_part_no</b><br>
+        收窄用 <code>component_no = ANY(:total_material_no)</code>，<b>禁用 <code>:customerCode</code></b></span>
+      <span class="l">编译器<br>自动补</span><span>
+        ① <b>根分支</b>：<code>UNION ALL</code> 一段取无父边的成品自身（列数/类型用 <code>NULL::text</code> 等对齐——手写最易错的地方）<br>
+        ② <b>树配置</b>：自动建/更新一条 <code>costing_bom_tree_config</code>（<code>usage='QUOTE'</code>）</span>
+      <span class="l">开关</span><span style="color:var(--sub)">无（树本身即全展开，不需要闭包开关）</span>
+    </div>
+    <div class="warnbox" style="margin-bottom:0"><b>⚠ BOM 树页签是只读的</b>：顶层 <code>UNION ALL</code> 会让框架的锚点注入降级（<code>anchorInjected=false</code>），该页签<b>不参与 B5 回填</b>。这是设计内的安全降级，界面上必须明示，避免用户以为能在树上编辑。</div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== ④ 查名库 / 表维度 ==================== -->
+<div class="view" id="v4">
+  <h2 class="sec">查名库登记（码列 ▸ 属性 的自动连表依据）</h2>
+  <div class="note">
+    <b>依据</b>：现网 40 个 ACTIVE 视图的 JOIN 普查 —— <b>100% 是「拿一个码查它的名字」，没有一个业务连表</b>。
+    JOIN 右侧恒为该字典表主键，只有左侧的码列在变。故界面上永远不出现「JOIN」，用户配的是「这个码要显示成什么」。
+  </div>
+  <table class="m">
+    <thead><tr><th style="width:110px">库</th><th style="width:170px">表</th><th style="width:170px">连接键（右侧恒定）</th><th>可展开属性</th><th style="width:190px">附加谓词</th></tr></thead>
+    <tbody>
+      <tr><td><b>物料主档</b></td><td><code>material_master</code></td><td><code>material_no</code></td><td>物料名称、规格、尺寸、标准单位、单重、物料类型</td><td>—</td></tr>
+      <tr><td><b>材质库</b></td><td><code>material_recipe</code></td><td><code>code</code></td><td>材质名称、符号、规格标签、配方类型</td><td>—</td></tr>
+      <tr><td><b>工序库</b></td><td><code>process_master</code></td><td><code>process_no</code></td><td>工序名、工序类别、是否外协、标准币种/单位、默认不良率</td><td>—</td></tr>
+      <tr><td><b>元素库</b></td><td><code>element</code></td><td><code>element_code</code> <span class="tag lib">= 元素符号 Ag/Cu</span></td><td>元素名称（银/铜/锌）、元素编号</td><td>—</td></tr>
+      <tr><td><b>客户料号关系</b></td><td><code>material_customer_map</code></td><td><code>material_no</code></td><td>客户料号名称、客户产品编号、报价货币、汇率</td><td><code>customer_no = :customerCode</code> 固定</td></tr>
+    </tbody>
+  </table>
+  <div class="okbox">
+    <b>元素库连接键实测</b>：<code>element_bom_item.component_no</code> 存的是<b>元素符号</b>（Ag/Cu/C），对应 <code>element.element_code</code>，JOIN 命中 83 行；
+    <b>不是</b> <code>element_no</code>（10001 形态）。与 <code>AGENT §3.6</code>「JOIN 键 = 元素符号，非元素编号」一致。
+  </div>
+
+  <h2 class="sec">表维度实测（决定编译器加哪些过滤）</h2>
+  <table class="m">
+    <thead><tr><th style="width:190px">表</th><th class="c" style="width:88px">customer_no</th><th class="c" style="width:88px">is_current</th><th class="c" style="width:96px">system_type</th><th class="c" style="width:110px">参与 pending 改写</th><th>编译器生成的过滤</th></tr></thead>
+    <tbody>
+      <tr><td><code>element_bom_item</code></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td>三者全加</td></tr>
+      <tr><td><code>material_bom_item</code></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td>三者全加 + characteristic</td></tr>
+      <tr><td><code>unit_price</code></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td>三者全加 + price_type</td></tr>
+      <tr><td><code>material_customer_map</code></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td>customer_no + system_type</td></tr>
+      <tr><td><code>capacity</code></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td>is_current + system_type（<b>无客户过滤</b>）</td></tr>
+      <tr><td><code>plating_scheme</code></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td class="c"><span class="yes">✓</span></td><td>is_current + system_type（<b>无客户过滤</b>）</td></tr>
+      <tr style="background:#fffdf5"><td><code>material_master</code></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="yes">✓</span></td><td><b>无任何过滤列</b> → 必须 JOIN material_customer_map 收窄客户</td></tr>
+      <tr><td><code>material_recipe</code> / <code>process_master</code> / <code>element</code></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td class="c"><span class="no">—</span></td><td>纯字典，无过滤 —— 正因如此做查名最安全</td></tr>
+    </tbody>
+  </table>
+  <div class="warnbox">
+    <b>修正</b>：第三轮说的「客户过滤无条件固定生成」<b>不准确</b>。准确表述是：<b>主源表有 customer_no 就加；没有的（material_master / capacity / plating_scheme）靠关联到有客户维度的表来收窄，或只能加版本过滤</b>。
+    编译器按上表逐表决策，用户依然无感。
+  </div>
+</div>
+
+<!-- ==================== ⑤ 待确认 ==================== -->
+<div class="view" id="v5">
+  <h2 class="sec">已解决</h2>
+  <table class="m">
+    <thead><tr><th style="width:160px">问题</th><th>结论</th></tr></thead>
+    <tbody>
+      <tr><td><b>电镀费用归属</b></td><td><span class="tag main">已定</span> 属于<b>零件</b>（作为零件页签的附属源，<code>code = 零件料号</code>）。与实测一致。</td></tr>
+      <tr><td><b>年降 sheet</b></td><td><span class="tag main">已定</span> 来料年降 / 组装加工费年降 / 年降系数，本期<b>全部不参与配置</b>。</td></tr>
+      <tr><td><b>费用类页签的定义</b></td><td><span class="tag main">已定</span> = 来料固定加工费 + 来料其他费用两个<b>投入料号归属不定</b>的 sheet，自成一类；查名双源兜底。</td></tr>
+      <tr><td><b>BOM 树页签</b></td><td><span class="tag main">已定</span> 纳入本期，作为第 6 类页签类型。树契约由编译器承担（根分支 UNION ALL + costing_bom_tree_config）。</td></tr>
+      <tr><td><b>物料BOM 字段怎么选</b></td><td><span class="tag main">已定</span> 三态各归其位 + 全部边给 BOM 树；用户不接触 characteristic。</td></tr>
+      <tr><td><b>可用字段的组织</b></td><td><span class="tag main">已定</span> 按<b>导入 Sheet 分组</b>展示（见 ③），不是一个扁平列表。</td></tr>
+    </tbody>
+  </table>
+
+  <h2 class="sec">仍需你拍板</h2>
+  <table class="m">
+    <thead><tr><th style="width:180px">问题</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr style="background:#fffdf5">
+        <td><b>① 来料回收折扣归哪</b><span class="tag todo">待定</span></td>
+        <td>你点名了两个 sheet 归费用类。<b>来料回收折扣</b>（<code>unit_price · INCOMING_MATERIAL_RECYCLE</code>）键结构与它们完全相同（成品 + 投入料号，归属同样不定），我<b>推断也应归费用类</b>——请确认，或指定别的归属。</td>
+      </tr>
+      <tr style="background:#fffdf5">
+        <td><b>② BOM 树纳入本期的连带影响</b><span class="tag todo">需知悉</span></td>
+        <td>BOM 树不只是多一个页签类型，它带来<b>三项额外工作</b>：(a) 编译器要生成双分支 <code>UNION ALL</code> 并保证两侧列数/类型对齐；(b) 要自动建/更新 <code>costing_bom_tree_config</code> 记录；(c) 真实预览要走树渲染链路（<code>BomTreeRenderService</code>）而不是平铺执行器。<br>
+        <b>工作量评估</b>：约增加 30%。若希望本期尽快落地，可先做 5 类平铺、BOM 树紧随其后作为 Phase 1.5 —— <b>你定</b>。</td>
+      </tr>
+      <tr style="background:#fffdf5">
+        <td><b>③ 血统匹配是否拉进本期</b><span class="tag todo">待定</span></td>
+        <td>上轮问「血统匹配后公式引擎能直接用吗」——<b>按已定的「只存不用」：不能</b>。本期只把血统写进 <code>builder_config</code>，公式引擎不读它，跨页签公式仍需手工配匹配对。<br>
+        要「直接使用」须改两处：<code>CrossTabRefDrawer</code>（按血统自动推荐）+ <code>formulaSerialize.ts:700</code> 的 <code>comparable()</code>（血统集合判定，前后端双轨镜像）。已登记 <b>BL-0088</b>。<b>维持只存，还是拉进本期？</b></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+<div class="foot">
+  数据来源：<code>cpq_db_0724</code> 实测（2026-07-27）+ <code>com/cpq/basicdata/v6/quote/Q*Handler</code> 17 个 sheet 定义 + 现网 40 个 ACTIVE <code>component_sql_view</code> 的 JOIN 普查。<br>
+  相关文档：<code>dev-docs/task-0728-组件SQL视图的用户便捷化配置功能/需求说明.md</code> · 规则基线 <code>dev-docs/rule-0724-组件模板配置/</code>
+</div>
+</div>
+<script>
+document.querySelectorAll('.vtab').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.vtab').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.view').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById(t.dataset.v).classList.add('active');
+    window.scrollTo(0,0);
+  };
+});
+</script>
+</body>
+</html>
