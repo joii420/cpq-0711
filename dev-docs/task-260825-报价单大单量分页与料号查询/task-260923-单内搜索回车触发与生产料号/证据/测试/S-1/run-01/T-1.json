@@ -1,0 +1,74 @@
+{
+ "编辑页": [
+  {
+   "ph": "销售/客户/生产料号，回车搜索",
+   "fit": {
+    "text": "销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 189.77850341796875,
+    "contentW": 262,
+    "fits": true
+   },
+   "ctrl": {
+    "text": "销售/客户/生产料号，回车搜索，销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 393.55694580078125,
+    "contentW": 262,
+    "fits": false
+   }
+  },
+  {
+   "ph": "销售/客户/生产料号，回车搜索",
+   "fit": {
+    "text": "销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 189.77850341796875,
+    "contentW": 262,
+    "fits": true
+   },
+   "ctrl": {
+    "text": "销售/客户/生产料号，回车搜索，销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 393.55694580078125,
+    "contentW": 262,
+    "fits": false
+   }
+  }
+ ],
+ "详情页": [
+  {
+   "ph": "销售/客户/生产料号，回车搜索",
+   "fit": {
+    "text": "销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 189.77850341796875,
+    "contentW": 262,
+    "fits": true
+   },
+   "ctrl": {
+    "text": "销售/客户/生产料号，回车搜索，销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 393.55694580078125,
+    "contentW": 262,
+    "fits": false
+   }
+  },
+  {
+   "ph": "销售/客户/生产料号，回车搜索",
+   "fit": {
+    "text": "销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 189.77850341796875,
+    "contentW": 262,
+    "fits": true
+   },
+   "ctrl": {
+    "text": "销售/客户/生产料号，回车搜索，销售/客户/生产料号，回车搜索",
+    "font": "14px -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"Noto Sans\", sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"",
+    "textW": 393.55694580078125,
+    "contentW": 262,
+    "fits": false
+   }
+  }
+ ]
+}
