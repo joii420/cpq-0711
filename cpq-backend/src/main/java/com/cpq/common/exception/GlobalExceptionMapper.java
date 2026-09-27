@@ -22,6 +22,15 @@ public class GlobalExceptionMapper {
     @ServerExceptionMapper
     public Response handleBusinessException(BusinessException e) {
         LOG.warnf("Business error: %s", e.getMessage());
+        if (e instanceof com.cpq.customer.exception.CustomerImportException cie) {
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(),
+                            Map.of("totalRows", cie.getTotalRows(),
+                                    "createdCustomers", 0,
+                                    "createdContacts", 0,
+                                    "errors", cie.getErrors())))
+                    .build();
+        }
         if (e instanceof RowKeyConflictException rce) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(),
