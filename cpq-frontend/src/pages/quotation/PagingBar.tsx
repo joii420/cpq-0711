@@ -50,6 +50,8 @@ export interface PagingBarProps {
   /** 回车提交当前框内文字（task-260923）。输入法组字中的回车不会调用。 */
   onSearchSubmit: (v: string) => void;
   searchPlaceholder?: string;
+  /** 小单仍显示搜索框，但不显示分页器、页大小和跳页控件。 */
+  showPaginationControls?: boolean;
   /** 翻页/搜索前先把当前受控输入 blur 落值，避免未提交编辑随卡片卸载丢失（AP-54 家族相关纪律）。 */
   onBeforeChange?: () => void;
 }
@@ -66,6 +68,7 @@ const PagingBar: React.FC<PagingBarProps> = ({
   onSearchSubmit,
   searchValue,
   searchPlaceholder = '销售/客户/生产料号，回车搜索',
+  showPaginationControls = true,
   onBeforeChange,
 }) => {
   const totalText = !isSearching
@@ -107,7 +110,7 @@ const PagingBar: React.FC<PagingBarProps> = ({
       />
       <span style={{ color: 'rgba(0,0,0,.65)', fontSize: 13, whiteSpace: 'nowrap' }}>{totalText}</span>
       <div style={{ flex: 1 }} />
-      {matchedTotal > 0 && (
+      {showPaginationControls && matchedTotal > 0 && (
         <Pagination
           size="small"
           current={page}

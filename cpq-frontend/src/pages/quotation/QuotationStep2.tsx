@@ -4348,6 +4348,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
       page={pgPage}
       pageSize={pgPageSize}
       pageSizeOptions={pgPageSizeOptions}
+      showPaginationControls={showPager}
       onPageChange={handlePagerChange}
       searchValue={pgSearchInput}
       onSearchChange={pgSetSearchInput}
@@ -4717,7 +4718,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         // task-260825：Excel 视图必须与卡片视图同步切片（AC-5/AC-7）——传 renderLineItems=当前页窗口，
         // lineItems 仍传全量 costingLineItems（供 refreshSignal/legacy 求值稳定，避免翻页触发重取，AC-3）。
         <div>
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
           <LinkedExcelView
             linkedTemplateId={costingCardTemplateId}
             lineItems={costingLineItems}
@@ -4764,12 +4765,12 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           // task-260923（回流修复 1 / AC-7 AC-12）：空态上方保留顶部分页栏（搜索框 + 计数），页码由 PagingBar 在 0 命中时自行隐藏。
           //   外层与卡片分支同为 div.qt-products-list 且分页栏同为首个子节点 → 命中↔无命中切换时 React 复用同一个 PagingBar，搜索框不丢焦点
           <div className="qt-products-list">
-            {showPager && renderPagingBar()}
+            {renderPagingBar()}
             {renderSearchEmptyState()}
           </div>
         ) : (
           <div className="qt-products-list">
-            {showPager && renderPagingBar()}
+            {renderPagingBar()}
             {pagedPositions.map((pos) => {
               const item = costingLineItems[pos];
               return (
@@ -4793,7 +4794,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                 />
               );
             })}
-            {showPager && renderPagingBar()}
+          {showPager && renderPagingBar()}
           </div>
         )
       ) : mainTab === 'quote' && viewType === 'excel' ? (
@@ -4801,7 +4802,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         // 入口 = 报价单的 customerTemplateId（报价模板）→ 反查 linked_template_id 命中的 Excel 模板
         // task-260825：同上，renderLineItems=当前页窗口，lineItems 保持全量（AC-3/AC-5/AC-7）。
         <div>
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
           <LinkedExcelView
             linkedTemplateId={customerTemplateId}
             lineItems={quoteLineItems}
@@ -4835,12 +4836,12 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
         // task-260923（回流修复 1 / AC-7 AC-12）：空态上方保留顶部分页栏（搜索框 + 计数），页码由 PagingBar 在 0 命中时自行隐藏。
         //   外层与卡片分支同为 div.qt-products-list 且分页栏同为首个子节点 → 命中↔无命中切换时 React 复用同一个 PagingBar，搜索框不丢焦点
         <div className="qt-products-list">
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
           {renderSearchEmptyState()}
         </div>
       ) : (
         <div className="qt-products-list">
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
           {pagedPositions.map((pos) => {
             const item = quoteLineItems[pos];
             const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === item.id;
