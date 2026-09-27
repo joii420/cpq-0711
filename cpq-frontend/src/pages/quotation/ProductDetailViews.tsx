@@ -178,6 +178,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       page={pgPage}
       pageSize={pgPageSize}
       pageSizeOptions={pgPageSizeOptions}
+      showPaginationControls={showPager}
       onPageChange={handlePagerChange}
       searchValue={pgSearchInput}
       onSearchChange={pgSetSearchInput}
@@ -271,7 +272,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
         // task-260923（回流修复 1 / AC-10 AC-12）：空态上方保留顶部分页栏（搜索框 + 计数），页码由 PagingBar 在 0 命中时自行隐藏。
         //   外层与卡片分支同为 div.qt-products-list 且分页栏同为首个子节点 → 命中↔无命中切换时 React 复用同一个 PagingBar，搜索框不丢焦点
         <div className="qt-products-list">
-        {showPager && renderPagingBar()}
+        {renderPagingBar()}
         <div className="qt-empty-state" style={{ padding: '56px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 44, lineHeight: 1, opacity: .25 }}>🔍</div>
           <div style={{ marginTop: 14, color: 'rgba(0,0,0,.88)', fontSize: 15 }}>未找到匹配的料号</div>
@@ -286,7 +287,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
         </div>
       ) : viewType === 'excel' ? (
         <div>
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
           {/* task-260825（F-3/AC-7）：ReadonlyExcelView 纯客户端计算（useExcelSnapshotRows 无网络副作用），
               直接喂当前页窗口即可，不需要 LinkedExcelView 那套 renderLineItems 兜底切片。 */}
           <ReadonlyExcelView
@@ -296,11 +297,11 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               mainTab === 'costing' ? quotation.costingExcelColumns : quotation.quoteExcelColumns
             }
           />
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
         </div>
       ) : (
         <div className="qt-products-list">
-          {showPager && renderPagingBar()}
+          {renderPagingBar()}
           {paging.pagedPositions.map((pos) => {
             const li = visible[pos];
             const isLocateTarget = locateResolved?.cardId != null && locateResolved.cardId === li.id;
