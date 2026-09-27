@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import {
   Button, Drawer, Form, Input, Select, Space, Tag, Popconfirm,
-  message, Tabs, InputNumber, Divider, Typography, Table,
+  message, Tabs, InputNumber, Divider, Typography, Table, Upload, Tooltip, Alert,
 } from 'antd';
-import { PlusOutlined, DeleteOutlined, EditOutlined, StopOutlined, StarFilled, StarOutlined } from '@ant-design/icons';
+import { PlusOutlined, EditOutlined, StopOutlined, StarFilled, StarOutlined, UploadOutlined, DownloadOutlined, CheckCircleFilled, CloseCircleFilled, LoadingOutlined } from '@ant-design/icons';
 import { customerService } from '../../services/customerService';
 import { industryService } from '../../services/industryService';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
@@ -21,6 +21,21 @@ const levelMap: Record<string, { label: string; color: string }> = {
 };
 
 const LEVELS = ['DIAMOND', 'VIP', 'GOLD', 'SILVER', 'STANDARD'];
+
+type ImportState = 'upload' | 'uploading' | 'success' | 'error';
+
+interface ImportError {
+  row?: number;
+  column?: string;
+  reason?: string;
+}
+
+interface ImportResult {
+  totalRows: number;
+  createdCustomers: number;
+  createdContacts: number;
+  errors?: ImportError[];
+}
 
 interface Contact {
   id?: string;
@@ -46,6 +61,11 @@ const CustomerManagement: React.FC = () => {
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
   const [industries, setIndustries] = useState<{ code: string; name: string }[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [importDrawerOpen, setImportDrawerOpen] = useState(false);
+  const [importState, setImportState] = useState<ImportState>('upload');
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importResult, setImportResult] = useState<ImportResult | null>(null);
+  const [importErrors, setImportErrors] = useState<ImportError[]>([]);
 
   useEffect(() => {
     industryService.listActive().then(res => setIndustries(res?.data ?? [])).catch(() => {});
@@ -89,10 +109,77 @@ const CustomerManagement: React.FC = () => {
     setDrawerOpen(true);
   };
 
+  const openImportDrawer = () => {
+    setImportDrawerOpen(true);
+    setImportState('upload');
+    setImportFile(null);
+    setImportResult(null);
+    setImportErrors([]);
+  };
+
+  const closeImportDrawer = () => {
+    if (importState === 'uploading') return;
+    setImportDrawerOpen(false);
+    setImportFile(null);
+    setImportResult(null);
+    setImportErrors([]);
+    setImportState('upload');
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const blob = await customerService.downloadImportTemplate();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = '客户导入模板.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      message.error(err.message || '模板下载失败');
+    }
+  };
+
+  const handleImport = async () => {
+    if (!importFile) {
+      message.warning('请先选择 .xlsx 文件');
+      return;
+    }
+    setImportState('uploading');
+    setImportErrors([]);
+    try {
+      const response = await customerService.importCustomers(importFile);
+      const result: ImportResult = response?.data ?? response;
+      setImportResult({
+        totalRows: Number(result?.totalRows ?? 0),
+        createdCustomers: Number(result?.createdCustomers ?? 0),
+        createdContacts: Number(result?.createdContacts ?? 0),
+        errors: result?.errors ?? [],
+      });
+      setImportState('success');
+      await fetchData();
+    } catch (err: any) {
+      const payload = err?.payload;
+      const errors = Array.isArray(payload?.errors) ? payload.errors : [];
+      setImportErrors(errors);
+      setImportResult({
+        totalRows: Number(payload?.totalRows ?? 0),
+        createdCustomers: 0,
+        createdContacts: 0,
+        errors,
+      });
+      setImportState('error');
+      if (!errors.length && err?.message) message.error(err.message);
+    }
+  };
+
   useEffect(() => {
     if (drawerOpen && editingCustomer) {
       setTimeout(() => {
         form.setFieldsValue({
+          code: editingCustomer.code,
           name: editingCustomer.name,
           level: editingCustomer.level,
           industryCode: editingCustomer.industryCode,
@@ -366,6 +453,7 @@ const CustomerManagement: React.FC = () => {
         </Select>
       </Space>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openDrawer()}>新增客户</Button>
+      <Button icon={<UploadOutlined />} onClick={openImportDrawer}>导入客户</Button>
     </>
   );
 
@@ -406,6 +494,13 @@ const CustomerManagement: React.FC = () => {
       >
         <Form form={form} layout="vertical" onFinish={handleSave}>
           <Divider titlePlacement="left" plain>基本信息</Divider>
+          <Form.Item
+            name="code"
+            label="客户编号"
+            extra={editingCustomer ? '客户编号创建后不可修改' : '选填，留空由系统自动生成'}
+          >
+            <Input maxLength={50} disabled={Boolean(editingCustomer)} placeholder="选填，例如 ABC-001" />
+          </Form.Item>
           <Form.Item name="name" label="客户名称" rules={[{ required: true, message: '请输入客户名称' }]}>
             <Input />
           </Form.Item>
@@ -492,6 +587,117 @@ const CustomerManagement: React.FC = () => {
             <Button type="primary" htmlType="submit" block>保存</Button>
           </div>
         </Form>
+      </Drawer>
+
+      <Drawer
+        title="导入客户"
+        open={importDrawerOpen}
+        width={620}
+        destroyOnClose
+        closable={importState !== 'uploading'}
+        maskClosable={importState !== 'uploading'}
+        onClose={closeImportDrawer}
+        extra={importState === 'uploading' ? (
+          <Tooltip title="导入进行中，请等待完成后关闭">
+            <LoadingOutlined spin />
+          </Tooltip>
+        ) : null}
+      >
+        {importState === 'upload' && (
+          <>
+            <Alert
+              type="info"
+              showIcon
+              message="一行一个客户，同时填写一个主要联系人"
+              description="客户编号可留空；客户名称、联系人姓名和联系人电话为必填项。任何一行校验失败，整份文件都不会写入。"
+              style={{ marginBottom: 20 }}
+            />
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <Button icon={<DownloadOutlined />} onClick={handleDownloadTemplate}>
+                下载客户导入模板
+              </Button>
+              <Upload
+                accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                maxCount={1}
+                multiple={false}
+                beforeUpload={(file) => {
+                  setImportFile(file as File);
+                  return false;
+                }}
+                onRemove={() => {
+                  setImportFile(null);
+                  return true;
+                }}
+                fileList={importFile ? [{ uid: 'customer-import-file', name: importFile.name, status: 'done' } as any] : []}
+              >
+                <Button icon={<UploadOutlined />}>选择 .xlsx 文件</Button>
+              </Upload>
+              <Text type="secondary">支持 .xlsx 文件，单文件导入。建议使用下载的模板填写。</Text>
+              <Button
+                type="primary"
+                icon={<UploadOutlined />}
+                disabled={!importFile}
+                onClick={handleImport}
+                block
+              >
+                开始导入
+              </Button>
+            </Space>
+          </>
+        )}
+
+        {importState === 'uploading' && (
+          <div style={{ padding: '56px 0', textAlign: 'center' }}>
+            <LoadingOutlined spin style={{ fontSize: 32, color: '#1677ff' }} />
+            <Typography.Title level={5} style={{ marginTop: 20 }}>正在校验并导入客户</Typography.Title>
+            <Text type="secondary">文件处理完成前无法关闭此抽屉，请稍候。</Text>
+          </div>
+        )}
+
+        {importState === 'success' && importResult && (
+          <div>
+            <div style={{ textAlign: 'center', padding: '20px 0 28px' }}>
+              <CheckCircleFilled style={{ fontSize: 48, color: '#52c41a' }} />
+              <Typography.Title level={4} style={{ margin: '14px 0 8px' }}>导入成功</Typography.Title>
+              <Text type="secondary">客户列表已刷新，新增数据可立即使用。</Text>
+            </div>
+            <Space size={0} split={<Divider type="vertical" />} style={{ width: '100%', justifyContent: 'center', marginBottom: 28 }}>
+              <div style={{ textAlign: 'center', minWidth: 120 }}><Text type="secondary">读取行数</Text><Typography.Title level={3} style={{ margin: '4px 0 0' }}>{importResult.totalRows}</Typography.Title></div>
+              <div style={{ textAlign: 'center', minWidth: 120 }}><Text type="secondary">新增客户</Text><Typography.Title level={3} style={{ margin: '4px 0 0' }}>{importResult.createdCustomers}</Typography.Title></div>
+              <div style={{ textAlign: 'center', minWidth: 120 }}><Text type="secondary">新增联系人</Text><Typography.Title level={3} style={{ margin: '4px 0 0' }}>{importResult.createdContacts}</Typography.Title></div>
+            </Space>
+            <Button type="primary" block onClick={closeImportDrawer}>完成并刷新列表</Button>
+          </div>
+        )}
+
+        {importState === 'error' && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <CloseCircleFilled style={{ fontSize: 26, color: '#ff4d4f' }} />
+              <div>
+                <Typography.Title level={5} style={{ margin: 0 }}>导入失败，未写入任何数据</Typography.Title>
+                <Text type="secondary">请根据下方错误修正文件后重新选择并导入。</Text>
+              </div>
+            </div>
+            <Table<ImportError>
+              size="small"
+              bordered
+              pagination={{ pageSize: 8, showSizeChanger: false }}
+              rowKey={(record, index) => `${record.row ?? 'unknown'}-${index ?? 0}`}
+              dataSource={importErrors}
+              locale={{ emptyText: '未返回详细错误，请查看服务端提示' }}
+              columns={[
+                { title: 'Excel 行号', dataIndex: 'row', width: 100, render: (value: number) => value ?? '—' },
+                { title: '列名', dataIndex: 'column', width: 120, render: (value: string) => value || '—' },
+                { title: '原因', dataIndex: 'reason', render: (value: string) => value || '导入校验失败' },
+              ]}
+            />
+            <Space style={{ width: '100%', justifyContent: 'flex-end', marginTop: 20 }}>
+              <Button onClick={closeImportDrawer}>关闭</Button>
+              <Button type="primary" onClick={() => { setImportState('upload'); setImportErrors([]); setImportResult(null); }}>重新选择文件</Button>
+            </Space>
+          </div>
+        )}
       </Drawer>
 
       <Drawer

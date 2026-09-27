@@ -5,6 +5,8 @@ import com.cpq.common.dto.PageResult;
 import com.cpq.customer.dto.CreateCustomerRequest;
 import com.cpq.customer.dto.CustomerDTO;
 import com.cpq.customer.service.CustomerService;
+import com.cpq.customer.dto.CustomerImportReportDTO;
+import com.cpq.customer.service.CustomerImportService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import io.vertx.core.http.HttpServerRequest;
@@ -13,7 +15,12 @@ import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 
+import java.io.InputStream;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -26,6 +33,9 @@ public class CustomerResource {
 
     @Inject
     CustomerService customerService;
+
+    @Inject
+    CustomerImportService customerImportService;
 
     @Inject
     SessionHelper sessionHelper;
@@ -57,6 +67,31 @@ public class CustomerResource {
     @Path("/{id}")
     public ApiResponse<CustomerDTO> update(@PathParam("id") UUID id, CreateCustomerRequest request) {
         return ApiResponse.success(customerService.update(id, request));
+    }
+
+    @GET
+    @Path("/import/template")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    public Response downloadImportTemplate() {
+        return Response.ok(customerImportService.generateTemplate())
+                .header("Content-Disposition", "attachment; filename=\"customer_import_template.xlsx\"; filename*=UTF-8''%E5%AE%A2%E6%88%B7%E5%AF%BC%E5%85%A5%E6%A8%A1%E6%9D%BF.xlsx")
+                .build();
+    }
+
+    @POST
+    @Path("/import")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public ApiResponse<CustomerImportReportDTO> importCustomers(@RestForm("file") FileUpload file) {
+        if (file == null) throw new BadRequestException("请上传 .xlsx 文件");
+        byte[] bytes;
+        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
+            bytes = in.readAllBytes();
+        } catch (BadRequestException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BadRequestException("读取上传文件失败");
+        }
+        return ApiResponse.success(customerImportService.importCustomers(bytes));
     }
 
     @DELETE

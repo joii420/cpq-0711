@@ -4,6 +4,15 @@ export const customerService = {
   list: (params: any) => api.get('/customers', { params }) as Promise<any>,
   getById: (id: string) => api.get(`/customers/${id}`) as Promise<any>,
   create: (data: any) => api.post('/customers', data) as Promise<any>,
+  downloadImportTemplate: () => api.get('/customers/import/template', { responseType: 'blob' }) as Promise<Blob>,
+  importCustomers: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/customers/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }) as Promise<any>;
+  },
   update: (id: string, data: any) => api.put(`/customers/${id}`, data) as Promise<any>,
   delete: (id: string) => api.delete(`/customers/${id}`) as Promise<any>,
   batchDelete: (ids: string[]) => api.post('/customers/batch-delete', { ids }) as Promise<any>,

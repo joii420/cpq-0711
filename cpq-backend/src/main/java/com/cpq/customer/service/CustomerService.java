@@ -20,6 +20,7 @@ import com.cpq.quotation.entity.Quotation;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -93,6 +94,8 @@ public class CustomerService {
 
     @Transactional
     public CustomerDTO create(CreateCustomerRequest request, UUID operatorId) {
+        lockCustomerWrites();
+        validateCustomerIdentity(request.name, request.code, null);
         if (request.contacts == null || request.contacts.isEmpty()) {
             throw new BusinessException("At least one contact is required");
         }
@@ -108,7 +111,7 @@ public class CustomerService {
             }
         }
 
-        String code = generateCode();
+        String code = request.code == null || request.code.isEmpty() ? generateCode() : request.code;
 
         Customer customer = new Customer();
         customer.name = request.name;
@@ -153,11 +156,18 @@ public class CustomerService {
 
     @Transactional
     public CustomerDTO update(UUID id, CreateCustomerRequest request) {
+        lockCustomerWrites();
         Customer customer = Customer.findById(id);
         if (customer == null) {
             throw new BusinessException(404, "Customer not found: " + id);
         }
-        if (request.name != null) customer.name = request.name;
+        if (request.name != null) {
+            validateCustomerName(request.name, id);
+            customer.name = request.name;
+        }
+        if (request.code != null && !request.code.isEmpty() && !request.code.equals(customer.code)) {
+            throw new BusinessException(400, "客户编号创建后不可修改");
+        }
         if (request.level != null) customer.level = request.level;
         if (request.industry != null) customer.industry = request.industry;
         if (request.industryCode != null) customer.industryCode = request.industryCode;
@@ -177,6 +187,7 @@ public class CustomerService {
 
     @Transactional
     public void delete(UUID id) {
+        lockCustomerWrites();
         Customer customer = Customer.findById(id);
         if (customer == null) {
             throw new BusinessException(404, "Customer not found: " + id);
@@ -219,8 +230,80 @@ public class CustomerService {
         }
     }
 
-    private String generateCode() {
-        Long seq = (Long) em.createNativeQuery("SELECT nextval('customer_code_seq')").getSingleResult();
-        return String.format("CUST-%04d", seq);
+    public String generateCode() {
+        return generateCode(Set.of());
+    }
+
+    /** Generate a code that is globally unique under the caller's customer-write lock. */
+    public String generateCode(Set<String> reservedNormalizedCodes) {
+        while (true) {
+            Long seq = (Long) em.createNativeQuery("SELECT nextval('customer_code_seq')").getSingleResult();
+            String candidate = String.format("CUST-%04d", seq);
+            String normalized = normalizeIdentity(candidate);
+            if (reservedNormalizedCodes.contains(normalized)) continue;
+            Number existing = (Number) em.createNativeQuery(
+                    "SELECT COUNT(*) FROM customer WHERE lower(trim(code)) = :code")
+                    .setParameter("code", normalized)
+                    .getSingleResult();
+            if (existing.longValue() == 0) return candidate;
+        }
+    }
+
+    /** Generate from a caller-provided complete reservation set (used by a locked batch import). */
+    public String generateCodeFromReserved(Set<String> reservedNormalizedCodes) {
+        while (true) {
+            Long seq = (Long) em.createNativeQuery("SELECT nextval('customer_code_seq')").getSingleResult();
+            String candidate = String.format("CUST-%04d", seq);
+            if (reservedNormalizedCodes.add(normalizeIdentity(candidate))) return candidate;
+        }
+    }
+
+    /**
+     * Normalize only for comparison. Raw leading/trailing whitespace is rejected so that
+     * values copied from spreadsheets do not silently mutate what the user entered.
+     */
+    public static String normalizeIdentity(String value) {
+        return value == null ? null : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    public void validateCustomerIdentity(String name, String code, UUID excludeId) {
+        validateCustomerName(name, excludeId);
+        if (code != null && !code.isEmpty()) {
+            if (!code.equals(code.trim())) {
+                throw new BusinessException(400, "客户编号首尾不能有空格");
+            }
+            if (code.length() > 50) {
+                throw new BusinessException(400, "客户编号长度不能超过50个字符");
+            }
+            String normalized = normalizeIdentity(code);
+            List<Customer> matches = Customer.<Customer>find("lower(trim(code)) = ?1", normalized).list();
+            if (matches.stream().anyMatch(c -> excludeId == null || !excludeId.equals(c.id))) {
+                throw new BusinessException(409, "客户编号已存在: " + code);
+            }
+        }
+    }
+
+    public void validateCustomerName(String name, UUID excludeId) {
+        if (name == null || name.isBlank()) {
+            throw new BusinessException(400, "客户名称不能为空");
+        }
+        if (!name.equals(name.trim())) {
+            throw new BusinessException(400, "客户名称首尾不能有空格");
+        }
+        if (name.length() > 200) {
+            throw new BusinessException(400, "客户名称长度不能超过200个字符");
+        }
+        String normalized = normalizeIdentity(name);
+        List<Customer> matches = Customer.<Customer>find("lower(trim(name)) = ?1", normalized).list();
+        if (matches.stream().anyMatch(c -> excludeId == null || !excludeId.equals(c.id))) {
+            throw new BusinessException(409, "客户名称已存在: " + name);
+        }
+    }
+
+    /** Serialize all customer writes without adding a functional DB unique index. */
+    public void lockCustomerWrites() {
+        em.createNativeQuery("SELECT pg_advisory_xact_lock(:lockKey)")
+                .setParameter("lockKey", 260926001L)
+                .getSingleResult();
     }
 }

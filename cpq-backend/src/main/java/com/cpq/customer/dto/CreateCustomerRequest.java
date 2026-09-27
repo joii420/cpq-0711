@@ -13,6 +13,9 @@ public class CreateCustomerRequest {
     @NotBlank
     public String name;
 
+    /** Optional customer code. Blank values keep the sequence-generated code. */
+    public String code;
+
     public String level;
     public String industry;
     public String industryCode;
