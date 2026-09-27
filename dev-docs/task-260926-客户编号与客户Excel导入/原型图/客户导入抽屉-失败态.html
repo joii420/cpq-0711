@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>客户导入抽屉 · 全量失败态</title>
+<style>
+body{margin:0;background:#f5f7fa;font:14px Arial;color:#1f2937}.drawer{position:fixed;right:0;top:0;width:760px;height:100vh;background:#fff;box-shadow:-4px 0 18px #0002;padding:28px;box-sizing:border-box}.top{display:flex;justify-content:space-between}.error{margin-top:28px;color:#cf1322;background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;padding:16px}.table{margin-top:16px;border:1px solid #f0f0f0;background:#fff;color:#1f2937}.tr{display:grid;grid-template-columns:80px 140px 1fr;padding:12px;border-bottom:1px solid #f0f0f0}.muted{color:#8c8c8c}.btn{border:1px solid #d9d9d9;background:#fff;border-radius:6px;padding:8px 16px}.primary{background:#1677ff;border-color:#1677ff;color:#fff}.footer{position:absolute;bottom:24px;left:28px;right:28px;display:flex;justify-content:flex-end;gap:10px}
+</style>
+<div class="drawer"><div class="top"><h2>导入客户</h2><span class="muted">×</span></div><div class="error"><b>导入失败，本次未写入任何数据</b><p>请修正下列问题后重新选择文件。</p></div><div class="table"><div class="tr"><b>Excel 行</b><b>列</b><b>原因</b></div><div class="tr"><span>3</span><span>客户编号</span><span>客户编号已存在：ABC-001</span></div><div class="tr"><span>4</span><span>客户名称</span><span>客户名称在文件内重复：华东客户（第 3 行）</span></div></div><div class="footer"><button class="btn">关闭</button><button class="btn primary">重新选择文件</button></div></div>

@@ -1,0 +1,7 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>客户导入抽屉 · 上传态</title>
+<style>
+body{margin:0;background:#f5f7fa;font:14px Arial;color:#1f2937}.drawer{position:fixed;right:0;top:0;width:760px;height:100vh;background:#fff;box-shadow:-4px 0 18px #0002;padding:28px;box-sizing:border-box}.top{display:flex;justify-content:space-between}.upload{border:1px dashed #91caff;background:#f0f8ff;border-radius:8px;padding:48px;text-align:center;margin-top:24px}.btn{border:1px solid #d9d9d9;background:#fff;border-radius:6px;padding:8px 16px}.primary{background:#1677ff;border-color:#1677ff;color:#fff}.disabled{background:#f5f5f5;border-color:#d9d9d9;color:#bfbfbf}.muted{color:#8c8c8c}.footer{position:absolute;bottom:24px;left:28px;right:28px;display:flex;justify-content:flex-end;gap:10px}
+</style>
+<div class="drawer"><div class="top"><h2>导入客户</h2><span class="muted">×</span></div><p class="muted">一行一个客户，包含一个主要联系人；任一冲突或错误都会整份拒绝，不会部分写入。</p><button class="btn">下载导入模板</button><div class="upload"><div style="font-size:30px">⇧</div><p>点击或拖拽上传 Excel</p><p class="muted">仅支持 .xlsx · 客户编号可留空 · 电话需为 11 位数字</p><button class="btn">选择文件</button></div><div class="footer"><button class="btn">取消</button><button class="btn disabled" disabled title="请先选择 Excel 文件">开始导入</button></div></div>
