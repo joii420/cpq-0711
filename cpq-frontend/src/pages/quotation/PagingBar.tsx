@@ -5,10 +5,15 @@
  * 与 `03-...空态与禁用态.html` 的禁用态/空态。三处调用方（编辑页 QuotationStep2、详情页、核价工作台）
  * 共用同一份视觉，AC-1/AC-2/AC-2b 的「两级 Segmented 之下、独立一行」「顶部+底部各一个」由调用方负责摆位，
  * 本组件只负责单条分页栏本身的内容与状态。
+ *
+ * task-260923（F-2）：搜索框改为「按回车才搜索」（视觉基准 `task-260923-单内搜索回车触发与生产料号/原型图/01`）——
+ * 打字只改草稿（onSearchChange）；回车（排除输入法组字中的回车）才提交（onSearchSubmit）；
+ * ✕ / 删光由 onSearchChange('') 走 usePagedSearch 的「变空即恢复」，不需要回车。
  */
 import React from 'react';
 import { Pagination, Input } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
+import { isSubmitEnterKey } from './usePagedSearch';
 
 /**
  * 实测发现：本项目 antd 版本下，`<Pagination>` 独立使用（不经 `<Table>`）时未能从
@@ -40,7 +45,10 @@ export interface PagingBarProps {
   onPageChange: (page: number, pageSize: number) => void;
   onPageSizeChange?: (size: number) => void;
   searchValue: string;
+  /** 框内文字变化（草稿）。不触发查询；变空时由 usePagedSearch 立即恢复全部。 */
   onSearchChange: (v: string) => void;
+  /** 回车提交当前框内文字（task-260923）。输入法组字中的回车不会调用。 */
+  onSearchSubmit: (v: string) => void;
   searchPlaceholder?: string;
   /** 翻页/搜索前先把当前受控输入 blur 落值，避免未提交编辑随卡片卸载丢失（AP-54 家族相关纪律）。 */
   onBeforeChange?: () => void;
@@ -55,8 +63,9 @@ const PagingBar: React.FC<PagingBarProps> = ({
   pageSizeOptions,
   onPageChange,
   onSearchChange,
+  onSearchSubmit,
   searchValue,
-  searchPlaceholder = '料号 / 客户产品编号，支持模糊匹配',
+  searchPlaceholder = '销售/客户/生产料号，回车搜索',
   onBeforeChange,
 }) => {
   const totalText = !isSearching
@@ -87,6 +96,12 @@ const PagingBar: React.FC<PagingBarProps> = ({
         placeholder={searchPlaceholder}
         value={searchValue}
         onChange={e => onSearchChange(e.target.value)}
+        onKeyDown={e => {
+          // 🚫 不用 antd 的 onPressEnter：它的 keyLock 要等 keyup 才解锁（只派发 keydown 的场景下第二次回车会被吞），
+          //    且不排除 Safari 组字确认的 keyCode 229。组字判定统一收口在 isSubmitEnterKey（AC-8）。
+          if (!isSubmitEnterKey({ key: e.key, isComposing: e.nativeEvent.isComposing, keyCode: e.nativeEvent.keyCode })) return;
+          onSearchSubmit(e.currentTarget.value);
+        }}
         style={{ maxWidth: 320 }}
         data-testid="paging-search-input"
       />

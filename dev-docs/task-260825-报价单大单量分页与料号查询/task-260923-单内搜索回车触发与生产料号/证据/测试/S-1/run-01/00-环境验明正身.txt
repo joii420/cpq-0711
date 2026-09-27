@@ -1,0 +1,7 @@
+2026-09-24T08:04:54.834Z BASE_URL=http://localhost:5392 端口 5392 监听进程 cwd=/home/joii/project/cpq/.claude/worktrees/task-260923-search-enter-production/cpq-frontend PagingBar.tsx 含新提示文字次数=1
+2026-09-24T08:05:05.322Z 其他 playwright test 进程采样=[]
+2026-09-24T08:05:05.323Z BASE_URL=http://localhost:5392 端口 5392 监听进程 cwd=/home/joii/project/cpq/.claude/worktrees/task-260923-search-enter-production/cpq-frontend PagingBar.tsx 含新提示文字次数=1
+2026-09-24T08:06:41.312Z 其他 playwright test 进程采样=[]
+2026-09-24T08:06:41.315Z BASE_URL=http://localhost:5392 端口 5392 监听进程 cwd=/home/joii/project/cpq/.claude/worktrees/task-260923-search-enter-production/cpq-frontend PagingBar.tsx 含新提示文字次数=1
+2026-09-24T08:12:03.701Z 其他 playwright test 进程采样=[]
+2026-09-24T08:12:03.704Z BASE_URL=http://localhost:5392 端口 5392 监听进程 cwd=/home/joii/project/cpq/.claude/worktrees/task-260923-search-enter-production/cpq-frontend PagingBar.tsx 含新提示文字次数=1

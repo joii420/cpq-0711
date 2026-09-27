@@ -33,6 +33,61 @@ export const DB_PASSWORD = 'joii5231';
 /** productPartNo 在本单的固定格式 —— 用于从渲染出的纯文本里正则抓取料号集合。已用 SQL 验证 1845/1845 条全部满足该正则。 */
 export const PART_NO_REGEX = /202601\d{6}/g;
 
+/**
+ * task-260923 D-7 / AC-13：搜索 spec（task260825-paging-search.spec.ts）专用样本单。
+ * 旧样本 QT-20260825-0180（LARGE_QUOTATION_ID）2026-09-23 实查已不在开发库；搜索 spec 改指向现存的
+ * 1845 个产品草稿 QT-20260908-0628（客户 CUST-0004 正泰）。
+ * ⚠️ 故意**不**改 LARGE_QUOTATION_ID：它还被 writeback / regression 等会触发写操作的 spec 引用，
+ *    整体改指向会让那些 spec 去写这张共享草稿（本任务要求对它只读）。
+ * spec 必须在 beforeAll 里用 querySampleQuotationIdByNo 按单号反查，断言与本常量一致（防单据漂移）。
+ */
+export const SEARCH_SAMPLE_QUOTATION_ID = '22b14b66-b3e7-47f8-9898-e1ee4b7944e9';
+export const SEARCH_SAMPLE_QUOTATION_NO = 'QT-20260908-0628';
+/** QT-20260908-0628 的销售料号格式（2026-09-23 SQL 实查 1845/1845 满足；spec beforeAll 会再校验一次）。 */
+export const SEARCH_SAMPLE_PART_NO_REGEX = /T260907T-B\d{5}/g;
+export const SEARCH_SAMPLE_PART_NO_SQL_PATTERN = '^T260907T-B[0-9]{5}$';
+
+/** 按单号反查报价单 id（只读）。 */
+export function querySampleQuotationIdByNo(quotationNo: string): string {
+  return psql(`SELECT id FROM quotation WHERE quotation_number='${quotationNo}';`);
+}
+
+/** 该单销售料号满足给定正则的行数（只读；用于证明抓取正则覆盖全部行，防集合比对空跑）。 */
+export function queryPartNoPatternCount(quotationId: string, sqlPattern: string): number {
+  return Number(psql(`SELECT count(*) FROM quotation_line_item WHERE quotation_id='${quotationId}' AND product_part_no_snapshot ~ '${sqlPattern}';`));
+}
+
+/**
+ * 该单「写入指纹」（只读）：报价单 updated_at + user_data_version + 全部行的 id/row_version/card_snapshot_at/quote_values_at 摘要。
+ * 只读片在跑前、跑后各取一次，二者必须相等 —— 证明测试没有保存/改写这张共享草稿。
+ */
+export function queryQuotationWriteFingerprint(quotationId: string): string {
+  return psql(
+    `SELECT q.updated_at || '#' || coalesce(q.user_data_version::text,'') || '#' || md5(string_agg(li.id::text || coalesce(li.row_version::text,'') || coalesce(li.card_snapshot_at::text,'') || coalesce(li.quote_values_at::text,''), ',' ORDER BY li.sort_order)) FROM quotation q JOIN quotation_line_item li ON li.quotation_id=q.id WHERE q.id='${quotationId}' GROUP BY q.updated_at, q.user_data_version;`
+  );
+}
+
+/**
+ * 只读守卫：拦截除 GET 与登录外的一切 /api 请求，以 mock 成功响应短路，不放行到真实后端。
+ * 打开编辑页会自发 POST ensure-card-values / formulas/batch-evaluate，以及（已知 S-8）PUT /draft ——
+ * 不拦就等于「保存」了共享草稿。用 fulfill 而不是 abort：abort 会在控制台留 net::ERR_FAILED，
+ * 干扰「控制台无 error」类断言。返回被短路请求的记录。
+ */
+export async function guardReadOnlyApi(page: Page): Promise<{ intercepted: string[] }> {
+  const rec = { intercepted: [] as string[] };
+  await page.route('**/api/**', async (route) => {
+    const req = route.request();
+    const pathname = new URL(req.url()).pathname;
+    if (req.method() === 'GET' || pathname.endsWith('/auth/login')) {
+      await route.continue();
+      return;
+    }
+    rec.intercepted.push(`${req.method()} ${pathname}`);
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 200, message: 'intercepted-by-readonly-test', data: {} }) });
+  });
+  return rec;
+}
+
 function psql(sql: string): string {
   const cmd = `PGPASSWORD=${DB_PASSWORD} psql -h ${DB_HOST} -U ${DB_USER} -d ${DB_NAME} -t -A -F'|' -c "${sql.replace(/"/g, '\\"')}"`;
   return execSync(cmd, { encoding: 'utf-8', shell: '/bin/bash' }).trim();
@@ -135,9 +190,9 @@ export async function switchViewType(page: Page, label: '产品卡片' | 'Excel 
 }
 
 /** 从当前 DOM 纯文本里按 PART_NO_REGEX 抓取所有出现的料号（去重排序），用于跨视图集合比对。 */
-export async function extractVisiblePartNoSet(page: Page, scopeSelector = 'body'): Promise<Set<string>> {
+export async function extractVisiblePartNoSet(page: Page, scopeSelector = 'body', partNoRegex: RegExp = PART_NO_REGEX): Promise<Set<string>> {
   const text = await page.locator(scopeSelector).first().innerText();
-  const matches = text.match(PART_NO_REGEX) || [];
+  const matches = text.match(partNoRegex) || [];
   return new Set(matches);
 }
 

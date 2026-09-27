@@ -1,0 +1,6 @@
+{"at":"2026-09-24T08:20:59.924Z","test":"T-09 搜索第 1200 位料号必须命中，命中数==1，且该卡片渲染在第 1 页","needSelect":true,"nextTitle":"请先填写产品分类和报价模板","category":"默认分类","result":"category-select-unavailable","selVisible":true,"selDisabled":true}
+{"at":"2026-09-24T08:21:55.183Z","test":"T-10a 用销售料号（productPartNo）搜索命中","needSelect":true,"nextTitle":"请先填写产品分类和报价模板","category":"默认分类","result":"category-select-unavailable","selVisible":true,"selDisabled":true}
+{"at":"2026-09-24T08:22:49.043Z","test":"T-11 查询命中 0 行：空态文案逐字一致，不报错不白屏，不保留上一页内容","needSelect":true,"nextTitle":"请先填写产品分类和报价模板","category":"默认分类","result":"category-select-unavailable","selVisible":true,"selDisabled":true}
+{"at":"2026-09-24T08:23:42.166Z","test":"T-12 命中数跨页时，第 2 页是命中集合第 11-20 条（按新默认页大小 10 算）","needSelect":true,"nextTitle":"请先填写产品分类和报价模板","category":"默认分类","result":"category-select-unavailable","selVisible":true,"selDisabled":true}
+{"at":"2026-09-24T08:24:36.640Z","test":"T-13 清空查询后计数回到 1845","needSelect":true,"nextTitle":"请先填写产品分类和报价模板","category":"默认分类","result":"category-select-unavailable","selVisible":true,"selDisabled":true}
+{"at":"2026-09-24T08:25:30.247Z","test":"T-14 查询后切 Excel 视图，行数 == 命中数（受当前页限制）","needSelect":true,"nextTitle":"请先填写产品分类和报价模板","category":"默认分类","result":"category-select-unavailable","selVisible":true,"selDisabled":true}

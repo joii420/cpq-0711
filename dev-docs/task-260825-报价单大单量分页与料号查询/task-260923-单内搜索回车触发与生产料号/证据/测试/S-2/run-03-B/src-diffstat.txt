@@ -1,0 +1,5 @@
+ cpq-frontend/src/pages/quotation/PagingBar.tsx     |  17 +++-
+ .../src/pages/quotation/ProductDetailViews.tsx     |  15 ++-
+ .../src/pages/quotation/QuotationStep2.tsx         |  24 ++++-
+ cpq-frontend/src/pages/quotation/usePagedSearch.ts | 110 ++++++++++++++-------
+ 4 files changed, 124 insertions(+), 42 deletions(-)

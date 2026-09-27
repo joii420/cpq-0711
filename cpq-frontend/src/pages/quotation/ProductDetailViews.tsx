@@ -156,11 +156,13 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
   // task-260825（F-3）：详情页前端分页 + 料号查询，独立于编辑页 QuotationStep2 的分页状态（各页面各自独立）。
   const paging = usePagedSearch<any>({
     items: visible,
-    getSearchFields: (li) => [li.productPartNo, li.customerProductNo, li.customerPartName],
+    // task-260923（F-4）：加生产料号（徽标浮层「料号：」= hfPartInfo.partNo），口径同其余三个字段
+    getSearchFields: (li) => [li.productPartNo, li.customerProductNo, li.customerPartName, li.hfPartInfo?.partNo],
   });
   const {
     page: pgPage, setPage: pgSetPage, pageSize: pgPageSize, setPageSize: pgSetPageSize,
     searchInput: pgSearchInput, setSearchInput: pgSetSearchInput,
+    submitSearch: pgSubmitSearch, submittedSearchText: pgSubmittedSearchText,
     total: pgTotal, matchedTotal: pgMatchedTotal, isSearching: pgIsSearching,
     pagedItems: pagedVisible, showPager, pageSizeOptions: pgPageSizeOptions,
   } = paging;
@@ -179,6 +181,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       onPageChange={handlePagerChange}
       searchValue={pgSearchInput}
       onSearchChange={pgSetSearchInput}
+      onSearchSubmit={pgSubmitSearch}
     />
   );
 
@@ -265,15 +268,21 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
           frozen
         />
       ) : pgIsSearching && pgMatchedTotal === 0 ? (
+        // task-260923（回流修复 1 / AC-10 AC-12）：空态上方保留顶部分页栏（搜索框 + 计数），页码由 PagingBar 在 0 命中时自行隐藏。
+        //   外层与卡片分支同为 div.qt-products-list 且分页栏同为首个子节点 → 命中↔无命中切换时 React 复用同一个 PagingBar，搜索框不丢焦点
+        <div className="qt-products-list">
+        {showPager && renderPagingBar()}
         <div className="qt-empty-state" style={{ padding: '56px 20px', textAlign: 'center' }}>
           <div style={{ fontSize: 44, lineHeight: 1, opacity: .25 }}>🔍</div>
           <div style={{ marginTop: 14, color: 'rgba(0,0,0,.88)', fontSize: 15 }}>未找到匹配的料号</div>
-          <div style={{ marginTop: 6, color: 'rgba(0,0,0,.45)', fontSize: 13 }}>
-            「{pgSearchInput}」在本报价单的 {pgTotal} 个料号中无匹配。请换一个料号片段，或清空查询查看全部。
+          {/* task-260923（F-4）：引号内 = 最近一次按回车提交的原文（不跟框里正在打的字）；超长无空格串按原型 09 折行 */}
+          <div style={{ marginTop: 6, color: 'rgba(0,0,0,.45)', fontSize: 13, wordBreak: 'break-all' }}>
+            「{pgSubmittedSearchText}」在本报价单的 {pgTotal} 个料号中无匹配。请换一个料号片段，或清空查询查看全部。
           </div>
           <div style={{ marginTop: 14 }}>
             <Button onClick={paging.clearSearch}>清空查询</Button>
           </div>
+        </div>
         </div>
       ) : viewType === 'excel' ? (
         <div>

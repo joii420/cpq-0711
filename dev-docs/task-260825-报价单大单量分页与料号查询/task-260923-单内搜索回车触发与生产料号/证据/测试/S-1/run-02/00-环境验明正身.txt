@@ -1,0 +1,2 @@
+2026-09-24T08:31:29.592Z 其他 playwright test 进程采样=[]
+2026-09-24T08:31:29.595Z BASE_URL=http://localhost:5392 端口 5392 监听进程 cwd=/home/joii/project/cpq/.claude/worktrees/task-260923-search-enter-production/cpq-frontend PagingBar.tsx 含新提示文字次数=1
