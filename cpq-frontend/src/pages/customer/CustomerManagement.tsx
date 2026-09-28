@@ -451,9 +451,9 @@ const CustomerManagement: React.FC = () => {
           <Select.Option value="ACTIVE">启用</Select.Option>
           <Select.Option value="INACTIVE">停用</Select.Option>
         </Select>
+        <Button icon={<UploadOutlined />} onClick={openImportDrawer}>导入客户</Button>
       </Space>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openDrawer()}>新增客户</Button>
-      <Button icon={<UploadOutlined />} onClick={openImportDrawer}>导入客户</Button>
     </>
   );
 
