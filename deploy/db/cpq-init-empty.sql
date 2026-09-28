@@ -8,7 +8,7 @@
 -- 内容:
 --   * 251 张表 / 29 个视图 / 106 个序列 / 6 个函数
 --   * Flyway 基线 = 439
---   * 种子数据 703 行: admin 用户 1 + Flyway 基线 1 + 系统配置 701
+--   * 种子数据 705 行: 默认主数据 2 + admin 用户 1 + Flyway 基线 1 + 系统配置 701
 --     (price_adjust_settings / sel_param_type / costing_bom_tree_config / semantic_* 语义图)
 --     —— 均为 Flyway 迁移生成的系统配置, 不含任何业务数据
 --
@@ -16477,6 +16477,12 @@ ALTER TABLE ONLY public."user"
 -- ============================================================
 -- 种子数据(系统配置 + admin 用户 + Flyway 基线)
 -- ============================================================
+
+-- ---- product_category / industry: 默认主数据 ----
+INSERT INTO public.product_category (id, code, name, description, parent_id, status, sort_order, created_at, updated_at)
+VALUES ('e3a92de5-94a3-5e22-917d-5aab859bf53d', '100000', '默认分类', NULL, NULL, 'ACTIVE', 0, now(), now());
+INSERT INTO public.industry (id, code, name, status, version, created_at, updated_at)
+VALUES ('457d9e8c-9fea-502c-a188-c9bbe310fd7e', '200000', '默认行业', 'ACTIVE', 0, now(), now());
 
 -- ---- user: 仅 admin / SYSTEM_ADMIN / ACTIVE ----
 -- 密码 Admin@2026(bcrypt cost=12, 由源库 cpq_db_0724 原样搬运, 未重新生成)
