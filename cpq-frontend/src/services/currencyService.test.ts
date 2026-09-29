@@ -63,6 +63,17 @@ describe('currencyService REST contract', () => {
     expect(config).toMatchObject({ headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
   });
 
+  it('builds the all-currency batch import and template requests', async () => {
+    const file = new File(['xlsx'], 'batch-rates.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    await currencyService.importBatchRates(file);
+    const [path, body, config] = vi.mocked(api.post).mock.calls[0] as any;
+    expect(path).toBe('/currencies/rates/import');
+    expect((body as FormData).get('file')).toBe(file);
+    expect(config).toMatchObject({ headers: { 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+    await currencyService.downloadBatchRateTemplate();
+    expect(api.get).toHaveBeenCalledWith('/currencies/rates/import-template', { responseType: 'blob' });
+  });
+
   it('sends the date-rule strategy without price-source/factor/premium fields', async () => {
     await currencyService.saveStrategy('CUST-260927', {
       method: 'MONTH_DAY', dayOfMonth: 31, windowNum: null, windowUnit: null, specificDate: null,

@@ -26,7 +26,6 @@ const CurrencyManagement: React.FC = () => {
   const [rateModalOpen, setRateModalOpen] = useState(false);
   const [rateSaving, setRateSaving] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importCode, setImportCode] = useState<string | null>(null);
   const [form] = Form.useForm();
   const [rateForm] = Form.useForm();
 
@@ -94,17 +93,29 @@ const CurrencyManagement: React.FC = () => {
   };
 
   const downloadTemplate = async () => {
-    if (!importCode) return;
     try {
-      const blob = await currencyService.downloadRateTemplate(importCode);
+      const blob = await currencyService.downloadBatchRateTemplate();
       const url = URL.createObjectURL(blob); const a = document.createElement('a');
-      a.href = url; a.download = `${importCode}-汇率导入模板.xlsx`; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+      a.href = url; a.download = '汇率批量导入模板.xlsx'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
     } catch (e: any) { message.error(e?.message ?? '模板下载失败'); }
   };
 
   const handleImport = async (file: File) => {
-    if (!importCode) return false;
-    try { await currencyService.importRates(importCode, file); message.success('汇率导入成功'); setImportOpen(false); if (historyCode === importCode) openHistory(importCode); }
+    try {
+      const res = await currencyService.importBatchRates(file);
+      const result = res.data;
+      setImportOpen(false);
+      await load();
+      if (historyCode) await openHistory(historyCode);
+      Modal.success({
+        title: '汇率批量导入完成',
+        content: <div>
+          <p>成功导入：{result.importedCount} 个币种；其中覆盖当天已有汇率：{result.overwrittenCount} 个。</p>
+          <p>未匹配并跳过：{result.skippedCount} 个。</p>
+          {result.unmatchedCurrencyCodes?.length > 0 && <p>未匹配币种编号：{result.unmatchedCurrencyCodes.join('、')}</p>}
+        </div>,
+      });
+    }
     catch (e: any) { message.error(e?.response?.data?.message ?? e?.message ?? '汇率导入失败'); }
     return false;
   };
@@ -115,10 +126,9 @@ const CurrencyManagement: React.FC = () => {
     { title: '汇率（目标币种 → CNY）', key: 'rate', render: (_: unknown, r: CurrencyDTO) => r.isBase ? '1.000000000000' : `1 ${r.code} = ${formatRate(r.latestRate)} CNY` },
     { title: '生效日期', dataIndex: 'latestRateDate', width: 130, render: (v: string) => v || '-' },
     { title: '状态', dataIndex: 'enabled', width: 90, render: (v: boolean) => <Tag color={v ? 'green' : 'default'}>{v ? '启用' : '停用'}</Tag> },
-    { title: '操作', key: 'action', width: 270, render: (_: unknown, r: CurrencyDTO) => <Space>
+    { title: '操作', key: 'action', width: 220, render: (_: unknown, r: CurrencyDTO) => <Space>
       <Button type="link" icon={<HistoryOutlined />} onClick={() => openHistory(r.code)}>历史汇率</Button>
       {!r.isBase && <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(r)}>编辑</Button>}
-      {!r.isBase && <Button type="link" icon={<UploadOutlined />} onClick={() => { setImportCode(r.code); setImportOpen(true); }}>导入汇率</Button>}
       {!r.isBase && <Popconfirm title="确认删除该币种？" onConfirm={async () => { try { await currencyService.remove(r.code); message.success('已删除'); load(); } catch (e: any) { message.error(e?.response?.data?.message ?? '删除失败'); } }}><Button type="link" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm>}
     </Space> },
   ];
@@ -126,7 +136,7 @@ const CurrencyManagement: React.FC = () => {
   history.forEach((row) => { if (!matrixByDate.has(row.effectiveDate)) matrixByDate.set(row.effectiveDate, row); });
   const matrixDates = Array.from(matrixByDate.keys()).sort().reverse();
 
-  return <Card title="币种管理" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit()}>新增币种</Button>}>
+  return <Card title="币种管理" extra={<Space><Button icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>批量导入汇率</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit()}>新增币种</Button></Space>}>
     <Alert type="info" showIcon message="汇率方向：1 目标币种 = N CNY；报价单创建时固化汇率快照。" style={{ marginBottom: 16 }} />
     <Table rowKey="code" loading={loading} dataSource={currencies} columns={columns} pagination={false} />
     <Modal open={modalOpen} title={editing ? '编辑币种' : '新增币种'} onCancel={() => setModalOpen(false)} onOk={save} destroyOnClose>
@@ -138,7 +148,7 @@ const CurrencyManagement: React.FC = () => {
         {editing && !editing.isBase && <Form.Item name="enabled" label="状态" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item>}
       </Form>
     </Modal>
-    <Drawer title={`${historyCode ?? ''} 汇率`} open={!!historyCode} onClose={() => setHistoryCode(null)} width={1000} extra={historyCode && <Space><Button icon={<UploadOutlined />} onClick={() => { setImportCode(historyCode); setImportOpen(true); }}>导入汇率</Button><Button type="primary" icon={<PlusOutlined />} onClick={() => openRateEditor()}>新增汇率</Button></Space>}>
+    <Drawer title={`${historyCode ?? ''} 汇率`} open={!!historyCode} onClose={() => setHistoryCode(null)} width={1000} extra={historyCode && <Button type="primary" icon={<PlusOutlined />} onClick={() => openRateEditor()}>新增汇率</Button>}>
       <Tabs activeKey={rateView} onChange={setRateView} items={[
         { key: 'detail', label: '明细', children: <Table loading={historyLoading} rowKey={(r) => `${r.id ?? ''}-${r.effectiveDate}-${r.updatedAt ?? ''}`} dataSource={history} pagination={{ pageSize: 20 }} columns={[
           { title: '生效日期', dataIndex: 'effectiveDate' },
@@ -162,8 +172,8 @@ const CurrencyManagement: React.FC = () => {
         <Form.Item name="source" label="来源"><Input maxLength={200} /></Form.Item>
       </Form>
     </Modal>
-    <Drawer title={`导入 ${importCode ?? ''} 汇率`} open={importOpen} onClose={() => setImportOpen(false)} size="default">
-      <Alert type="info" showIcon message="Excel 列：生效日期*、汇率*、来源；整批校验，失败不会写入。" style={{ marginBottom: 16 }} />
+    <Drawer title="批量导入汇率" open={importOpen} onClose={() => setImportOpen(false)} size="default">
+      <Alert type="info" showIcon message="按生效日期和币种编号批量导入。未匹配币种将跳过；同币种同日再次导入会覆盖当天有效值，并保留历史记录。" description="Excel 列：生效日期*、币种编号*、汇率*、来源。" style={{ marginBottom: 16 }} />
       <Button icon={<DownloadOutlined />} onClick={downloadTemplate} style={{ marginBottom: 16 }}>下载导入模板</Button>
       <Upload beforeUpload={handleImport} maxCount={1} accept=".xlsx,.xls"><Button icon={<UploadOutlined />}>选择 Excel 文件</Button></Upload>
     </Drawer>

@@ -123,6 +123,39 @@ class CurrencyExchangeRateApiTest {
     }
 
     @Test
+    @DisplayName("批量汇率导入：匹配币种写入、未匹配跳过、同日覆盖有效值并保留历史")
+    void batchRateImport_matchesSkipsAndKeepsOverwriteHistory() throws Exception {
+        ensureCurrency(USD, "美元", "$", 20);
+        String marker = PREFIX + "BATCH-" + UUID.randomUUID();
+        String date = "2001-05-17";
+        postRate("7.100000000000", date, marker + "-OLD");
+        byte[] workbook = workbook(new String[][]{
+                {"生效日期*", "币种编号*", "汇率*", "来源"},
+                {date, USD, "7.400000000000", marker + "-NEW"},
+                {date, "NO_MATCH_FX", "8.000000000000", marker + "-SKIP"}
+        });
+
+        Response imported = RestAssured.given()
+                .multiPart("file", "batch-rates.xlsx", workbook,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                .when().post("/api/cpq/currencies/rates/import")
+                .then().statusCode(200).extract().response();
+        assertEquals(1, imported.jsonPath().getInt("data.importedCount"), imported.asString());
+        assertEquals(1, imported.jsonPath().getInt("data.overwrittenCount"), imported.asString());
+        assertEquals(1, imported.jsonPath().getInt("data.skippedCount"), imported.asString());
+        assertTrue(imported.jsonPath().getList("data.unmatchedCurrencyCodes", String.class).contains("NO_MATCH_FX"));
+
+        List<Map<String, Object>> rows = RestAssured.given().when()
+                .get("/api/cpq/currencies/" + USD + "/rates")
+                .then().statusCode(200).extract().jsonPath().getList("data.items");
+        List<Map<String, Object>> importedHistory = rows.stream()
+                .filter(r -> String.valueOf(r.get("source")).startsWith(marker))
+                .toList();
+        assertEquals(2, importedHistory.size(), "覆盖后必须保留旧汇率历史");
+        assertEquals(marker + "-NEW", importedHistory.get(0).get("source"), "同日新导入记录必须成为最新有效值");
+    }
+
+    @Test
     @DisplayName("AC-3/15: customer default currency is persisted independently of future quote snapshots")
     void customerDefaultCurrency_isPersisted() {
         ensureCurrency(USD, "美元", "$", 20);

@@ -8,6 +8,13 @@ import type {
 
 const unwrap = <T>(response: any): T => (response?.data ?? response) as T;
 
+export interface CurrencyRateImportResult {
+  importedCount: number;
+  overwrittenCount: number;
+  skippedCount: number;
+  unmatchedCurrencyCodes: string[];
+}
+
 export const currencyService = {
   list: (params?: { enabled?: boolean }) =>
     api.get('/currencies', { params }) as Promise<{ data: CurrencyDTO[] }>,
@@ -24,6 +31,8 @@ export const currencyService = {
     api.put(`/currencies/${encodeURIComponent(code)}/rates/${encodeURIComponent(id)}`, payload) as Promise<{ data: ExchangeRateDTO }>,
   downloadRateTemplate: (code: string) =>
     api.get(`/currencies/${encodeURIComponent(code)}/rates/import-template`, { responseType: 'blob' }) as Promise<Blob>,
+  downloadBatchRateTemplate: () =>
+    api.get('/currencies/rates/import-template', { responseType: 'blob' }) as Promise<Blob>,
   matrixRates: (code: string, params?: { fromDate?: string; toDate?: string }) =>
     api.get(`/currencies/${encodeURIComponent(code)}/rates/matrix`, { params }) as Promise<{ data: { currency: string; items: ExchangeRateDTO[] } }>,
   importRates: (code: string, file: File) => {
@@ -33,6 +42,14 @@ export const currencyService = {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 120000,
     });
+  },
+  importBatchRates: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/currencies/rates/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    }) as Promise<{ data: CurrencyRateImportResult }>;
   },
   getStrategy: async (customerNo: string) =>
     unwrap<ExchangeRateStrategyDTO | null>(await api.get(`/customers/${encodeURIComponent(customerNo)}/exchange-rate-strategy`)),
