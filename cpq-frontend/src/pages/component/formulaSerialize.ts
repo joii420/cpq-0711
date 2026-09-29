@@ -1173,6 +1173,13 @@ export function expressionToTokens(
       case 'bracket_expr': {
         const body = raw.body.trim();
 
+        // task-260927：报价单创建时固化的客户汇率快照，使用独立业务变量标签，
+        // 不与左侧组件中可能存在的同名普通字段混淆。
+        if (body === '汇率') {
+          result.push({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' });
+          break;
+        }
+
         // repair-260916 P1：[页签.列(小计)] → 整列小计（component_subtotal）；
         // [页签(小计)] / 本页签 / 未勾小计的列 → 按 5.1 报错。
         const subRef = resolveSubtotalSuffixRef(
@@ -1319,6 +1326,10 @@ export function tokensToDrawerExpression(
 
       case 'path':
         parts.push(`{${token.path ?? ''}}`);
+        break;
+
+      case 'global_variable':
+        parts.push(token.label ?? (token.code === 'EXCHANGE_RATE' ? '[汇率]' : `[${token.code ?? ''}]`));
         break;
 
       case 'component_subtotal': {

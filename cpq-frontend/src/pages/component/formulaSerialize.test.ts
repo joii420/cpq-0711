@@ -96,6 +96,11 @@ const selfRKF = ['料号'];
 // ─────────────────────────────────────────────
 
 describe('expressionToTokens — basic', () => {
+  it('parses and round-trips the quotation exchange-rate business variable', () => {
+    const tokens = expressionToTokens('[汇率] * 2', allTabs);
+    expect(tokens[0]).toMatchObject({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' });
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[汇率] * 2');
+  });
   it('plain same-component field [单重]', () => {
     const tokens = expressionToTokens('[单重]', allTabs, selfRKF);
     expect(tokens).toHaveLength(1);

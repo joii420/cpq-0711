@@ -17,6 +17,7 @@ type SumifFuncName = 'SUMIF' | 'COUNTIF' | 'AVGIF' | 'MINIF' | 'MAXIF';
 const FUNCS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'];
 const OPS = ['+', '-', '*', '/', '(', ')'];
 const SUMIF_TEXT_FUNCS: SumifFuncName[] = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
+const BUSINESS_VARIABLES = [{ label: '[汇率]', title: '引用报价单创建时按客户汇率策略固化的目标币种 → CNY 汇率' }];
 
 // task-0803 F-5（2026-08-04 补）：父子取值函数 / 树属性保留字的一键插入。
 // 此前只有下方紫色框的文字说明、没有按钮，用户在 BOM 页签打开抽屉「看不到这几个选项」，
@@ -132,6 +133,15 @@ const FormulaEditorPanel: React.FC<Props> = ({
         onClick: () => onInsert(op),
       })),
     },
+    ...(componentType === 'EXCEL' ? [] : [{
+      title: '业务变量',
+      items: BUSINESS_VARIABLES.map(variable => ({
+        label: variable.label,
+        title: variable.title,
+        style: { color: '#1677ff', borderColor: '#91caff' },
+        onClick: () => onInsert(variable.label),
+      })),
+    }]),
     {
       title: '函数',
       items: FUNCS.map(fn => ({

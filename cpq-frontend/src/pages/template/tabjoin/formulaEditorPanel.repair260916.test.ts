@@ -47,7 +47,7 @@ const render = (componentType: 'NORMAL' | 'SUBTOTAL' | 'EXCEL', tabType?: string
 function toolGroups(root: React.ReactElement): Record<string, string[]> {
   const groups: Record<string, string[]> = {};
   const groupDivs = findAll(root, (el) => el.type === 'div' && typeof el.key === 'string'
-    && ['运算符', '函数', '条件聚合', '父子取值'].includes(el.key));
+    && ['运算符', '业务变量', '函数', '条件聚合', '父子取值'].includes(el.key));
   for (const g of groupDivs) {
     const buttons = findAll(g, (el) => typeof el.type !== 'string' && (el.props as any).size === 'small'
       && 'disabled' in (el.props as any));
@@ -64,6 +64,7 @@ describe('F-12 条件聚合按钮组', () => {
     console.log('[NORMAL groups]', JSON.stringify(g));
     expect(Object.keys(g).length).toBeGreaterThan(0);
     expect(g['运算符']).toEqual(['+', '-', '*', '/', '(', ')']);
+    expect(g['业务变量']).toEqual(['[汇率]']);
   });
 
   it('AC-18⑤ Excel 组件：没有「条件聚合」组，也没有任何 SUMIF 类按钮', () => {
