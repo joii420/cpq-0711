@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>报价单管理 · 从基础数据导入</title><link rel="stylesheet" href="../../task-260907-报价导入建单切ds新表/原型图/proto.css"></head>
+<body>
+<div class="proto-note"><b>入口校正 · 报价单管理</b>　用户当前使用的入口是报价单管理工具栏的 <code>从基础数据导入</code>。本原型沿用报价单列表与导入抽屉，不新增“产品导入”独立页面；默认税务分类只作为导入预校验的一部分。</div>
+<div class="page" style="margin-bottom:24px">
+  <div class="page-head"><h2>报价单管理 <span class="tag tag-blue" style="font-weight:400">列表页 · 默认态</span></h2><div class="head-actions"><button class="btn">🕘 导入历史</button><button class="btn btn-primary">⤓ 从基础数据导入</button><button class="btn">＋ 新建报价单</button></div></div>
+  <div class="toolbar"><span class="input" style="width:320px">搜索报价单号 / 名称 / 客户</span><button class="btn">查询</button><button class="btn">重置</button><div class="toolbar-right"><span class="muted">草稿 160　待核价 70　已通过 9</span></div></div>
+  <div class="table-wrap"><table class="tbl"><thead><tr><th>报价单号</th><th>名称</th><th>客户</th><th>状态</th><th>总金额</th><th>创建时间</th></tr></thead><tbody><tr><td class="mono">QT-20260927-0003</td><td>正泰 · 9 月新料号报价</td><td>正泰</td><td><span class="tag tag-blue">草稿</span></td><td class="mono">128,540.00</td><td class="mono">2026-09-27 10:24</td></tr><tr><td class="mono">QT-20260927-0002</td><td>罗克韦尔 · 银镍触点</td><td>罗克韦尔</td><td><span class="tag tag-gold">待核价</span></td><td class="mono">86,220.00</td><td class="mono">2026-09-27 09:12</td></tr></tbody></table></div>
+</div>
+<div class="drawer-mask">
+  <div class="drawer" style="width:720px">
+    <div class="drawer-head"><div class="drawer-title">从基础数据导入 <span class="hint">Step 1 · 选择客户并上传</span></div><div class="drawer-close">✕</div></div>
+    <div class="drawer-body">
+      <div class="steps"><div class="step active"><span class="step-num">1</span><span class="step-txt">选客户并上传</span></div><div class="step-line"></div><div class="step"><span class="step-num">2</span><span class="step-txt">校验并建单</span></div></div>
+      <div class="form-item"><label class="form-label"><span class="req">*</span>客户</label><div class="select"><span>正泰　<span class="hint">CUST-0004</span></span><span class="caret">▾</span></div></div>
+      <div class="form-item"><label class="form-label"><span class="req">*</span>基础数据 Excel</label><div class="upload"><div class="up-icon">⤓</div><div class="up-main">报价基础数据-正泰-2026年9月.xlsx</div><div class="up-sub">2.4 MB · 支持 .xlsx</div></div></div>
+      <div style="font-weight:600;margin:16px 0 8px">税务分类预览</div>
+      <div class="alert alert-info"><b>默认绑定规则</b><br>本次导入未提供税务分类的产品行，将绑定默认税务分类：<b>一般货物（13%）</b>。已有产品税务分类的行不被客户默认税率覆盖。</div>
+      <div class="tbl-wrap" style="margin-top:12px"><table class="tbl"><thead><tr><th>校验项</th><th>结果</th><th>处理</th></tr></thead><tbody><tr><td>客户产品 / 销售产品</td><td><span class="tag tag-green">通过</span></td><td class="muted">按客户「正泰」写入</td></tr><tr><td>缺少税务分类</td><td><span class="tag tag-gold">2 行</span></td><td>绑定「一般货物（13%）」</td></tr><tr><td>未知税务分类编码</td><td><span class="tag tag-green">0 行</span></td><td class="muted">—</td></tr></tbody></table></div>
+      <div class="hint">确认后进入 Step 2 建单；若存在未知税务分类编码，整份导入拒绝且不写入任何产品。</div>
+    </div>
+    <div class="drawer-foot"><button class="btn">取消</button><button class="btn btn-primary">开始校验</button></div>
+  </div>
+</div>
+<div class="proto-note" style="margin-top:16px"><b>触发位置</b>：报价单管理列表页 → 工具栏「从基础数据导入」→ 右侧导入抽屉。默认税务分类在该抽屉的校验结果中确认，不跳转到产品管理页。</div>
+</body></html>

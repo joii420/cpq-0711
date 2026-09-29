@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>客户管理 · 默认 VAT</title>
+<link rel="stylesheet" href="antd-like.css">
+<style>
+.table{width:100%;border-collapse:collapse;font-size:13px}.table th{background:#fafafa;text-align:left;font-weight:600;color:#667085}.table th,.table td{padding:12px 14px;border-bottom:1px solid #f0f0f0}.table tr:last-child td{border-bottom:0}.table .right{text-align:right}.table .center{text-align:center}.drawer-shell{display:grid;grid-template-columns:minmax(0,1fr) 560px;gap:16px;align-items:start}.drawer{background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 2px 10px rgba(15,23,42,.08)}.drawer-head{padding:18px 22px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between}.drawer-body{padding:18px 22px}.drawer-foot{padding:14px 22px;border-top:1px solid #f0f0f0;display:flex;justify-content:flex-end;gap:10px}.form-row{display:grid;grid-template-columns:100px 1fr;gap:12px;align-items:center;margin:14px 0}.label{font-size:13px;color:#344054}.input,.select{height:34px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;padding:0 10px;color:#344054;font-size:13px;display:flex;align-items:center;justify-content:space-between}.select:after{content:'▾';font-size:11px;color:#98a2b3}.hint{font-size:12px;color:#98a2b3;margin:5px 0 0 112px}.alert{padding:10px 12px;border-radius:6px;font-size:13px;margin-bottom:14px}.info{background:#e6f4ff;color:#0958d9}.warn{background:#fff7e6;color:#ad4e00}.tag{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:4px;font-size:12px;font-weight:600}.tag-blue{color:#1677ff;background:#e6f4ff}.tag-green{color:#237804;background:#f6ffed}.tag-gray{color:#667085;background:#f2f4f7}.muted{color:#8b95a7}.proto-note{max-width:1440px;margin:0 auto 16px;padding:10px 14px;background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;font-size:13px;color:#613400}.btn{height:34px;border-radius:6px;padding:0 15px;border:1px solid #d9d9d9;background:#fff;color:#344054;font-size:13px}.btn-primary{background:#1677ff;color:#fff;border-color:#1677ff}.pager{display:flex;justify-content:flex-end;gap:8px;padding:14px 0;color:#667085;font-size:13px}.pagination{border:1px solid #d9d9d9;border-radius:5px;padding:2px 8px;background:#fff}.pagination.on{border-color:#1677ff;color:#1677ff}.section-title{font-size:13px;font-weight:600;border-left:3px solid #1677ff;padding-left:8px;margin:18px 0 10px}
+@media(max-width:1000px){.drawer-shell{grid-template-columns:1fr}.drawer{width:100%}}
+</style>
+</head>
+<body>
+<main class="shell">
+  <div class="proto-note"><b>补充原型：客户管理 → 编辑客户抽屉</b><br>默认 VAT 是客户报价创建时的默认值 / 兜底值，不代表客户法律上固定适用税率。客户不绑定税务分类；产品税务分类有效时优先于本字段。</div>
+  <div class="topbar"><div><div class="crumb">基础数据 / 客户管理</div><div class="brand">客户管理</div></div><div class="toolbar"><button class="btn">导入客户</button><button class="btn btn-primary">＋ 新增客户</button></div></div>
+  <div class="card" style="padding:16px 20px;margin-bottom:16px"><div class="toolbar"><div class="input" style="width:280px;color:#98a2b3">搜索客户名称/编码</div><div class="select" style="width:110px">状态</div><button class="btn">查询</button><button class="btn">重置</button></div></div>
+  <div class="drawer-shell">
+    <section class="card"><div class="card-head"><div class="card-title">客户列表</div><span class="small muted">共 74 条</span></div><div style="overflow:auto"><table class="table"><thead><tr><th>客户名称</th><th>客户编码</th><th>等级</th><th>行业</th><th>区域</th><th>默认 VAT</th><th>状态</th></tr></thead><tbody>
+      <tr style="background:#f5f9ff"><td><a style="color:#1677ff;font-weight:600">正泰电器</a></td><td>8000137</td><td><span class="tag tag-blue">战略</span></td><td>五金制造</td><td>浙江温州</td><td><span class="tag tag-green">13%</span></td><td><span class="tag tag-green">启用</span></td></tr>
+      <tr><td><a style="color:#1677ff">罗克韦尔</a></td><td>CUST-0001</td><td><span class="tag tag-blue">白银</span></td><td>自动化设备</td><td>上海</td><td><span class="tag tag-gray">未设置</span></td><td><span class="tag tag-green">启用</span></td></tr>
+      <tr><td><a style="color:#1677ff">施耐德电气</a></td><td>CUST-0004</td><td><span class="tag tag-blue">黄金</span></td><td>电气设备</td><td>上海</td><td><span class="tag tag-green">13%</span></td><td><span class="tag tag-green">启用</span></td></tr>
+      <tr><td><a style="color:#1677ff">技术服务客户</a></td><td>SV-0008</td><td><span class="tag tag-gray">普通</span></td><td>技术服务</td><td>苏州</td><td><span class="tag tag-green">6%</span></td><td><span class="tag tag-green">启用</span></td></tr>
+    </tbody></table></div><div class="pager"><span>‹</span><span class="pagination on">1</span><span class="pagination">2</span><span class="pagination">›</span></div></section>
+    <aside class="drawer"><div class="drawer-head"><div><div class="card-title">编辑客户</div><div class="small muted">正泰电器 · 8000137</div></div><span class="muted">×</span></div><div class="drawer-body">
+      <div class="section-title">基本信息</div>
+      <div class="form-row"><div class="label">客户编号</div><div class="input" style="color:#98a2b3">8000137（创建后不可修改）</div></div>
+      <div class="form-row"><div class="label">客户名称</div><div class="input">正泰电器</div></div>
+      <div class="form-row"><div class="label">客户等级</div><div class="select">战略客户</div></div>
+      <div class="form-row"><div class="label">所属行业</div><div class="select">五金制造（HARDWARE）</div></div>
+      <div class="form-row"><div class="label">产品分类</div><div class="select">低压电器</div></div>
+      <div class="section-title">报价默认值</div>
+      <div class="alert info">ℹ️ 新建报价单时自动带出；添加产品后，产品税务分类的有效 VAT 优先于此值。</div>
+      <div class="form-row"><div class="label">默认 VAT</div><div class="select" style="border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.12)"><span>13%</span><span>▾</span></div></div>
+      <div class="hint">可选：0%、1%、3%、6%、9%、13%。留空时由报价单使用默认税务分类当前有效 VAT。</div>
+      <div class="form-row"><div class="label">来源说明</div><div class="input" style="color:#667085">客户默认 VAT · 仅用于报价默认 / 兜底</div></div>
+      <div class="section-title">导入模板</div>
+      <div class="alert warn">Excel 列 <b>default_vat_rate</b> 为选填。留空不会覆盖已有客户值；格式错误的税率行整份拒绝导入。</div>
+    </div><div class="drawer-foot"><button class="btn">取消</button><button class="btn btn-primary">保存客户</button></div></aside>
+  </div>
+  <div class="footer-note">触发入口：客户管理列表 → 点击客户名称 / 新增客户。该字段在客户实体只保存一份，报价创建时写入 quotation.default_vat_rate 快照。</div>
+</main>
+</body></html>

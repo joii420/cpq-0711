@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>税务分类与 VAT 税率管理</title>
+  <link rel="stylesheet" href="../../task-260902-主数据与用户导入导出/原型图/_ant.css">
+  <link rel="stylesheet" href="../../task-260902-主数据与用户导入导出/原型图/_common.css">
+  <style>
+    .vat-page{max-width:1440px;margin:0 auto}.vat-head{display:flex;align-items:center;justify-content:space-between;margin:18px 0 16px}.vat-head h1{margin:0;font-size:20px}.vat-actions{display:flex;gap:8px;align-items:center}.vat-table{width:100%;border-collapse:collapse}.vat-table th,.vat-table td{padding:10px 12px;border-bottom:1px solid #f0f0f0;text-align:left}.vat-table th{background:#fafafa;color:rgba(0,0,0,.65);font-weight:500;white-space:nowrap}.vat-table .num{text-align:right;font-variant-numeric:tabular-nums}.vat-table .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}.status{display:inline-block;padding:1px 8px;border-radius:4px;font-size:12px}.active{color:#237804;background:#f6ffed;border:1px solid #b7eb8f}.disabled{color:#8c8c8c;background:#fafafa;border:1px solid #d9d9d9}.expired{color:#ad4e00;background:#fff7e6;border:1px solid #ffd591}.drawer-mask{display:flex;justify-content:flex-end;max-width:1440px;min-height:640px;margin:20px auto 0;background:rgba(0,0,0,.35);border-radius:8px;overflow:hidden}.drawer{width:620px;background:#fff;display:flex;flex-direction:column}.drawer-hd{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #f0f0f0;font-size:16px;font-weight:600}.drawer-bd{padding:20px;flex:1}.drawer-ft{display:flex;justify-content:flex-end;gap:8px;padding:14px 20px;border-top:1px solid #f0f0f0}.form-item{margin-bottom:16px}.form-item label{display:block;margin-bottom:6px;color:rgba(0,0,0,.65)}.required:before{content:'*';color:#ff4d4f;margin-right:4px}.control{height:34px;width:100%;border:1px solid #d9d9d9;border-radius:6px;padding:6px 10px;background:#fff;color:rgba(0,0,0,.88)}.control.select:after{content:'▾';float:right;color:#8c8c8c}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.tip{font-size:12px;color:rgba(0,0,0,.45);margin-top:6px}.history{margin-top:20px;padding-top:16px;border-top:1px solid #f0f0f0}.history h3{margin:0 0 10px;font-size:14px}.warnbox{padding:10px 12px;background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;color:#614700;font-size:12px}.errorbox{padding:10px 12px;background:#fff2f0;border:1px solid #ffccc7;border-radius:6px;color:#a8071a;font-size:12px}
+  </style>
+</head>
+<body>
+<div class="vat-page">
+  <div class="navback">系统配置中心 / 税务分类与 VAT 税率</div>
+  <div class="vat-head"><div><h1>税务分类与 VAT 税率</h1><div class="sub">维护税务分类、税率版本及生效区间；产品只绑定税务分类，不在产品上硬编码税率。</div></div><div class="vat-actions"><button class="btn">↻ 刷新</button><button class="btn primary">＋ 新增税务分类</button></div></div>
+  <div class="alert"><span class="ico">ⓘ</span><div><b>税率版本规则</b>　同一税务分类的生效区间不得重叠；已被产品或报价引用的版本不允许删除，只能停用或补充失效日期。历史报价使用行快照，不随当前版本变化。</div></div>
+  <div class="card">
+    <div class="toolbar"><span class="srch">搜索编码 / 名称 <span class="muted">⌕</span></span><span class="sel2">状态：全部　▾</span><span class="spacer"></span><span class="muted">共 4 个税务分类</span></div>
+    <table class="vat-table"><thead><tr><th>编码</th><th>税务分类名称</th><th class="num">VAT 税率</th><th>生效日期</th><th>失效日期</th><th>状态</th><th>引用产品</th><th>操作</th></tr></thead><tbody>
+      <tr><td class="mono">GENERAL_GOODS</td><td>一般货物</td><td class="num"><b>13%</b></td><td>2026-01-01</td><td>—</td><td><span class="status active">启用</span></td><td>2,662</td><td><a class="link">编辑</a>　<a class="link">历史版本</a></td></tr>
+      <tr><td class="mono">MODERN_SERVICE</td><td>现代服务</td><td class="num"><b>6%</b></td><td>2026-01-01</td><td>—</td><td><span class="status active">启用</span></td><td>12</td><td><a class="link">编辑</a>　<a class="link">历史版本</a></td></tr>
+      <tr><td class="mono">TRANSPORT</td><td>交通运输</td><td class="num"><b>9%</b></td><td>2026-01-01</td><td>—</td><td><span class="status active">启用</span></td><td>0</td><td><a class="link">编辑</a>　<a class="link">历史版本</a></td></tr>
+      <tr><td class="mono">GENERAL_GOODS</td><td>一般货物</td><td class="num">9%</td><td>2025-01-01</td><td>2025-12-31</td><td><span class="status expired">历史版本</span></td><td>—</td><td><a class="link">查看</a></td></tr>
+    </tbody></table>
+  </div>
+  <div class="card" style="margin-top:18px"><div class="toolbar"><div><b>系统默认税务分类（最终兜底）</b><div class="hint">新产品未填写税务分类、导入未提供税务分类时使用；报价创建时从该分类解析当前有效 VAT</div></div><span class="spacer"></span><strong>GENERAL_GOODS　一般货物　13%</strong><a class="link" style="margin-left:18px">编辑</a></div></div>
+  <div class="card" style="margin-top:18px"><h2 style="margin:0 0 10px;font-size:15px">新增 / 编辑税务分类（右侧抽屉触发态）</h2><p class="hint">点击列表「编辑」或「新增税务分类」后打开右侧抽屉；下面展示默认编辑态和两个校验提示。</p></div>
+</div>
+<div class="drawer-mask">
+  <aside class="drawer">
+    <div class="drawer-hd"><span>编辑税务分类 · 一般货物</span><span class="muted">×</span></div>
+    <div class="drawer-bd">
+      <div class="form-item"><label class="required">税务分类编码</label><div class="control">GENERAL_GOODS</div><div class="tip">编码创建后不可修改；产品和导入文件按此编码关联。</div></div>
+      <div class="form-item"><label class="required">税务分类名称</label><div class="control">一般货物</div></div>
+      <div class="grid2"><div class="form-item"><label class="required">VAT 税率</label><div class="control">13%</div></div><div class="form-item"><label class="required">状态</label><div class="control select">启用</div></div></div>
+      <div class="grid2"><div class="form-item"><label class="required">生效日期</label><div class="control">2026-01-01</div></div><div class="form-item"><label>失效日期</label><div class="control">—</div></div></div>
+      <div class="warnbox">当前版本已被 2,662 个产品引用。保存税率变化只会生成新的税率版本；已经生成的报价行仍使用原有 VAT 快照。</div>
+      <div class="history"><h3>历史版本</h3><table class="vat-table"><thead><tr><th>VAT</th><th>生效区间</th><th>状态</th></tr></thead><tbody><tr><td>9%</td><td>2025-01-01 ～ 2025-12-31</td><td><span class="status expired">已失效</span></td></tr></tbody></table></div>
+      <div class="errorbox" style="margin-top:12px">校验示例：若新增版本的生效日期早于上一版本失效日期，提示「生效区间与已有版本重叠，不能保存」。</div>
+    </div>
+    <div class="drawer-ft"><button class="btn">取消</button><button class="btn primary">保存并生成版本</button></div>
+  </aside>
+</div>
+</body>
+</html>

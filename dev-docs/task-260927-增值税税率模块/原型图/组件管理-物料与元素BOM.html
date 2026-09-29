@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>组件管理 · 物料与元素BOM</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#f5f7fa;color:#303133;font:13px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Arial,sans-serif}
+    .note{margin:18px auto 12px;max-width:1440px;padding:10px 14px;background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;color:#614700}
+    .layout{display:flex;max-width:1440px;height:760px;margin:0 auto;background:#f0f2f5;border:1px solid #e4e7ed;border-radius:7px;overflow:hidden}
+    .master{width:220px;background:#fff;border-right:1px solid #e4e7ed;display:flex;flex-direction:column;flex:none}
+    .master-head{padding:12px 14px 10px;border-bottom:1px solid #e4e7ed;font-weight:600}
+    .master-search{margin:10px;height:30px;border:1px solid #dcdfe6;border-radius:4px;padding:5px 9px;color:#a8abb2}
+    .tree{padding:4px 0;overflow:auto}
+    .dir{padding:12px 14px 5px;color:#909399;font-size:12px}
+    .item{margin:2px 8px;padding:8px 10px;border-radius:4px;cursor:default}
+    .item.active{background:#ecf5ff;color:#409eff}
+    .item-name{font-size:13px}.item-code{margin-top:2px;font-size:11px;color:#909399}
+    .detail{flex:1;min-width:0;overflow:auto;background:#f7f9fb;padding:18px 22px}
+    .detail-head{display:flex;align-items:center;gap:10px;margin-bottom:14px;min-height:32px}
+    .title{font-size:18px;font-weight:600;color:#303133}
+    .tag{display:inline-flex;align-items:center;height:22px;padding:0 8px;border-radius:4px;border:1px solid transparent;font-size:12px;white-space:nowrap}
+    .tag-blue{color:#1677ff;background:#e6f4ff;border-color:#91caff}.tag-green{color:#389e0d;background:#f6ffed;border-color:#b7eb8f}.tag-gray{color:#606266;background:#f5f7fa;border-color:#dcdfe6}
+    .actions{margin-left:auto;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .select{height:30px;min-width:110px;padding:0 8px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;display:inline-flex;align-items:center;justify-content:space-between;color:#606266;font-size:12px}
+    .select.wide{min-width:128px}.select:after{content:"▾";margin-left:12px;color:#909399;font-size:10px}
+    .btn{height:30px;padding:0 12px;border:1px solid #d9d9d9;border-radius:4px;background:#fff;color:#606266;font-size:12px}.btn.primary{color:#fff;background:#1677ff;border-color:#1677ff}
+    .panel{background:#fff;border:1px solid #f0f0f0;border-radius:10px;padding:16px 18px}
+    .tabs{display:flex;gap:24px;border-bottom:1px solid #f0f0f0;margin:-16px -18px 0;padding:0 18px;background:#fff}.tab{padding:13px 2px 11px;color:#606266;font-size:13px}.tab.active{color:#1677ff;border-bottom:2px solid #1677ff;font-weight:600}
+    .section-title{display:flex;align-items:center;justify-content:space-between;margin:18px 0 10px;font-weight:600;color:#303133}
+    table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{padding:8px 10px;border-bottom:1px solid #ebeef5;text-align:left;vertical-align:middle}th{background:#f5f7fa;color:#606266;font-weight:500;white-space:nowrap}td.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#606266}
+    .formula{border:1px solid #d9d9d9;border-radius:6px;padding:9px 10px;display:flex;align-items:center;gap:7px;background:#fff}.token{padding:3px 8px;border:1px solid #91caff;border-radius:4px;background:#e6f4ff;color:#0958d9;font-size:12px}.formula-op{font-weight:600;color:#344054}
+    .info{margin-top:12px;padding:10px 12px;border-radius:6px;background:#e6f4ff;color:#0958d9;font-size:12px}.footer{max-width:1440px;margin:10px auto 24px;color:#98a2b3;font-size:12px}
+    @media (max-width:980px){.layout{height:auto;min-height:760px}.master{width:190px}.detail-head{align-items:flex-start}.actions{max-width:650px}}
+  </style>
+</head>
+<body>
+  <div class="note"><b>布局校正</b>：完全沿用现有 ComponentManagement 的「左侧组件树 + 右侧详情内嵌」结构。绑定字段回到真实详情页标题栏下方的配置区；公式仍在现有「公式」Tab 中，不新增页面。</div>
+  <div class="layout">
+    <aside class="master">
+      <div class="master-head">组件管理</div><div class="master-search">🔍 搜索组件名 / 编码</div>
+      <div class="tree">
+        <div class="dir">报价目录</div><div class="item active"><div class="item-name">物料与元素BOM</div><div class="item-code">COMP-0049　物料BOM</div></div><div class="item"><div class="item-name">物料</div><div class="item-code">COMP-0048　物料</div></div>
+        <div class="dir">基础核价目录</div><div class="item"><div class="item-name">物料与元素BOM</div><div class="item-code">COST-0049　物料BOM</div></div>
+        <div class="dir">明细核价目录</div><div class="item"><div class="item-name">物料与元素BOM</div><div class="item-code">DETAIL-0049　物料BOM</div></div>
+      </div>
+    </aside>
+    <main class="detail">
+      <div class="detail-head">
+        <div class="title">物料与元素BOM</div><span class="tag tag-blue">页签组件 · COMP-0049</span>
+        <div class="actions"><span class="select">料号列：材质料号</span><span class="select">名称列：材料名</span><span class="select">元素列：元素</span><span class="select wide">元素单价列：元素单价</span><span class="select wide">含税单价列：元素含税单价</span><button class="btn">配置帮助</button><button class="btn primary">保存</button></div>
+      </div>
+      <div class="panel">
+        <div class="tabs"><div class="tab">字段配置</div><div class="tab">取数配置</div><div class="tab active">公式</div><div class="tab">SQL 视图</div></div>
+        <div class="section-title"><span>公式管理</span><button class="btn primary">＋ 添加公式</button></div>
+        <table><thead><tr><th style="width:190px">公式名称</th><th>表达式</th><th style="width:100px">状态</th><th style="width:70px">操作</th></tr></thead><tbody>
+          <tr><td>元素含税单价</td><td><div class="formula"><span class="token">元素单价</span><span class="formula-op">× (1 +</span><span class="token">增值税</span><span class="formula-op">)</span></div></td><td><span class="tag tag-green">已配置</span></td><td style="color:#1677ff">配置</td></tr>
+          <tr><td>元素小计</td><td><div class="formula"><span class="token">含税单价</span><span class="formula-op">×</span><span class="token">用量</span></div></td><td><span class="tag tag-gray">未配置</span></td><td style="color:#1677ff">配置</td></tr>
+        </tbody></table>
+        <div class="section-title"><span>当前绑定字段预览</span><span class="tag tag-gray">字段配置 Tab 的只读摘要</span></div>
+        <table><thead><tr><th>字段名</th><th>显示名称</th><th>字段类型</th><th>作用</th><th>来源</th></tr></thead><tbody>
+          <tr><td class="code">element_code</td><td>元素</td><td>文本</td><td>元素标识</td><td>物料与元素BOM</td></tr><tr><td class="code">element_unit_price</td><td>元素单价</td><td>金额</td><td>未税基础单价</td><td>取数配置</td></tr><tr><td class="code">element_unit_price_with_tax</td><td>含税单价</td><td>公式金额</td><td>报价渲染价格列</td><td>公式输出</td></tr>
+        </tbody></table>
+        <div class="info"><b>[增值税]</b> 只在报价行上下文中读取税率快照：产品税率优先，缺失时取报价单税率。13% 返回 <code>0.13</code>；修改价格或重新计算不刷新已保存的报价行快照。</div>
+      </div>
+    </main>
+  </div>
+  <div class="footer">本图只定义现有组件管理详情中的字段绑定与公式位置；没有创建「含税单价策略」独立菜单或新路由。</div>
+</body>
+</html>

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>报价创建 · Step1 默认 VAT（待评审）</title><link rel="stylesheet" href="quotation-vat.css"></head><body>
+<div class="proto-note"><b>报价创建 · Step1「选择客户」｜原型待评审</b><br>
+基于 QuotationWizard / QuotationCreateForm 当前 JSX：左侧基本信息和联系人、右侧客户概况、下方单列选择模板。仅在核价模板之后追加“报价单默认 VAT”。客户示例沿用历史原型中的正泰（CUST-0004）；VAT 是本需求的演示配置，并非已上线数据。<br>
+<a href="index.html">原型导航</a><a href="报价编辑-Step2-税率快照.html">查看 Step2 产品卡片与快照</a>黄色说明条不属于业务页面。人工调整 VAT 的权限未定，本图先展示自动带出的只读值。</div>
+<main class="wizard"><header class="wizard-head"><span class="wizard-title">新建报价单</span><div class="actions"><button class="btn" type="button" title="沿用现有返回报价列表动作；静态原型不调用系统">返回列表</button></div></header><div class="body">
+<div class="steps"><div class="step active"><i>1</i>选择客户</div><div class="step "><i>2</i>添加产品</div><div class="step "><i>3</i>优惠策略</div><div class="step "><i>4</i>交易条款</div><div class="step "><i>5</i>提交审批</div></div>
+<div class="columns"><div>
+<section class="section"><div class="section-title">报价单基本信息</div><div class="section-body">
+<div class="field"><label><span class="required">客户</span></label><div class="control ">正泰 (CUST-0004) <span class="muted">⌄</span></div></div>
+<div class="row"><div class="field"><label>项目名称</label><div class="control "><span class="placeholder">关联项目</span></div></div><div class="field"><label>商机编号</label><div class="control "><span class="placeholder">商机ID</span></div></div></div>
+<div class="row three"><div class="field"><label>报价类型</label><div class="control ">标准报价 <span class="muted">⌄</span></div></div><div class="field"><label>优先级</label><div class="control ">中 <span class="muted">⌄</span></div></div><div class="field"><label>阶段</label><div class="control ">初步接洽 <span class="muted">⌄</span></div></div></div>
+<div class="field"><label>预计成交日</label><div class="control "><span class="placeholder">请选择日期</span><span class="muted">▦</span></div></div>
+</div></section>
+<section class="section" style="margin-top:16px"><div class="section-title">联系人</div><div class="section-body">
+<div class="field"><label>选择联系人</label><div class="control "><span class="placeholder">选择联系人</span><span class="muted">⌄</span></div></div>
+<div class="row three"><div class="field"><label>联系人姓名</label><div class="control "></div></div><div class="field"><label>电话</label><div class="control "></div></div><div class="field"><label>邮箱</label><div class="control "></div></div></div>
+</div></section></div>
+<aside><section class="section"><div class="section-title">客户概况</div><div class="section-body"><dl class="description"><dt>名称</dt><dd>正泰</dd><dt>编码</dt><dd>CUST-0004</dd><dt>等级</dt><dd>—</dd><dt>行业</dt><dd>—</dd><dt>区域</dt><dd>—</dd><dt>累计金额</dt><dd>—</dd></dl></div></section></aside></div>
+<section class="section" style="margin-top:16px"><div class="section-title">选择模板 <span class="muted" style="font-size:13px;font-weight:400;margin-left:8px">决定产品卡片 / Excel 视图的结构,以及"选配添加"使用的组件集</span></div><div class="section-body">
+<div class="field"><label>客户</label><div class="control readonly">正泰</div></div>
+<div class="field"><label><span class="required">报价单名称</span></label><div class="control ">正泰 报价单 <span class="muted small">6 / 100</span></div></div>
+<div class="field"><label><span class="required">产品分类</span></label><div class="control readonly"><span class="placeholder">客户绑定的产品分类</span><span>⌄</span></div></div>
+<div class="alert">✓ 已匹配客户专属模板</div>
+<div class="field"><label><span class="required">报价模板</span> <span class="tag purple">客户专属</span></label><div class="control "><span class="placeholder">当前客户的已发布报价模板</span><span class="muted">⌄</span></div></div>
+<div class="field"><label>核价模板 <span class="tag blue">通用兜底</span></label><div class="control "><span class="placeholder">分类匹配的已发布核价模板</span><span class="muted">⌄</span></div></div>
+<div class="vat-field"><div class="field"><label>报价单默认 VAT <span class="tag blue">本次新增</span></label><div class="control readonly">13%</div><div class="help">来源：客户默认 VAT。客户未设置时取默认税务分类当前有效 VAT；产品有有效税率时优先使用产品税率。保存后形成报价单默认值，不覆盖已有报价行快照。</div></div></div>
+</div></section>
+<footer class="footer"><button class="btn" disabled title="当前是第一步">上一步</button><a class="btn primary" href="报价编辑-Step2-税率快照.html">下一步</a></footer>
+</div></main>
+<div class="proto-note" style="margin-top:16px">核对依据：QuotationWizard.tsx 的 renderStep1、steps、顶层 Card；QuotationCreateForm.tsx 的字段顺序。模板名称、产品分类由实际客户配置带出，本图未把虚构模板名当真实记录。Step2 已单独绘制，不在本页拼接汇总表，也不新增“更换产品”业务按钮。</div>
+</body></html>

@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><title>产品管理 · 客户产品 / 销售产品</title><link rel="stylesheet" href="../../task-260907-产品管理客户过滤/原型图/prototype.css"></head>
+<body>
+<div class="proto-note"><b>真实入口 · 产品管理</b>　产品列表不是独立“产品导入”页，而是「产品管理 → 客户产品 / 销售产品」。本原型沿用现有客户选择器、两个页签和只读列表，仅在产品身份信息旁增加税务分类 / VAT 展示字段。</div>
+<div class="proto-note" style="margin-top:-6px"><b>字段来源说明</b>：税务分类 / VAT 只在销售产品主记录上保存；客户产品页的同名列是通过「客户编号 + 销售料号」关联后的只读展示，不在客户产品表重复保存一份税率。</div>
+<div class="page" style="margin-bottom:22px">
+  <div class="page-head"><h2>产品管理 <span class="tag blue" style="font-weight:400">客户产品 · 当前客户</span></h2><div class="head-actions"><div class="select-group"><span class="addon">客户</span><span class="select"><span class="val filled">CUST-0004　正泰</span><span class="caret">▾</span></span></div><button class="btn">⊞ 产品分类管理</button></div></div>
+  <div class="tabs"><div class="tab active">客户产品</div><div class="tab">销售产品</div></div>
+  <div class="toolbar"><span class="input">搜索客户产品编号 / 客户料号名称</span><button class="btn">查询</button><button class="btn">重置</button><div class="toolbar-right"><span class="muted">共 2662 条</span></div></div>
+  <div class="table-wrap"><table class="tbl"><thead><tr><th>客户编号</th><th>客户名称</th><th>客户产品编号</th><th>客户料号名称</th><th>销售料号</th><th>税务分类（关联展示）</th><th>VAT（关联展示）</th></tr></thead><tbody><tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">CP-80011</td><td>银点复合触头</td><td class="mono">S-80011</td><td>一般货物</td><td><span class="tag blue">13%</span></td></tr><tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">CP-SVC-09</td><td>技术服务</td><td class="mono">SVC-09</td><td>现代服务</td><td><span class="tag blue">6%</span></td></tr><tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono">CP-UNSET</td><td>待补充税务分类</td><td class="mono">S-UNSET</td><td><span class="tag warn">未设置</span></td><td class="muted">—</td></tr></tbody></table></div>
+</div>
+<div class="page">
+  <div class="page-head"><h2>产品管理 <span class="tag blue" style="font-weight:400">销售产品 · 当前客户</span></h2><div class="head-actions"><div class="select-group"><span class="addon">客户</span><span class="select"><span class="val filled">CUST-0004　正泰</span><span class="caret">▾</span></span></div><button class="btn">⊞ 产品分类管理</button></div></div>
+  <div class="tabs"><div class="tab">客户产品</div><div class="tab active">销售产品</div></div>
+  <div class="toolbar"><span class="input">搜索销售料号 / 料号名称</span><button class="btn">查询</button><button class="btn">重置</button><div class="toolbar-right"><span class="muted">配置状态　▾</span></div></div>
+  <div class="table-wrap"><table class="tbl"><thead><tr><th>客户编号</th><th>客户名称</th><th>销售料号</th><th>料号名称</th><th>生产料号</th><th>税务分类（主记录）</th><th>VAT（主记录）</th><th>配置状态</th></tr></thead><tbody><tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono"><a class="btn-link">S-80011</a></td><td>银点复合触头</td><td class="mono">80011</td><td>一般货物</td><td><span class="tag blue">13%</span></td><td><span class="tag blue">13 / 13</span></td></tr><tr><td class="mono">CUST-0004</td><td>正泰</td><td class="mono"><a class="btn-link">SVC-09</a></td><td>技术服务</td><td class="muted">—</td><td>现代服务</td><td><span class="tag blue">6%</span></td><td><span class="tag grey">0 / 13</span></td></tr></tbody></table></div>
+  <div class="pager"><span class="muted">共 2 条</span><span class="pg-num">‹</span><span class="pg-num active">1</span><span class="pg-num">›</span><span class="select" style="min-width:110px"><span class="val">20 条/页</span><span class="caret">▾</span></span></div>
+</div>
+<div class="proto-note" style="margin-top:16px"><b>边界</b>：产品管理仍是只读列表与销售产品抽屉入口；本页不添加导入按钮。导入动作只从「报价单管理 → 从基础数据导入」触发，导入完成后回到这里查看税务分类绑定结果。</div>
+</body></html>
