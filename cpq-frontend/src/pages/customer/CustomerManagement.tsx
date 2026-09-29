@@ -9,6 +9,8 @@ import { industryService } from '../../services/industryService';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 import { formatDisplayDecimal, isDecimalString } from '../../utils/precision';
+import { currencyService } from '../../services/currencyService';
+import type { CurrencyDTO } from '../../types/currency';
 
 const { Text } = Typography;
 
@@ -61,6 +63,7 @@ const CustomerManagement: React.FC = () => {
   const [currentCustomerId, setCurrentCustomerId] = useState<string | null>(null);
   const [industries, setIndustries] = useState<{ code: string; name: string }[]>([]);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+  const [currencies, setCurrencies] = useState<CurrencyDTO[]>([]);
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const [importState, setImportState] = useState<ImportState>('upload');
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -73,6 +76,7 @@ const CustomerManagement: React.FC = () => {
 
   useEffect(() => {
     productCategoryService.list('ACTIVE').then(res => setCategories(res?.data ?? [])).catch(() => {});
+    currencyService.list({ enabled: true }).then(res => setCurrencies(res?.data ?? [])).catch(() => {});
   }, []);
 
   const fetchData = async () => {
@@ -189,6 +193,7 @@ const CustomerManagement: React.FC = () => {
           creditLimit: editingCustomer.creditLimit,
           paymentMethod: editingCustomer.paymentMethod,
           remarks: editingCustomer.remarks,
+          defaultCurrency: editingCustomer.defaultCurrency || 'CNY',
         });
       }, 50);
     } else if (drawerOpen && !editingCustomer) {
@@ -367,6 +372,7 @@ const CustomerManagement: React.FC = () => {
       ),
     },
     { title: '客户编码', dataIndex: 'code', key: 'code' },
+    { title: '默认币种', dataIndex: 'defaultCurrency', key: 'defaultCurrency', render: (v: string) => v || 'CNY' },
     {
       title: '等级', dataIndex: 'level', key: 'level',
       render: (l: string) => <Tag color={levelMap[l]?.color}>{levelMap[l]?.label || l}</Tag>
@@ -530,6 +536,9 @@ const CustomerManagement: React.FC = () => {
               placeholder="请选择产品分类"
               options={categories.map(c => ({ value: c.id, label: c.name }))}
             />
+          </Form.Item>
+          <Form.Item name="defaultCurrency" label="默认结算币种" initialValue="CNY" rules={[{ required: true, message: '请选择默认币种' }]}>
+            <Select showSearch optionFilterProp="label" placeholder="请选择币种" options={currencies.map(c => ({ value: c.code, label: `${c.code} · ${c.name}` }))} />
           </Form.Item>
           <Form.Item name="region" label="所属区域">
             <Input />

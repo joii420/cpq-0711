@@ -45,6 +45,10 @@ public class PriceImportService {
     // ──────────────────────────────── 导入 ────────────────────────────────
 
     public PriceImportResultDTO importPrices(byte[] xlsxBytes, UUID sourceId, LocalDate priceDate, UUID operatorId) {
+        return importPrices(xlsxBytes, sourceId, priceDate, "CNY", operatorId);
+    }
+
+    public PriceImportResultDTO importPrices(byte[] xlsxBytes, UUID sourceId, LocalDate priceDate, String batchCurrency, UUID operatorId) {
         long t0 = System.nanoTime();
 
         // ── 整批级前置校验（§11.3 前置校验部分）：文件为空/非xlsx/>5MB/表头不匹配/源非启用 ──
@@ -60,6 +64,11 @@ public class PriceImportService {
         if (priceDate == null) {
             throw new BusinessException(400, "价格日期不能为空");
         }
+        String normalizedBatchCurrency = batchCurrency == null ? "" : batchCurrency.trim().toUpperCase(java.util.Locale.ROOT);
+        if (normalizedBatchCurrency.isBlank()) throw new BusinessException(400, "币种不能为空");
+        Number currencyExists = (Number) em.createNativeQuery("select count(*) from currency where code=:c and enabled=true").setParameter("c", normalizedBatchCurrency).getSingleResult();
+        if (currencyExists.longValue() == 0) throw new BusinessException(400, "币种不存在或已停用: " + normalizedBatchCurrency);
+        BigDecimal sourceRate = "CNY".equals(normalizedBatchCurrency) ? BigDecimal.ONE.setScale(12) : lookupRate(normalizedBatchCurrency, priceDate);
         ElementPriceSource src = ElementPriceSource.findById(sourceId);
         if (src == null) {
             throw new BusinessException(400, "价格源不存在: " + sourceId);
@@ -112,7 +121,8 @@ public class PriceImportService {
 
                 PriceImportRowDTO rowResult;
                 try {
-                    rowResult = writer.writeRow(excelRowNo, elementCode, price, currency, unit,
+                    if (!currency.isBlank() && !normalizedBatchCurrency.equals(currency.trim().toUpperCase(java.util.Locale.ROOT))) throw new BusinessException(400, "行内货币与批次币种不一致");
+                    rowResult = writer.writeRow(excelRowNo, elementCode, price, normalizedBatchCurrency, sourceRate, unit,
                             sourceId, priceDate, operatorId);
                 } catch (Exception e) {
                     rowResult = new PriceImportRowDTO();
@@ -139,23 +149,28 @@ public class PriceImportService {
         return result;
     }
 
+    private BigDecimal lookupRate(String currency, LocalDate date) {
+        List<?> rows = em.createNativeQuery("select rate from currency_exchange_rate where currency_code=:c and status='ACTIVE' and effective_date<=:d order by effective_date desc,updated_at desc,id desc limit 1").setParameter("c", currency).setParameter("d", date).getResultList();
+        if (rows.isEmpty()) throw new BusinessException(409, "QUOTATION_RATE_NOT_FOUND");
+        return new BigDecimal(rows.get(0).toString()).setScale(12, java.math.RoundingMode.HALF_UP);
+    }
+
     // ──────────────────────────────── 模板下载 ────────────────────────────────
 
     public byte[] generateTemplate() {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             Sheet s = wb.createSheet("价格导入");
             Row h = s.createRow(0);
-            String[] cols = {"元素符号*", "单价*", "货币", "计价单位"};
+            String[] cols = {"元素符号*", "单价*", "计价单位"};
             for (int i = 0; i < cols.length; i++) h.createCell(i).setCellValue(cols[i]);
 
             Row example = s.createRow(1);
             example.createCell(0).setCellValue("Ag");
             example.createCell(1).setCellValue(5820.0);
-            example.createCell(2).setCellValue("CNY");
-            example.createCell(3).setCellValue("元/kg");
+            example.createCell(2).setCellValue("元/kg");
 
             Row note = s.createRow(3);
-            note.createCell(0).setCellValue("填写说明：元素符号须已在「元素管理」中启用；单价必须大于 0；货币/计价单位留空时分别取默认 CNY / 元/kg；价格日期与价格源在导入抽屉上选择，本表不含这两列。");
+            note.createCell(0).setCellValue("填写说明：元素符号须已在「元素管理」中启用；单价必须大于 0；本批币种在导入抽屉选择并统一换算为 CNY 存储；计价单位留空时取默认 元/kg；价格日期与价格源在导入抽屉上选择。");
 
             for (int i = 0; i < cols.length; i++) s.setColumnWidth(i, 4000);
 

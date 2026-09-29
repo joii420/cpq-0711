@@ -4,6 +4,10 @@ import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.customer.entity.Customer;
+import com.cpq.currency.entity.CustomerExchangeRateStrategy;
+import com.cpq.currency.entity.Currency;
+import com.cpq.currency.entity.CurrencyExchangeRate;
+import com.cpq.currency.service.ExchangeRateService;
 import com.cpq.component.entity.Component;
 import com.cpq.component.service.ComponentSqlViewService;
 import com.cpq.engine.approval.ApprovalRoutingService;
@@ -88,6 +92,9 @@ public class QuotationService {
 
     @Inject
     EntityManager em;
+
+    @Inject
+    ExchangeRateService exchangeRateService;
 
     /** task-260910 · B-2：销售料号 → 生产料号详情的唯一取数入口（与选品候选共用） */
     @Inject
@@ -450,6 +457,24 @@ public class QuotationService {
         if (customer == null) {
             throw new BusinessException(400, "Customer not found: " + request.customerId);
         }
+        String quoteCurrency = customer.defaultCurrency == null ? "CNY" : customer.defaultCurrency.toUpperCase(Locale.ROOT);
+        Currency currency = Currency.findById(quoteCurrency);
+        if (currency == null) throw new BusinessException(400, "CURRENCY_NOT_FOUND");
+        if (!Boolean.TRUE.equals(currency.enabled)) throw new BusinessException(409, "CURRENCY_DISABLED");
+        LocalDate quoteDate = LocalDate.now();
+        CustomerExchangeRateStrategy strategy = exchangeRateService.strategy(customer.id);
+        BigDecimal quoteRate = exchangeRateService.resolve(quoteCurrency, quoteDate, strategy);
+        q.currency = quoteCurrency;
+        q.exchangeRate = quoteRate.setScale(12, RoundingMode.HALF_UP);
+        q.exchangeRateDate = exchangeRateService.effectiveDate(quoteCurrency, quoteDate, strategy);
+        q.exchangeRateCapturedAt = OffsetDateTime.now();
+        if (!"CNY".equals(quoteCurrency)) {
+            @SuppressWarnings("unchecked") List<String> sources = em.createNativeQuery("select source from currency_exchange_rate where currency_code=:c and effective_date=:d and status='ACTIVE' order by updated_at desc,id desc limit 1")
+                    .setParameter("c", quoteCurrency).setParameter("d", q.exchangeRateDate).getResultList();
+            q.exchangeRateSource = sources.isEmpty() ? null : sources.get(0);
+        }
+        try { q.exchangeRateStrategySnapshot = strategy == null ? "{\"fallback\":\"LATEST_BEFORE_QUOTATION_DATE\"}" : MAPPER.writeValueAsString(strategySnapshot(strategy)); }
+        catch (Exception e) { throw new BusinessException(500, "exchange rate snapshot failed"); }
         q.snapshotCustomerName = customer.name;
         q.snapshotCustomerLevel = customer.level;
         q.snapshotCustomerRegion = customer.region;
@@ -471,6 +496,13 @@ public class QuotationService {
         }
 
         return QuotationDTO.from(q);
+    }
+
+    private Map<String,Object> strategySnapshot(CustomerExchangeRateStrategy s) {
+        Map<String,Object> m = new LinkedHashMap<>();
+        m.put("method", s.method); m.put("windowNum", s.windowNum); m.put("windowUnit", s.windowUnit);
+        m.put("specificDate", s.specificDate == null ? null : s.specificDate.toString()); m.put("dayOfMonth", s.dayOfMonth); m.put("version", s.version);
+        return m;
     }
 
     @Transactional

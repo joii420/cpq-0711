@@ -15,6 +15,7 @@ public class CustomerDTO {
     public UUID id;
     public String name;
     public String code;
+    public String defaultCurrency;
     public String level;
     public String industry;
     public String industryCode;
@@ -38,6 +39,7 @@ public class CustomerDTO {
         dto.id = customer.id;
         dto.name = customer.name;
         dto.code = customer.code;
+        dto.defaultCurrency = customer.defaultCurrency;
         dto.level = customer.level;
         dto.industry = customer.industry;
         dto.industryCode = customer.industryCode;

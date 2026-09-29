@@ -15,6 +15,7 @@ public class CreateCustomerRequest {
 
     /** Optional customer code. Blank values keep the sequence-generated code. */
     public String code;
+    public String defaultCurrency = "CNY";
 
     public String level;
     public String industry;
