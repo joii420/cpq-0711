@@ -10,6 +10,7 @@ import { customerService } from '../../services/customerService';
 import { pricingService } from '../../services/pricingService';
 import ElementPriceStrategyTab from './element-strategy/ElementPriceStrategyTab';
 import PriceAdjustStrategyTab from './price-adjust/PriceAdjustStrategyTab';
+import ExchangeRateStrategyTab from './exchange-rate/ExchangeRateStrategyTab';
 
 const { Sider, Content } = Layout;
 const { Search } = Input;
@@ -350,6 +351,11 @@ const PricingStrategy: React.FC = () => {
                   key: 'price-adjust',
                   label: <span>价格调整策略 <Tag color="blue" style={{ marginLeft: 4 }}>新</Tag></span>,
                   children: <PriceAdjustStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
+                },
+                {
+                  key: 'exchange-rate',
+                  label: '汇率策略',
+                  children: <ExchangeRateStrategyTab customerNo={selectedCustomer.code} customerLabel={selectedCustomer.name} />,
                 },
               ]}
             />

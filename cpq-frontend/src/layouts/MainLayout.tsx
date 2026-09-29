@@ -146,6 +146,7 @@ const allMenuItems: MenuItem[] = [
       { key: '/system/departments', label: '部门管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/notifications', label: '通知列表', roles: ALL_ROLES },
       { key: '/system/operation-logs', label: '操作日志', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/system/currencies', label: '币种管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
     ],
   },
 ];

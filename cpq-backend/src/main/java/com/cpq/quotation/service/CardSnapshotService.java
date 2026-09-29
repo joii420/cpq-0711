@@ -2571,6 +2571,7 @@ public class CardSnapshotService {
                 if (!prunedNodeIds.isEmpty()) rows = filterPrunedTreeRows(rows, prunedNodeIds);
                 baseRowsByComp.put(cid, rows);
             }
+            injectExchangeRate(baseRowsByComp, li.quotationId);
 
             // 4. 组装 tabs（Task 3: 填 formulaResults；报价侧传真实墓碑）
             // F1：报价侧透传 rkf 预取（prefetch 缺失 → null → 回落逐行查）
@@ -2806,6 +2807,7 @@ public class CardSnapshotService {
                 baseRowsByComp = expandFlatDriverBaseRows(costingTemplateId, li, customerId, quotationId,
                     unionByComp, driverCompsPrefetch);
             }
+            injectExchangeRate(baseRowsByComp, quotationId);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
             // 核价侧 side==COSTING 显式不传墓碑（spec §3.7 隔离）：editRowsByComp=null + rkfOverride=null + delByComp=null。
@@ -2821,6 +2823,32 @@ public class CardSnapshotService {
             LOG.warnf("[card-snapshot] buildCostingCardValues failed li=%s tmpl=%s: %s",
                 li.id, costingTemplateId, e.getMessage());
             return null;
+        }
+    }
+
+    /**
+     * task-260927: expose the immutable quotation exchange-rate snapshot to the
+     * formula engine's explicit global-variable token. This is deliberately an
+     * injection into basicDataValues, so existing formulas are unchanged and
+     * only a token with code EXCHANGE_RATE can consume it.
+     */
+    private void injectExchangeRate(Map<String, ArrayNode> rowsByComponent, UUID quotationId) {
+        if (rowsByComponent == null || quotationId == null) return;
+        Quotation quotation = Quotation.findById(quotationId);
+        if (quotation == null || quotation.exchangeRate == null) return;
+        String rate = quotation.exchangeRate.setScale(12, java.math.RoundingMode.HALF_UP).toPlainString();
+        for (ArrayNode rows : rowsByComponent.values()) {
+            if (rows == null) continue;
+            for (int i = 0; i < rows.size(); i++) {
+                JsonNode row = rows.get(i);
+                if (!(row instanceof ObjectNode original)) continue;
+                ObjectNode objectRow = original.deepCopy();
+                JsonNode basic = objectRow.get("basicDataValues");
+                ObjectNode values = basic instanceof ObjectNode b ? b : MAPPER.createObjectNode();
+                values.put("@gvar:EXCHANGE_RATE", rate);
+                objectRow.set("basicDataValues", values);
+                rows.set(i, objectRow);
+            }
         }
     }
 

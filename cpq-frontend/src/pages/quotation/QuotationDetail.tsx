@@ -383,6 +383,10 @@ const QuotationDetail: React.FC = () => {
               <Descriptions.Item label="项目名称">{quotation.projectName}</Descriptions.Item>
               <Descriptions.Item label="报价类型">{quotation.quoteType}</Descriptions.Item>
               <Descriptions.Item label="优先级">{quotation.priority}</Descriptions.Item>
+              <Descriptions.Item label="结算币种">{quotation.currency || quotation.baseCurrency || 'CNY'}</Descriptions.Item>
+              <Descriptions.Item label="汇率">{quotation.exchangeRate ? `1 ${quotation.currency || quotation.baseCurrency || 'CNY'} = ${quotation.exchangeRate} CNY` : '1.000000000000 CNY'}</Descriptions.Item>
+              <Descriptions.Item label="汇率日期">{quotation.exchangeRateDate || '-'}</Descriptions.Item>
+              <Descriptions.Item label="汇率来源">{quotation.exchangeRateSource || quotation.exchangeRateStrategyName || '-'}</Descriptions.Item>
               <Descriptions.Item label="有效期至">{quotation.expiryDate}</Descriptions.Item>
               <Descriptions.Item label="预计成交日">{quotation.expectedCloseDate}</Descriptions.Item>
               <Descriptions.Item label="付款条款">{quotation.paymentTerms}</Descriptions.Item>

@@ -8,6 +8,7 @@ import com.cpq.customer.dto.CreateCustomerRequest;
 import com.cpq.customer.dto.CustomerDTO;
 import com.cpq.customer.entity.Customer;
 import com.cpq.customer.entity.CustomerContact;
+import com.cpq.currency.entity.Currency;
 import com.cpq.system.service.OperationLogService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -116,6 +117,7 @@ public class CustomerService {
         Customer customer = new Customer();
         customer.name = request.name;
         customer.code = code;
+        customer.defaultCurrency = validateDefaultCurrency(request.defaultCurrency);
         customer.level = request.level != null ? request.level : "STANDARD";
         customer.industry = request.industry;
         customer.industryCode = request.industryCode;
@@ -171,6 +173,7 @@ public class CustomerService {
             throw new BusinessException(400, "客户编号创建后不可修改");
         }
         if (request.level != null) customer.level = request.level;
+        if (request.defaultCurrency != null && !request.defaultCurrency.isBlank()) customer.defaultCurrency = validateDefaultCurrency(request.defaultCurrency);
         if (request.industry != null) customer.industry = request.industry;
         if (request.industryCode != null) customer.industryCode = request.industryCode;
         // task-0712 update-071501 D4: 客户建后允许改绑产品分类; 改绑不追溯已有报价单(表头不持久化 categoryId)
@@ -195,6 +198,14 @@ public class CustomerService {
         if (rate != null && (rate.signum() < 0 || rate.compareTo(new java.math.BigDecimal("100")) > 0)) {
             throw new BusinessException(400, "defaultVatRate 必须在 0 到 100 之间");
         }
+    }
+
+    private String validateDefaultCurrency(String raw) {
+        String code = raw == null || raw.isBlank() ? "CNY" : raw.trim().toUpperCase(java.util.Locale.ROOT);
+        Currency c = Currency.findById(code);
+        if (c == null) throw new BusinessException(400, "CURRENCY_NOT_FOUND");
+        if (!Boolean.TRUE.equals(c.enabled)) throw new BusinessException(409, "CURRENCY_DISABLED");
+        return code;
     }
 
     @Transactional

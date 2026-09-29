@@ -30,13 +30,26 @@ public class PriceImportRowWriter {
     public PriceImportRowDTO writeRow(int rowNo, String elementCodeRaw, BigDecimal priceRaw,
                                        String currencyRaw, String priceUnitRaw,
                                        UUID sourceId, LocalDate priceDate, UUID operatorId) {
+        return writeRow(rowNo, elementCodeRaw, priceRaw, currencyRaw, BigDecimal.ONE, priceUnitRaw, sourceId, priceDate, operatorId);
+    }
+
+    @Transactional(Transactional.TxType.REQUIRES_NEW)
+    public PriceImportRowDTO writeRow(int rowNo, String elementCodeRaw, BigDecimal priceRaw,
+                                       String currencyRaw, BigDecimal sourceRate, String priceUnitRaw,
+                                       UUID sourceId, LocalDate priceDate, UUID operatorId) {
         // task-260916 B-3：先舍入到 9 位，再做「大于 0」校验、写库、回显（舍入后为 0 → 失败，D-8）
         BigDecimal price = PrecisionPolicy.roundElementPrice(priceRaw);
+        BigDecimal cnyPrice = "CNY".equalsIgnoreCase(currencyRaw == null ? "" : currencyRaw.trim())
+                ? price : price.divide(sourceRate, 12, java.math.RoundingMode.HALF_UP);
         PriceImportRowDTO row = new PriceImportRowDTO();
         row.rowNo = rowNo;
         String elementCode = elementCodeRaw == null ? null : elementCodeRaw.trim();
         row.elementCode = elementCode;
         row.price = price;
+        row.sourcePrice = price;
+        row.cnyPrice = cnyPrice;
+        row.sourceRate = sourceRate;
+        row.sourceCurrency = currencyRaw;
         String currency = blankToDefault(currencyRaw, "CNY");
         String priceUnit = blankToDefault(priceUnitRaw, "元/kg");
         row.currency = currency;
@@ -83,25 +96,32 @@ public class PriceImportRowWriter {
 
         em.createNativeQuery(
                 "INSERT INTO element_daily_price " +
-                "  (id, element_name, source_id, price_date, raw_price, currency, price_unit, " +
+                "  (id, element_name, source_id, price_date, raw_price, currency, price_unit, source_price, source_currency, source_rate, cny_price, " +
                 "   fetch_status, created_at, updated_at, created_by, updated_by) " +
                 "VALUES " +
-                "  (gen_random_uuid(), :en, :sid, :pd, :price, :cur, :unit, " +
+                "  (gen_random_uuid(), :en, :sid, :pd, :price, 'CNY', :unit, :source_price, :source_currency, :source_rate, :cny_price, " +
                 "   'IMPORT', NOW(), NOW(), :uid, :uid) " +
                 "ON CONFLICT (element_name, COALESCE(source_id::TEXT,''), price_date) " +
                 "DO UPDATE SET " +
                 "  raw_price    = EXCLUDED.raw_price, " +
                 "  currency     = EXCLUDED.currency, " +
                 "  price_unit   = EXCLUDED.price_unit, " +
+                "  source_price = EXCLUDED.source_price, " +
+                "  source_currency = EXCLUDED.source_currency, " +
+                "  source_rate = EXCLUDED.source_rate, " +
+                "  cny_price = EXCLUDED.cny_price, " +
                 "  fetch_status = 'IMPORT', " +
                 "  updated_at   = NOW(), " +
                 "  updated_by   = EXCLUDED.updated_by")
                 .setParameter("en", elementCode)
                 .setParameter("sid", sourceId)
                 .setParameter("pd", priceDate)
-                .setParameter("price", price)
-                .setParameter("cur", currency)
+                .setParameter("price", cnyPrice)
                 .setParameter("unit", priceUnit)
+                .setParameter("source_price", price)
+                .setParameter("source_currency", currency)
+                .setParameter("source_rate", sourceRate)
+                .setParameter("cny_price", cnyPrice)
                 .setParameter("uid", operatorId)
                 .executeUpdate();
 

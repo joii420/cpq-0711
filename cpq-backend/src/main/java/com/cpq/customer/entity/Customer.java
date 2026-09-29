@@ -21,6 +21,9 @@ public class Customer extends PanacheEntityBase {
     @Column(nullable = false, unique = true, length = 50)
     public String code;
 
+    @Column(name = "default_currency", nullable = false, length = 10)
+    public String defaultCurrency = "CNY";
+
     @Column(nullable = false, length = 20)
     public String level = "STANDARD";
 

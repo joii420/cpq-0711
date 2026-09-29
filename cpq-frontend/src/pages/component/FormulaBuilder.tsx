@@ -252,6 +252,14 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
             {btn.label}
           </button>
         ))}
+        <button
+          className="cm-op-chip"
+          disabled={!activeFormulaKey}
+          title="显式引用报价单创建时固化的目标币种→CNY汇率"
+          onClick={() => appendToken({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' })}
+        >
+          [汇率]
+        </button>
         <Popover
           open={numberPopoverOpen}
           onOpenChange={(open) => {

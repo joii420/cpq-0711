@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>组件公式 · [汇率] 标签</title>
+  <link rel="stylesheet" href="antd-like.css">
+  <style>
+    .formula-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:16px}
+    .component-row{padding:12px;border-radius:6px;cursor:pointer}.component-row.active{background:#e6f4ff;color:#0958d9}
+    .formula-editor{border:1px solid #d9d9d9;border-radius:6px;padding:16px;background:#fff;min-height:88px}
+    .formula-token{display:inline-flex;align-items:center;padding:4px 9px;margin:3px;border-radius:4px;background:#e6f4ff;color:#0958d9;border:1px solid #91caff;font-family:monospace}
+    .formula-token.rate{background:#f9f0ff;color:#722ed1;border-color:#d3adf7}
+    .token-picker{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.token-picker button{cursor:pointer}
+    .result-card{background:#fafafa;border:1px solid #f0f0f0;border-radius:6px;padding:16px}
+  </style>
+</head>
+<body>
+<div class="proto-shell">
+  <aside class="proto-sider"><div class="proto-logo">CPQ 报价系统</div><div class="proto-menu-group">业务管理</div><div class="proto-menu-item group active">▤　组件管理</div><div class="proto-menu-item child active">公式组件</div><div class="proto-menu-item child">组件列表</div><div class="proto-menu-group">定价管理</div><div class="proto-menu-item group">％　定价管理</div><div class="proto-menu-item child">定价策略</div></aside>
+  <div class="proto-main">
+    <header class="proto-header"><span class="icon">☾</span><span class="icon">♧</span><span class="proto-user">◯　管理员</span></header>
+    <main class="proto-content">
+      <div class="proto-banner"><b>组件管理 → 公式组件</b>　[汇率] 是可显式插入的报价单汇率快照标签，不会自动改变元素价格换算。<a href="index.html">返回原型导航</a></div>
+      <div class="card"><div class="card-head">公式配置</div><div class="card-body">
+        <div class="formula-layout">
+          <div><div class="toolbar"><input class="input search" style="width:100%" placeholder="搜索组件名称"></div><div class="component-row active"><b>外币材料金额</b><div class="form-hint">FORMULA · COMP-EX-001</div></div><div class="component-row"><b>材料费用</b><div class="form-hint">FORMULA · COMP-0011</div></div><div class="component-row"><b>产品小计</b><div class="form-hint">FORMULA · COMP-SUB-001</div></div></div>
+          <div>
+            <div class="form-grid"><div class="form-item"><label class="form-label required">组件名称</label><input class="form-control" value="外币材料金额"></div><div class="form-item"><label class="form-label">结果单位</label><input class="form-control" value="报价币种"></div></div>
+            <div class="divider">公式</div>
+            <div class="formula-editor" aria-label="公式编辑器"><span class="formula-token">[材料单价]</span><span> × </span><span class="formula-token rate">[汇率]</span><span> + </span><span class="formula-token">[加工费]</span></div>
+            <div class="token-picker"><button class="btn" type="button">+ 材料单价</button><button class="btn" type="button">+ 加工费</button><button class="btn" type="button" style="border-color:#d3adf7;color:#722ed1">+ 汇率</button></div>
+            <div class="alert" style="margin-top:16px">标签返回报价单创建时保存的汇率快照（1 目标币种 = N CNY，12 位精度）。只有公式明确插入 [汇率] 时才参与计算；报价单创建后的策略变化不会改写结果。</div>
+            <div class="divider">报价单试算结果</div>
+            <div class="result-card"><div class="description"><div class="item"><span class="label">报价单</span>QT-20260928-0007</div><div class="item"><span class="label">币种 / 汇率</span>USD · 7.200000000000 CNY</div><div class="item"><span class="label">材料单价</span>720.000000000000 CNY</div><div class="item"><span class="label">公式结果</span><strong>5,184.000000000000 USD·CNY</strong></div></div></div>
+          </div>
+        </div>
+      </div></div>
+    </main>
+  </div>
+</div>
+</body>
+</html>

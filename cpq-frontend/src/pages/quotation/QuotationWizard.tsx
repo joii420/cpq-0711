@@ -2250,6 +2250,8 @@ const QuotationWizard: React.FC = () => {
         quotationStatus={quotation?.status}
         quoteCardStructure={quotation?.quoteCardStructure ?? null}
         costingCardStructure={quotation?.costingCardStructure ?? null}
+        quoteCurrency={quotation?.currency || quotation?.baseCurrency || 'CNY'}
+        quoteExchangeRate={quotation?.exchangeRate || '1'}
         locateTarget={locateTarget}
       />
 
@@ -2294,7 +2296,8 @@ const QuotationWizard: React.FC = () => {
     <QuotationStep3
       quotationId={quotationId || undefined}
       lineItems={lineItems}
-      baseCurrency={quotation?.baseCurrency || 'CNY'}
+      baseCurrency={quotation?.currency || quotation?.baseCurrency || 'CNY'}
+      exchangeRate={quotation?.exchangeRate || '1'}
       driverExpansions={driverExpansions}
       customerId={customerIdValue}
       onUpdate={(updater) => setLineItemsByUser(prev => updater(prev))}
@@ -2353,6 +2356,12 @@ const QuotationWizard: React.FC = () => {
     const totalAmount = formatQuotationTotal(
       toDecimal(originalAmount).times(toDecimal(discountRate)).dividedBy('100'),
     );
+    const quoteCurrency = quotation?.currency || quotation?.baseCurrency || 'CNY';
+    const quoteRateRaw = quotation?.exchangeRate;
+    const quoteRate = isDecimalString(quoteRateRaw) && !toDecimal(quoteRateRaw).isZero() ? quoteRateRaw : '1';
+    const foreignOriginalAmount = formatQuotationTotal(toDecimal(originalAmount).dividedBy(toDecimal(quoteRate)));
+    const foreignTotalAmount = formatQuotationTotal(toDecimal(totalAmount).dividedBy(toDecimal(quoteRate)));
+    const foreignSubtotal = (li: LineItem) => formatQuotationTotal(toDecimal(computeProductSubtotal(li, driverExpansions, customerIdValue)).dividedBy(toDecimal(quoteRate)));
     const isDraft = !quotation || quotation.status === 'DRAFT';
 
     return (
@@ -2373,6 +2382,10 @@ const QuotationWizard: React.FC = () => {
             <Descriptions.Item label="联系人">{form.getFieldValue('contactName') || '-'}</Descriptions.Item>
             <Descriptions.Item label="报价类型">{form.getFieldValue('quoteType') || '-'}</Descriptions.Item>
             <Descriptions.Item label="优先级">{form.getFieldValue('priority') || '-'}</Descriptions.Item>
+            <Descriptions.Item label="结算币种">{quoteCurrency}</Descriptions.Item>
+            <Descriptions.Item label="汇率">1 {quoteCurrency} = {formatNumber(quoteRate, { decimals: 12 }) ?? quoteRate} CNY</Descriptions.Item>
+            <Descriptions.Item label="汇率日期">{quotation?.exchangeRateDate || '-'}</Descriptions.Item>
+            <Descriptions.Item label="汇率来源">{quotation?.exchangeRateSource || quotation?.exchangeRateStrategyName || '-'}</Descriptions.Item>
           </Descriptions>
         </Card>
 
@@ -2411,7 +2424,7 @@ const QuotationWizard: React.FC = () => {
                 title: '小计',
                 key: 'subtotal',
                 render: (_: unknown, li: LineItem) =>
-                  `¥${formatNumber(computeProductSubtotal(li, driverExpansions, customerIdValue), { isComputed: true }) ?? '0'}`,
+                  `${formatNumber(foreignSubtotal(li), { isComputed: true }) ?? '0'} ${quoteCurrency}`,
               },
             ]}
             summary={() => (
@@ -2419,7 +2432,7 @@ const QuotationWizard: React.FC = () => {
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={2}><Text strong>合计</Text></Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
-                    <Text strong>¥{formatNumber(originalAmount, { isComputed: true }) ?? '0'}</Text>
+                    <Text strong>{formatNumber(foreignOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>
@@ -2429,10 +2442,10 @@ const QuotationWizard: React.FC = () => {
 
         <Card title="定价" size="small" style={{ marginTop: 16 }}>
           <Descriptions column={2} bordered size="small">
-            <Descriptions.Item label="原始总金额">¥{formatNumber(originalAmount, { isComputed: true }) ?? '0'}</Descriptions.Item>
+            <Descriptions.Item label="原始总金额">{formatNumber(foreignOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Descriptions.Item>
             <Descriptions.Item label="折扣率">{discountRate}%</Descriptions.Item>
             <Descriptions.Item label="最终总金额">
-              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>¥{formatNumber(totalAmount, { isComputed: true }) ?? '0'}</Text>
+              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>{formatNumber(foreignTotalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
             </Descriptions.Item>
           </Descriptions>
         </Card>

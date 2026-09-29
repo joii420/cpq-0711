@@ -59,7 +59,8 @@ public class PriceImportResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public PriceImportResultDTO importPrices(@RestForm("file") FileUpload file,
                                               @RestForm("sourceId") String sourceIdStr,
-                                              @RestForm("priceDate") String priceDateStr) {
+                                              @RestForm("priceDate") String priceDateStr,
+                                              @RestForm("currency") String currency) {
         if (file == null) throw new BusinessException(400, "file 不能为空");
         byte[] bytes;
         try (InputStream in = Files.newInputStream(file.uploadedFile())) {
@@ -69,8 +70,9 @@ public class PriceImportResource {
         }
         UUID sourceId = parseUuid(sourceIdStr);
         LocalDate priceDate = parseDate(priceDateStr);
+        if (currency == null || currency.isBlank()) throw new BusinessException(400, "currency 不能为空");
         UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
-        return service.importPrices(bytes, sourceId, priceDate, userId);
+        return service.importPrices(bytes, sourceId, priceDate, currency, userId);
     }
 
     private UUID parseUuid(String s) {

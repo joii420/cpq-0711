@@ -343,6 +343,9 @@ export interface QuotationStep2Props {
   costingCardStructure?: CardStructure | null;
   /** Plan 1b：提交行键冲突定位目标（seq 单调递增触发）。报价侧专用。 */
   locateTarget?: { lineItemId?: string; productPartNo?: string; componentId?: string; seq: number } | null;
+  /** 报价币种快照；仅报价侧展示换算后的金额，核价侧保持 CNY + 外币双口径。 */
+  quoteCurrency?: string;
+  quoteExchangeRate?: DecimalValue;
 }
 
 // ─── BASIC_DATA path 求值结果格式化 ─────────────────────────────────────────
@@ -2396,12 +2399,14 @@ interface ProductCardProps {
    * （与 ReadonlyProductCard 同一判定口径：`!quotationStatus || quotationStatus === 'DRAFT'`）。
    */
   quotationStatus?: string;
+  quoteCurrency?: string;
+  quoteExchangeRate?: DecimalValue;
   /** task-260825（F-5）：料号查询命中高亮词（防抖后的 searchTerm，大小写不敏感），
    *  用于卡片头部「客户产品编号/料号」徽标的黄底高亮；空值即不高亮，不产生额外 DOM。 */
   highlightTerm?: string;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus, highlightTerm }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus, highlightTerm, quoteCurrency, quoteExchangeRate }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
@@ -3074,8 +3079,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // 金额显示：统一走 formatNumber（task-0801：不再固定 2 位，走 DISPLAY_SCALE=6 兜底去尾零），
   // 保留 ¥ 前缀与空值兜底 ¥0。
-  const formatCurrency = (val: DecimalValue | null | undefined) =>
-    `¥ ${formatNumber(val ?? '0', { isComputed: true }) ?? '0'}`;
+  const formatCurrency = (val: DecimalValue | null | undefined) => {
+    const rate = cardSide === 'QUOTE' && quoteCurrency && quoteCurrency !== 'CNY' && quoteExchangeRate
+      ? toDecimal(quoteExchangeRate) : toDecimal('1');
+    const shown = rate.isZero() ? toDecimal(val ?? '0') : toDecimal(val ?? '0').dividedBy(rate);
+    return `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${formatNumber(shown.toString(), { isComputed: true }) ?? '0'}`;
+  };
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
@@ -3995,7 +4004,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
                           // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 6 位去尾零，task-0801），金额列加 ¥ 前缀
                           const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
-                          const text = field.is_amount === true ? `¥ ${plain}` : plain;
+                          const display = field.is_amount === true && cardSide === 'QUOTE' && quoteCurrency && quoteCurrency !== 'CNY' && quoteExchangeRate
+                            ? formatNumber(toDecimal(v).dividedBy(toDecimal(quoteExchangeRate)).toString(), { isComputed: true }) ?? '0' : plain;
+                          const text = field.is_amount === true ? `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${display}` : plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
                               {text}
@@ -4029,7 +4040,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                             if (fs[i].is_amount === true && fs[i].is_subtotal) { valueIdx = i; break; }
                           }
                           if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
-                          const totalText = `¥ ${formatNumber(sumTabColumns(activeComponent as any, allComponentSubtotals), { isComputed: true }) ?? '0'}`;
+                          const total = sumTabColumns(activeComponent as any, allComponentSubtotals);
+                          const shownTotal = cardSide === 'QUOTE' && quoteCurrency && quoteCurrency !== 'CNY' && quoteExchangeRate
+                            ? formatNumber(toDecimal(total).dividedBy(toDecimal(quoteExchangeRate)).toString(), { isComputed: true }) ?? '0'
+                            : formatNumber(total, { isComputed: true }) ?? '0';
+                          const totalText = `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${shownTotal}`;
                           return fs.map((f, fi) => {
                             const k = f.name || f.key || fi;
                             if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
@@ -4072,13 +4087,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         <div className="qt-subtotal-line qt-subtotal-total">
           <span className="qt-subtotal-label">产品小计</span>
           <span className="qt-subtotal-value">
-            {formatCurrency(
-              item.componentData.length > 0
-                // B3: 传 allComponentSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
-                // 消除函数内 PASS1 重算双口径（产品小计与渲染行同源）。
+            {(() => {
+              const subtotal = item.componentData.length > 0
                 ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
-                : item.subtotal
-            )}
+                : item.subtotal;
+              const rate = quoteExchangeRate && !toDecimal(quoteExchangeRate).isZero() ? toDecimal(quoteExchangeRate) : toDecimal('1');
+              return <>
+                {formatCurrency(subtotal)}
+                {cardSide === 'COSTING' && quoteCurrency && quoteCurrency !== 'CNY' && <span style={{ marginLeft: 12, color: '#1677ff' }}>{formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), { isComputed: true }) ?? '0'} {quoteCurrency}</span>}
+              </>;
+            })()}
           </span>
         </div>
       </div>
@@ -4124,6 +4142,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   quoteCardStructure,
   costingCardStructure,
   locateTarget,
+  quoteCurrency,
+  quoteExchangeRate,
 }) => {
   // 两级 tab：左侧 mainTab（报价单 / 核价单 / 比对视图），右侧 viewType（产品卡片 / Excel视图）。
   // 比对视图为单一展示，无 viewType 切换。
@@ -4826,6 +4846,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   cardStructure={costingCardStructure}
                   onReloadQuotation={onReloadQuotation}
                   quotationStatus={quotationStatus}
+                  quoteCurrency={quoteCurrency}
+                  quoteExchangeRate={quoteExchangeRate}
                   highlightTerm={paging.searchTerm}
                 />
               );
@@ -4903,6 +4925,8 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   locateComponentId={isLocateTarget ? locateResolved!.componentId : undefined}
                   locateSeq={isLocateTarget ? locateResolved!.seq : undefined}
                   quotationStatus={quotationStatus}
+                  quoteCurrency={quoteCurrency}
+                  quoteExchangeRate={quoteExchangeRate}
                   highlightTerm={paging.searchTerm}
                 />
               </div>

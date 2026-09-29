@@ -7,6 +7,10 @@ public class PriceImportRowDTO {
     public int rowNo;             // Excel 物理行号（1-based）
     public String elementCode;
     public BigDecimal price;
+    public BigDecimal sourcePrice;
+    public BigDecimal cnyPrice;
+    public BigDecimal sourceRate;
+    public String sourceCurrency;
     public String currency;
     public String priceUnit;
     public String result;         // CREATED / UPDATED / FAILED

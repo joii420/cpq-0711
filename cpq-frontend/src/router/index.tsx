@@ -51,6 +51,7 @@ import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
 import SelTemplateManagement from '../pages/config/SelTemplateManagement';
 import ModelConfigManagement from '../pages/config/ModelConfigManagement';
+import CurrencyManagement from '../pages/system/CurrencyManagement';
 
 // v0.4 3D 选配 — P0+P1+P2 端到端骨架
 import FeatureLibraryList from '../pages/feature-library/FeatureLibraryList';
@@ -94,6 +95,7 @@ const router = createBrowserRouter([
       { path: 'system/notifications', element: <NotificationList /> },
       { path: 'system/operation-logs', element: <OperationLogList /> },
       { path: 'system/tax-categories', element: <RoleGuard roles={['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN']}><TaxCategoryManagement /></RoleGuard> },
+      { path: 'system/currencies', element: <CurrencyManagement /> },
       { path: 'customers', element: <CustomerManagement /> },
       { path: 'customers/industries', element: <IndustryManagement /> },
       { path: 'products', element: <ProductManagement /> },
