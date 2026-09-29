@@ -88,6 +88,7 @@ const allMenuItems: MenuItem[] = [
       // task-0729 屏 6.2：更新任务常驻页，与「价格调整审核」并列、权限同（fronttask §5.2「落位」）
       { key: '/pricing/jobs', label: '更新任务', roles: ['PRICING_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/system/approval-rules', label: '审批流', roles: ['SYSTEM_ADMIN'] },
+      { key: '/system/currencies', label: '币种管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
     ],
   },
   {

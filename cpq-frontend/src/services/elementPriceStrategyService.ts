@@ -79,11 +79,12 @@ export const elementPriceStrategyService = {
   },
 
   /** POST /element-price/import — multipart 上传；逐行独立处理，失败行不阻断其他行入库（api.md §2.2） */
-  async importPrices(file: File, sourceId: string, priceDate: string): Promise<PriceImportResultDTO> {
+  async importPrices(file: File, sourceId: string, priceDate: string, currency = 'CNY'): Promise<PriceImportResultDTO> {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('sourceId', sourceId);
     fd.append('priceDate', priceDate);
+    fd.append('currency', currency);
     const res = await api.post(`${BASE}/import`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     });

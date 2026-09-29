@@ -24,6 +24,25 @@ public class Quotation extends PanacheEntityBase {
     @Column(name = "customer_id", nullable = false)
     public UUID customerId;
 
+    @Column(length = 10, nullable = false)
+    public String currency = "CNY";
+
+    @Column(name = "exchange_rate", precision = 26, scale = 12, nullable = false)
+    public BigDecimal exchangeRate = BigDecimal.ONE;
+
+    @Column(name = "exchange_rate_date")
+    public LocalDate exchangeRateDate;
+
+    @Column(name = "exchange_rate_source", length = 200)
+    public String exchangeRateSource;
+
+    @Column(name = "exchange_rate_captured_at")
+    public OffsetDateTime exchangeRateCapturedAt;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "exchange_rate_strategy_snapshot", columnDefinition = "jsonb")
+    public String exchangeRateStrategySnapshot;
+
     @Column(nullable = false, length = 500)
     public String name;
 

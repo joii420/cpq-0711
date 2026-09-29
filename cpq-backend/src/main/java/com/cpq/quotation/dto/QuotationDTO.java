@@ -14,6 +14,11 @@ public class QuotationDTO {
     public UUID id;
     public String quotationNumber;
     public UUID customerId;
+    public String currency;
+    public BigDecimal exchangeRate;
+    public LocalDate exchangeRateDate;
+    public String exchangeRateSource;
+    public OffsetDateTime exchangeRateCapturedAt;
     public String name;
     public UUID contactId;
     public String contactName;
@@ -130,6 +135,11 @@ public class QuotationDTO {
         dto.id = q.id;
         dto.quotationNumber = q.quotationNumber;
         dto.customerId = q.customerId;
+        dto.currency = q.currency;
+        dto.exchangeRate = q.exchangeRate;
+        dto.exchangeRateDate = q.exchangeRateDate;
+        dto.exchangeRateSource = q.exchangeRateSource;
+        dto.exchangeRateCapturedAt = q.exchangeRateCapturedAt;
         dto.name = q.name;
         dto.contactId = q.contactId;
         dto.contactName = q.contactName;

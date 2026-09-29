@@ -6874,3 +6874,4 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 [2026-09-27] 客户管理 - 限定项与收尾 | `dev-docs/INDEX.md`、`BACKLOG.md` | 旧 `CustomerResourceTest` 未执行（其夹具会删除共享数据），旧 API/E2E 未执行（无长期服务）；前端 `npm run build` 未执行（worktree 无独立依赖，TypeScript 检查已通过）。worktree 已移除，分支 `feat/task-260926-customer-code-import` 保留待用户执行 `git branch -d`。已自检：后端编译/测试编译、7/7 API、Excel 黑盒 AC-7~AC-14、前端 tsc、diff-check 与三项项目 hook 均已执行并记录。
 
 [2026-09-28] 数据库初始化 - 增加默认产品分类与默认客户所属行业种子 | `deploy/db/cpq-init-empty.sql` | 路径 B 直接修复：新增产品分类 `100000/默认分类` 与行业 `200000/默认行业` 两条初始化数据；静态检查确认 SQL 括号/分号、Navicat 兼容约束及 `git diff --check` 通过。
+[2026-09-28] 币种管理与报价换算 - 闸门 A 放行并开工 | `dev-docs/task-260927-币种管理与报价换算/`、分支 `feat/task-260927-currency` | 用户确认“开工”；任务文档已提交 `458ad2d9`，建立独立 worktree，后端/前端/测试三路并行开发。原型已确认，开发范围为 AC-1~AC-27；历史数据不回算，报价单创建后汇率快照不可切换/刷新。

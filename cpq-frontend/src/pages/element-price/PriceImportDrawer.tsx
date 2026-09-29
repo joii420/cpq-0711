@@ -10,6 +10,8 @@ import CompactUploadDragger from '../../components/CompactUploadDragger';
 import { elementPriceStrategyService } from '../../services/elementPriceStrategyService';
 import type { PriceSourceDTO, PriceImportResultDTO, PriceImportRowDTO } from '../../types/element-price-strategy';
 import { ELEMENT_PRICE_SCALE, formatDisplayDecimal, type DecimalString } from '../../utils/precision';
+import { currencyService } from '../../services/currencyService';
+import type { CurrencyDTO } from '../../types/currency';
 
 const { Text, Paragraph } = Typography;
 
@@ -28,6 +30,8 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
   const [sources, setSources] = useState<PriceSourceDTO[]>([]);
   const [sourceId, setSourceId] = useState<string | undefined>(undefined);
   const [priceDate, setPriceDate] = useState<Dayjs>(dayjs());
+  const [currencies, setCurrencies] = useState<CurrencyDTO[]>([]);
+  const [currency, setCurrency] = useState('CNY');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -37,11 +41,13 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
     if (!open) return;
     setSourceId(undefined);
     setPriceDate(dayjs());
+    setCurrency('CNY');
     setSelectedFile(null);
     setResult(null);
     elementPriceStrategyService.listSources({ status: 'ACTIVE' })
       .then(setSources)
       .catch((e: any) => message.error(e?.message ?? '价格源加载失败'));
+    currencyService.list({ enabled: true }).then(res => setCurrencies(res.data ?? [])).catch(() => {});
   }, [open]);
 
   const fileList: UploadFile[] = selectedFile
@@ -70,12 +76,13 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
   const handleImport = async () => {
     if (!sourceId) { message.warning('请选择价格源'); return; }
     if (!priceDate) { message.warning('请选择价格日期'); return; }
+    if (!currency) { message.warning('请选择导入币种'); return; }
     if (!selectedFile) { message.warning('请选择要导入的文件'); return; }
     setImporting(true);
     setResult(null);
     try {
       const res = await elementPriceStrategyService.importPrices(
-        selectedFile, sourceId, priceDate.format('YYYY-MM-DD'),
+        selectedFile, sourceId, priceDate.format('YYYY-MM-DD'), currency,
       );
       setResult(res);
       message.success(`导入完成：新增 ${res.createdCount} 条，覆盖 ${res.updatedCount} 条，失败 ${res.failedCount} 条`);
@@ -129,6 +136,12 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
           <div style={{ marginTop: 5, fontSize: 12, color: 'rgba(0,0,0,.45)' }}>只列出「启用」状态的源</div>
         </div>
         <div style={{ flex: 1 }}>
+          <div style={{ marginBottom: 6 }}><span style={{ color: '#ff4d4f', marginRight: 3 }}>*</span>批次币种</div>
+          <Select style={{ width: '100%' }} value={currency} onChange={setCurrency}
+            options={currencies.map(c => ({ value: c.code, label: `${c.code} · ${c.name}` }))} />
+          <div style={{ marginTop: 5, fontSize: 12, color: 'rgba(0,0,0,.45)' }}>整批价格按此币种换算为 CNY 存储</div>
+        </div>
+        <div style={{ flex: 1 }}>
           <div style={{ marginBottom: 6 }}><span style={{ color: '#ff4d4f', marginRight: 3 }}>*</span>价格日期</div>
           <DatePicker style={{ width: '100%' }} value={priceDate} onChange={(d) => d && setPriceDate(d)} allowClear={false} />
           <div style={{ marginTop: 5, fontSize: 12, color: 'rgba(0,0,0,.45)' }}>本次文件里所有价格都记为这一天</div>
@@ -148,7 +161,7 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
         description={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
             <span style={{ fontSize: 12 }}>
-              模板列：<Text code>元素符号*</Text> <Text code>单价*</Text> <Text code>货币</Text> <Text code>计价单位</Text>
+              模板列：<Text code>元素符号*</Text> <Text code>单价*</Text> <Text code>计价单位</Text>
               　·　元素符号须在「元素管理」里已存在且为启用状态
             </span>
             <Button
@@ -208,6 +221,7 @@ const PriceImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
               { title: '行号', dataIndex: 'rowNo', width: 60 },
               { title: '元素符号', dataIndex: 'elementCode', width: 90 },
               { title: '单价', dataIndex: 'price', align: 'right' as const, render: (v: DecimalString) => formatDisplayDecimal(v, ELEMENT_PRICE_SCALE) },
+              { title: 'CNY存储价', dataIndex: 'cnyPrice', align: 'right' as const, render: (v: DecimalString) => v ? formatDisplayDecimal(v, ELEMENT_PRICE_SCALE) : '—' },
               { title: '货币', dataIndex: 'currency' },
               { title: '计价单位', dataIndex: 'priceUnit' },
               {
