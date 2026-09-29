@@ -669,6 +669,13 @@ const QuotationWizard: React.FC = () => {
         templateId: li.templateId || '',
         // task-260910(F-6)：templateName 随「模板: xxx」徽标一并删除（不在 saveDraft payload 里）。
         productAttributeValues: rawAttrs,
+        taxCategoryId: li.taxCategoryId,
+        taxCategoryVersionId: li.taxCategoryVersionId,
+        vatRate: isDecimalString(li.vatRate) ? normalizeDecimalString(li.vatRate) : undefined,
+        vatRateRatio: isDecimalString(li.vatRateRatio) ? normalizeDecimalString(li.vatRateRatio) : undefined,
+        vatSource: li.vatSource,
+        vatEffectiveFrom: li.vatEffectiveFrom,
+        vatResolvedAt: li.vatResolvedAt,
         componentData: li.componentData || [],
         subtotal: isDecimalString(li.subtotal) ? normalizeDecimalString(li.subtotal) : '0',
         // 工序回读:从 GET 的 processes 填 processNos,使 saveDraft 能回写 quotation_line_process
@@ -1934,6 +1941,13 @@ const QuotationWizard: React.FC = () => {
         templateId: li.templateId || customerTemplateId || '',
         // task-260910(F-6)：templateName 随「模板: xxx」徽标一并删除（不在 saveDraft payload 里）。
         productAttributeValues: rawAttrs,
+        taxCategoryId: li.taxCategoryId,
+        taxCategoryVersionId: li.taxCategoryVersionId,
+        vatRate: isDecimalString(li.vatRate) ? normalizeDecimalString(li.vatRate) : undefined,
+        vatRateRatio: isDecimalString(li.vatRateRatio) ? normalizeDecimalString(li.vatRateRatio) : undefined,
+        vatSource: li.vatSource,
+        vatEffectiveFrom: li.vatEffectiveFrom,
+        vatResolvedAt: li.vatResolvedAt,
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,
         partVersionLocked: li.partVersionLocked,

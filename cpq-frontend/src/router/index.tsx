@@ -45,6 +45,7 @@ import MasterDataTableViewerPage from '../pages/master-data/MasterDataTableViewe
 import ChangeLogCenterPage from '../pages/change-log/ChangeLogCenterPage';
 import GlobalVariablePage from '../pages/global-variable/GlobalVariablePage';
 import SystemConfigPage from '../pages/system-config/SystemConfigPage';
+import TaxCategoryManagement from '../pages/system/TaxCategoryManagement';
 import LockMonitorPage from '../pages/system-monitor/LockMonitorPage';
 import DdlExtensionPage from '../pages/system-monitor/DdlExtensionPage';
 import MaterialRecipeManagement from '../pages/config/MaterialRecipeManagement';
@@ -92,6 +93,7 @@ const router = createBrowserRouter([
       { path: 'system/approval-rules', element: <ApprovalRuleManagement /> },
       { path: 'system/notifications', element: <NotificationList /> },
       { path: 'system/operation-logs', element: <OperationLogList /> },
+      { path: 'system/tax-categories', element: <RoleGuard roles={['SALES_REP', 'SALES_MANAGER', 'PRICING_MANAGER', 'SYSTEM_ADMIN']}><TaxCategoryManagement /></RoleGuard> },
       { path: 'customers', element: <CustomerManagement /> },
       { path: 'customers/industries', element: <IndustryManagement /> },
       { path: 'products', element: <ProductManagement /> },

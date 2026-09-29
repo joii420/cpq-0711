@@ -17,6 +17,7 @@ import com.cpq.partno.PartNoContext;
 import com.cpq.partno.PartNoProvider;
 import com.cpq.seltemplate.dto.EffectiveTemplateDTO;
 import com.cpq.seltemplate.service.EffectiveTemplateService;
+import com.cpq.tax.service.VatSnapshotService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -112,6 +113,9 @@ public class ConfigureProductService {
 
     @Inject
     com.cpq.configure.service.SalesSignatureRepository sigRepo;
+
+    @Inject
+    VatSnapshotService vatSnapshotService;
 
     /** task-260901 · B-17：材质含量配置的读取底座（发号/校验/元素行读写都在它那儿）。 */
     @Inject
@@ -2336,9 +2340,18 @@ public class ConfigureProductService {
                                              ConfigureCatalog cat) {
         List<Map<String, Object>> out = new ArrayList<>();
 
+        // Resolve all newly-created line VAT snapshots once. Price edits/recalculation never
+        // call this resolver again; the persisted quotation_line_item snapshot is authoritative.
+        List<String> vatMaterials = new ArrayList<>();
+        if (parentHfPartNo != null) vatMaterials.add(parentHfPartNo);
+        if (childHfPartNos != null) vatMaterials.addAll(childHfPartNos);
+        Map<String, VatSnapshotService.Snapshot> vatByMaterial =
+            vatSnapshotService.resolveForNewLines(quotationId, vatMaterials.stream().distinct().toList());
+
         if ("SIMPLE".equals(effectiveType)) {
             String pn = childHfPartNos.get(0);
-            UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId, req.customerProductNo);
+            UUID id = insertLineItem(quotationId, pn, null, "SIMPLE", tempId, req.customerProductNo,
+                vatByMaterial.get(pn));
             // per-quote 工序：选配工序写报价行专属 quotation_line_process（行已建，满足 FK）
             PartRequest simplePr = (req.parts != null && !req.parts.isEmpty()) ? req.parts.get(0) : null;
             insertQuotationLineProcesses(id, simplePr != null ? simplePr.processNos : null);
@@ -2349,7 +2362,7 @@ public class ConfigureProductService {
         // COMPOSITE: 父 + N 子 (父用 tempId; 子 line item 自动生成，
         // 各子件的 quotationLineItemId 通过 PartRequest.quotationLineItemId 传入)
         UUID parentId = insertLineItem(quotationId, parentHfPartNo, null, "COMPOSITE", tempId,
-            req.customerProductNo);
+            req.customerProductNo, vatByMaterial.get(parentHfPartNo));
         // per-quote 组合工艺:写本报价行专属表(取代 mat_composite_process 作渲染源),并把解析后的
         // 工艺步骤带回父行 DTO,供前端透传到 saveDraft 跨保存存活(全量重建换 line id 后重写)。
         Map<String, Object> parentDto = buildLineItemDTO(parentId, parentHfPartNo, "COMPOSITE", null);
@@ -2373,7 +2386,7 @@ public class ConfigureProductService {
             //    的 productPartNo = COMPOSITE ? parentHfPartNo : …）。
             //    对 SQL 侧无损：整单 SELECT DISTINCT customer_part_no 的集合由父行贡献，内容不变。
             UUID childId = insertLineItem(quotationId, childPn, parentId, "PART", childTempId,
-                null);
+                null, vatByMaterial.get(childPn));
             // per-quote 工序：子件行的选配工序写 quotation_line_process
             insertQuotationLineProcesses(childId, childPr != null ? childPr.processNos : null);
             out.add(buildLineItemDTO(childId, childPn, "PART", parentId, childPr != null ? childPr.processNos : null));
@@ -2493,6 +2506,14 @@ public class ConfigureProductService {
     UUID insertLineItem(UUID quotationId, String hfPartNo,
                         UUID parentLineItemId, String compositeType, UUID tempId,
                         String customerPartNo) {
+        return insertLineItem(quotationId, hfPartNo, parentLineItemId, compositeType, tempId,
+            customerPartNo, vatSnapshotService.resolveForNewLine(quotationId, hfPartNo));
+    }
+
+    /** Insert a new quote row with its immutable VAT snapshot. */
+    UUID insertLineItem(UUID quotationId, String hfPartNo,
+                        UUID parentLineItemId, String compositeType, UUID tempId,
+                        String customerPartNo, VatSnapshotService.Snapshot vat) {
         UUID id = (tempId != null) ? tempId : UUID.randomUUID();
         // R-3 / B-1: 空白 → NULL（与 insertSelProductNo 的 isBlank 早退同口径），
         //            🚫 不写空串 —— RowScopeSupport 的集合谓词把空串当成一个真实值。
@@ -2501,17 +2522,26 @@ public class ConfigureProductService {
                 "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, product_part_no_snapshot, " +
                 "parent_line_item_id, composite_type, sort_order, created_at, template_id, " +
-                "customer_part_no) " +
+                "customer_part_no, tax_category_id, tax_category_version_id, vat_rate, " +
+                "vat_rate_ratio, vat_source, vat_effective_from, vat_resolved_at) " +
                 // D-38: template_id 取本报价单的 customer_template_id（内联子查询，不多发查询）；
                 //       报价单尚未选模板时得到 NULL —— 与改动前一致，不抛异常。
                 "VALUES (:id, :q, :pn, :pp, :ct, 0, NOW(), " +
-                "        (SELECT customer_template_id FROM quotation WHERE id = :q), :cpn)")
+                "        (SELECT customer_template_id FROM quotation WHERE id = :q), :cpn, " +
+                ":tcid, :tcvid, :vr, :vrr, :vsrc, :vef, :vres)")
             .setParameter("id", id)
             .setParameter("q", quotationId)
             .setParameter("pn", hfPartNo)
             .setParameter("pp", parentLineItemId)
             .setParameter("ct", compositeType)
             .setParameter("cpn", cpn)
+            .setParameter("tcid", vat == null ? null : vat.taxCategoryId())
+            .setParameter("tcvid", vat == null ? null : vat.taxCategoryVersionId())
+            .setParameter("vr", vat == null ? null : vat.vatRate())
+            .setParameter("vrr", vat == null ? null : vat.vatRateRatio())
+            .setParameter("vsrc", vat == null ? null : vat.source())
+            .setParameter("vef", vat == null ? null : vat.effectiveFrom())
+            .setParameter("vres", vat == null ? null : vat.resolvedAt())
             .executeUpdate();
         return id;
     }

@@ -257,6 +257,9 @@ public class DatasetSchemaSelfCheck {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("id", "bigint");
         for (ColumnDef c : s.persistedColumns()) m.put(c.name, c.pgType);
+        for (String c : s.internalColumns()) {
+            m.put(c, SheetDef.INTERNAL_COLUMN_TYPES.get(s.tableName + "." + c));
+        }
         if (s.versioned) {
             m.put("version_no", "integer");
             m.put("row_fingerprint", "char(64)");

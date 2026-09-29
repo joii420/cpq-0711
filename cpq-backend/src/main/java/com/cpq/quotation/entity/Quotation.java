@@ -96,6 +96,12 @@ public class Quotation extends PanacheEntityBase {
     @Column(name = "tax_amount", precision = 26, scale = 12, nullable = false)
     public BigDecimal taxAmount = BigDecimal.ZERO;
 
+    @Column(name = "default_vat_rate", precision = 7, scale = 4)
+    public BigDecimal defaultVatRate;
+
+    @Column(name = "default_vat_source", length = 32)
+    public String defaultVatSource;
+
     @Column(name = "is_manually_adjusted")
     public Boolean isManuallyAdjusted = false;
 

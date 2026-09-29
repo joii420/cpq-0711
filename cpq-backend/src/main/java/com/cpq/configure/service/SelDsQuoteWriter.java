@@ -123,8 +123,9 @@ public class SelDsQuoteWriter {
         //    同一料号在不同客户下各自一行，🚫 不再被对方的 DO NOTHING 吞掉。
         em.createNativeQuery(
                 "INSERT INTO ds_quote_material (customer_no, material_no, material_name, specification, dimension, "
-              + "  unit_weight, material_type, category_code, source, created_by, updated_at, updated_by) "
-              + "VALUES (:cust, :mn, :nm, :sp, :dm, :uw, :mt, :cc, :src, :op, now(), :op) "
+              + "  unit_weight, material_type, category_code, source, created_by, updated_at, updated_by, tax_category_id) "
+              + "VALUES (:cust, :mn, :nm, :sp, :dm, :uw, :mt, :cc, :src, :op, now(), :op, "
+              + "  (SELECT id FROM tax_category WHERE is_default = TRUE AND status = 'ACTIVE' LIMIT 1)) "
               + "ON CONFLICT (customer_no, material_no) DO NOTHING")
             .setParameter("cust", customerNo)
             .setParameter("mn", materialNo)

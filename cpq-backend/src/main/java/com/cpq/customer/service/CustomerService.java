@@ -123,6 +123,8 @@ public class CustomerService {
         customer.productCategoryId = request.productCategoryId != null
                 ? request.productCategoryId
                 : ProductCategory.requireDefaultId();
+        validateDefaultVatRate(request.defaultVatRate);
+        customer.defaultVatRate = request.defaultVatRate;
         customer.region = request.region;
         customer.address = request.address;
         customer.creditLimit = request.creditLimit;
@@ -173,6 +175,10 @@ public class CustomerService {
         if (request.industryCode != null) customer.industryCode = request.industryCode;
         // task-0712 update-071501 D4: 客户建后允许改绑产品分类; 改绑不追溯已有报价单(表头不持久化 categoryId)
         if (request.productCategoryId != null) customer.productCategoryId = request.productCategoryId;
+        if (Boolean.TRUE.equals(request.defaultVatRatePresent) || request.defaultVatRate != null) {
+            validateDefaultVatRate(request.defaultVatRate);
+            customer.defaultVatRate = request.defaultVatRate;
+        }
         if (request.region != null) customer.region = request.region;
         if (request.address != null) customer.address = request.address;
         if (request.creditLimit != null) customer.creditLimit = request.creditLimit;
@@ -183,6 +189,12 @@ public class CustomerService {
         List<CustomerContact> contacts = CustomerContact.<CustomerContact>list(
                 "customerId = ?1 ORDER BY isPrimary DESC, createdAt ASC", id);
         return CustomerDTO.from(customer, contacts);
+    }
+
+    private static void validateDefaultVatRate(java.math.BigDecimal rate) {
+        if (rate != null && (rate.signum() < 0 || rate.compareTo(new java.math.BigDecimal("100")) > 0)) {
+            throw new BusinessException(400, "defaultVatRate 必须在 0 到 100 之间");
+        }
     }
 
     @Transactional

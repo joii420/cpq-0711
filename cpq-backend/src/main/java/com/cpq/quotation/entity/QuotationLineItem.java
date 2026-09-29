@@ -55,6 +55,28 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "template_id")
     public UUID templateId;
 
+    /** VAT snapshot captured when this quotation row was created; never refreshed by recalculate. */
+    @Column(name = "tax_category_id")
+    public UUID taxCategoryId;
+
+    @Column(name = "tax_category_version_id")
+    public UUID taxCategoryVersionId;
+
+    @Column(name = "vat_rate", precision = 7, scale = 4)
+    public BigDecimal vatRate;
+
+    @Column(name = "vat_rate_ratio", precision = 12, scale = 8)
+    public BigDecimal vatRateRatio;
+
+    @Column(name = "vat_source", length = 32)
+    public String vatSource;
+
+    @Column(name = "vat_effective_from")
+    public java.time.LocalDate vatEffectiveFrom;
+
+    @Column(name = "vat_resolved_at")
+    public OffsetDateTime vatResolvedAt;
+
     @Column(name = "product_name_snapshot", length = 500)
     public String productNameSnapshot;
 

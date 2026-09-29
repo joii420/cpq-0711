@@ -143,6 +143,8 @@ public class DatasetMaintenanceService {
         // 核价两套没有客户维度，customerNo 参数被整个忽略（B-5），既不下发两列也不参与过滤。
         boolean hasCustomer = materialSheet(reg).customerScoped();
         boolean hasCustomerFilter = hasCustomer && customerNo != null && !customerNo.isBlank();
+        // VAT 只属于报价数据集的销售产品主记录；核价数据集没有客户/销售产品维度。
+        boolean hasVat = "quote".equals(reg.datasetKey());
         int pg = Math.max(0, page);
         int sz = Math.min(Math.max(1, size), 200);
         boolean hasKw = keyword != null && !keyword.isBlank();
@@ -180,7 +182,13 @@ public class DatasetMaintenanceService {
         //    product_category.code / customer.code 均有 UNIQUE 约束 ⇒ LEFT JOIN 不会放大行数。
         //    只挂在分页查询上、不挂 count：总数与 JOIN 无关，少一次连接更省。
         String fromPage = from + (hasCategory ? " LEFT JOIN product_category pc ON pc.code = m.category_code" : "")
-            + (hasCustomer ? " LEFT JOIN customer cust ON cust.code = m.customer_no" : "");
+            + (hasCustomer ? " LEFT JOIN customer cust ON cust.code = m.customer_no" : "")
+            + (hasVat ? " LEFT JOIN tax_category tc ON tc.id = m.tax_category_id"
+                + " LEFT JOIN LATERAL (SELECT v.vat_rate FROM tax_category_vat_version v"
+                + " WHERE v.tax_category_id = tc.id AND v.status = 'ACTIVE'"
+                + " AND v.effective_from <= CURRENT_DATE"
+                + " AND (v.effective_to IS NULL OR CURRENT_DATE < v.effective_to)"
+                + " ORDER BY v.effective_from DESC LIMIT 1) tv ON TRUE" : "");
         String lastUpdated = "GREATEST(a.u, COALESCE(m.updated_at, m.created_at))";
 
         // 过滤条件收集：count 与 page 是两条独立 SQL，必须共用同一份 where + 同一份绑定，
@@ -207,6 +215,7 @@ public class DatasetMaintenanceService {
                 + (hasMaterialType ? ", m.material_type" : "")
                 + (hasCategory ? ", m.category_code, pc.name" : "")
                 + (hasCustomer ? ", m.customer_no, cust.name" : "")
+                + (hasVat ? ", m.tax_category_id, tc.name, tv.vat_rate" : "")
                 + fromPage + where
                 + partsOrderBy(sortBy, sortDir, axis, lastUpdated)
                 + " LIMIT :lim OFFSET :off");
@@ -241,6 +250,11 @@ public class DatasetMaintenanceService {
             if (hasCustomer) {
                 it.putCustomerNo(str(r[dyn++]));
                 it.putCustomerName(str(r[dyn++]));   // ← 来自 LEFT JOIN，不是第二条查询（AC-8）
+            }
+            if (hasVat) {
+                it.putTaxCategoryId(str(r[dyn++]));
+                it.putTaxCategoryName(str(r[dyn++]));
+                it.putVatRate(plainDecimal(r[dyn++]));
             }
             items.add(it);
         }

@@ -21,6 +21,7 @@ import com.cpq.quotation.snapshot.FieldTraceDTO;
 import com.cpq.quotation.snapshot.SnapshotCollectorService;
 import com.cpq.quotation.snapshot.SnapshotCollectorService.SubmissionSnapshot;
 import com.cpq.system.entity.User;
+import com.cpq.tax.service.VatSnapshotService;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +44,18 @@ import java.util.stream.Collectors;
 
 @ApplicationScoped
 public class QuotationService {
+
+    /** Persist the creation-time VAT snapshot; never call this for an existing row. */
+    private static void applyVatSnapshot(QuotationLineItem li, VatSnapshotService.Snapshot s) {
+        if (li == null || s == null) return;
+        li.taxCategoryId = s.taxCategoryId();
+        li.taxCategoryVersionId = s.taxCategoryVersionId();
+        li.vatRate = s.vatRate();
+        li.vatRateRatio = s.vatRateRatio();
+        li.vatSource = s.source();
+        li.vatEffectiveFrom = s.effectiveFrom();
+        li.vatResolvedAt = s.resolvedAt();
+    }
 
     private static final Logger LOG = Logger.getLogger(QuotationService.class);
 
@@ -107,6 +120,9 @@ public class QuotationService {
 
     @Inject
     CostingFreezeService costingFreezeService;
+
+    @Inject
+    VatSnapshotService vatSnapshotService;
 
     /** task-0721 B8（2026-07-21 补录，树任务）：反向校验——已有子节点的料号禁止加入材质元素/外购件页签。 */
     @Inject
@@ -456,6 +472,17 @@ public class QuotationService {
         q.snapshotCustomerIndustry = customer.industry;
         q.snapshotCustomerAddress = customer.address;
 
+        java.time.LocalDate quotationDate = LocalDate.now();
+        if (customer.defaultVatRate != null) {
+            q.defaultVatRate = customer.defaultVatRate;
+            q.defaultVatSource = "CUSTOMER";
+        } else {
+            VatSnapshotService.Snapshot fallback = vatSnapshotService.resolveForProduct(
+                    customer.code, null, quotationDate, null);
+            q.defaultVatRate = fallback.vatRate();
+            q.defaultVatSource = "DEFAULT_CATEGORY";
+        }
+
         q.persist();
         LOG.infof("Created quotation id=%s number=%s customer=%s", q.id, q.quotationNumber, q.customerId);
 
@@ -781,6 +808,14 @@ public class QuotationService {
                                 // 公式计算失败不阻塞保存
                             }
                         }
+                    }
+
+                    // New rows capture VAT exactly once. Existing rows (including legacy
+                    // NULL snapshots) are intentionally not backfilled; recalculation and
+                    // price edits only use the persisted row snapshot.
+                    if (isNewLine && li.vatRate == null && li.productPartNoSnapshot != null
+                            && !li.productPartNoSnapshot.isBlank()) {
+                        applyVatSnapshot(li, vatSnapshotService.resolveForNewLine(id, li.productPartNoSnapshot));
                     }
 
                     // （task-260901 B-2d：原先这里累加求总额，已改为末尾一次 SELECT sum）
@@ -2052,6 +2087,15 @@ public class QuotationService {
             newLi.sortOrder = srcLi.sortOrder;
             newLi.customerPartNo = srcLi.customerPartNo;
             newLi.partVersionLocked = srcLi.partVersionLocked;
+            // VAT is a row snapshot; cloning a quotation carries the source snapshot
+            // rather than re-resolving mutable product/category master data.
+            newLi.taxCategoryId = srcLi.taxCategoryId;
+            newLi.taxCategoryVersionId = srcLi.taxCategoryVersionId;
+            newLi.vatRate = srcLi.vatRate;
+            newLi.vatRateRatio = srcLi.vatRateRatio;
+            newLi.vatSource = srcLi.vatSource;
+            newLi.vatEffectiveFrom = srcLi.vatEffectiveFrom;
+            newLi.vatResolvedAt = srcLi.vatResolvedAt;
             newLi.compositeType = srcLi.compositeType;
             // parentLineItemId 稍后重映射。
             // repair-0729: 同模板复制 = 值快照整份继承（含 BOM 树墓碑 deletedTreeNodes，
@@ -3230,6 +3274,11 @@ public class QuotationService {
                     derivedAttrLines.add(li);
                     derivedAttrPartNos.add(product.partNo);
                 }
+            }
+
+            if (isNewLine && li.vatRate == null && li.productPartNoSnapshot != null
+                    && !li.productPartNoSnapshot.isBlank()) {
+                applyVatSnapshot(li, vatSnapshotService.resolveForNewLine(quotationId, li.productPartNoSnapshot));
             }
 
             // （task-260901 B-2d：原先这里累加 liDraft.subtotal 求总额，已改为末尾一次 SELECT sum）

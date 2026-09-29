@@ -31,7 +31,7 @@ public class DsCustomerParts {
     public static class Column {
         public String name;
         public String label;
-        /** {@code STRING} / {@code NUMBER} / {@code DECIMAL}；本表 6 列全为 {@code STRING}。 */
+        /** {@code STRING} / {@code NUMBER} / {@code DECIMAL}。 */
         public String type;
 
         public Column() {}
@@ -60,6 +60,11 @@ public class DsCustomerParts {
         public String customerProductNo;
         public String customerDrawingNo;
         public String materialNo;
+        /** 税务分类来自销售产品主记录 ds_quote_material.tax_category_id。 */
+        public String taxCategoryId;
+        public String taxCategoryName;
+        /** 当前报价日期可用 VAT 百分比，以字符串保留精度。 */
+        public String vatRate;
     }
 
     /** 总行数（服务端 {@code COUNT(*)}，与分页无关）。 */

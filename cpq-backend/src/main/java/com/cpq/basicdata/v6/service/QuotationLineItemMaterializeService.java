@@ -2,6 +2,8 @@ package com.cpq.basicdata.v6.service;
 
 import com.cpq.quotation.dto.CustomerPartCandidateDTO;
 import com.cpq.quotation.service.CustomerPartCandidateService;
+import com.cpq.quotation.entity.QuotationLineItem;
+import com.cpq.tax.service.VatSnapshotService;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -10,6 +12,7 @@ import jakarta.transaction.Transactional;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Map;
 
 /**
  * 服务端从「导入候选 + 报价模板」建 quotation_line_item 明细行。
@@ -26,6 +29,7 @@ public class QuotationLineItemMaterializeService {
 
     @Inject EntityManager em;
     @Inject CustomerPartCandidateService candidateService;
+    @Inject VatSnapshotService vatSnapshotService;
 
     /** 便捷入口：查候选 → 建行。 */
     @Transactional
@@ -68,6 +72,9 @@ public class QuotationLineItemMaterializeService {
         List<UUID> ids = new ArrayList<>();
         if (quotationId == null || candidates == null || candidates.isEmpty()) return ids;
 
+        List<String> candidateMaterials = candidates.stream().filter(c -> c != null && c.partNo != null && !c.partNo.isBlank()).map(c -> c.partNo).distinct().toList();
+        Map<String, VatSnapshotService.Snapshot> vatByMaterial = vatSnapshotService.resolveForNewLines(quotationId, candidateMaterials);
+
         // 第一遍：过滤空白 partNo + 生成 id + 编号 sort_order（与改动前逐行版本时机一致）。
         // 每行 = [id, partNo, pname, customerPartNo, sortOrder, version]
         List<Object[]> rows = new ArrayList<>();
@@ -78,7 +85,9 @@ public class QuotationLineItemMaterializeService {
             String pname = c.partName != null ? c.partName
                     : (c.customerPartName != null ? c.customerPartName : c.partNo);
             int ver = c.currentVersion != null ? c.currentVersion : 2000;
-            rows.add(new Object[]{ id, c.partNo, pname, c.customerProductNo, sort, ver });
+            // VAT is resolved once per newly created line and persisted as a snapshot.
+            VatSnapshotService.Snapshot vat = vatByMaterial.get(c.partNo);
+            rows.add(new Object[]{ id, c.partNo, pname, c.customerProductNo, sort, ver, vat });
             ids.add(id);
             sort++;
         }
@@ -95,12 +104,17 @@ public class QuotationLineItemMaterializeService {
                 valB.append("(:id").append(i).append(", :q, :tid, :pn").append(i)
                     .append(", :pname").append(i).append(", :cpn").append(i)
                     .append(", 'SIMPLE', :sort").append(i).append(", :ver").append(i)
-                    .append(", cast('{}' as jsonb), NOW())");
+                    .append(", cast('{}' as jsonb), :tcid").append(i)
+                    .append(", :tcvid").append(i).append(", :vr").append(i)
+                    .append(", :vrr").append(i).append(", :vsrc").append(i)
+                    .append(", :vef").append(i).append(", :vres").append(i)
+                    .append(", NOW())");
             }
             String sql = "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, template_id, product_part_no_snapshot, product_name_snapshot, " +
                 " customer_part_no, composite_type, sort_order, part_version_locked, " +
-                " product_attribute_values, created_at) VALUES " + valB;
+                " product_attribute_values, tax_category_id, tax_category_version_id, vat_rate, vat_rate_ratio, " +
+                " vat_source, vat_effective_from, vat_resolved_at, created_at) VALUES " + valB;
             var query = em.createNativeQuery(sql);
             query.setParameter("q", quotationId);
             query.setParameter("tid", templateId);
@@ -112,6 +126,14 @@ public class QuotationLineItemMaterializeService {
                 query.setParameter("cpn" + i, r[3]);
                 query.setParameter("sort" + i, r[4]);
                 query.setParameter("ver" + i, r[5]);
+                VatSnapshotService.Snapshot vat = (VatSnapshotService.Snapshot) r[6];
+                query.setParameter("tcid" + i, vat.taxCategoryId());
+                query.setParameter("tcvid" + i, vat.taxCategoryVersionId());
+                query.setParameter("vr" + i, vat.vatRate());
+                query.setParameter("vrr" + i, vat.vatRateRatio());
+                query.setParameter("vsrc" + i, vat.source());
+                query.setParameter("vef" + i, vat.effectiveFrom());
+                query.setParameter("vres" + i, vat.resolvedAt());
             }
             query.executeUpdate();
         }

@@ -138,8 +138,9 @@ const allMenuItems: MenuItem[] = [
     key: '/system',
     icon: <SettingOutlined />,
     label: '系统管理',
-    roles: ['SYSTEM_ADMIN'],
+    roles: ALL_ROLES,
     children: [
+      { key: '/system/tax-categories', label: '税务分类与增值税率', roles: ALL_ROLES },
       { key: '/system/users', label: '用户管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/regions', label: '区域管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/departments', label: '部门管理', roles: ['SYSTEM_ADMIN'] },

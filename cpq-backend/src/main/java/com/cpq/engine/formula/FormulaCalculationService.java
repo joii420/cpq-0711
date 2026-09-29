@@ -197,6 +197,16 @@ public class FormulaCalculationService {
                             ? productAttributes.get(attrName) : null;
                     expr.append(toNumericString(attrVal));
                     break;
+                case "quotation_field":
+                    // VAT is a per-quotation-line snapshot.  Older callers pass the
+                    // snapshot through rowData; missing context intentionally resolves 0.
+                    String quoteField = value;
+                    Object quoteVal = rowData != null && quoteField != null ? rowData.get(quoteField) : null;
+                    if (quoteVal == null && rowData != null && ("vat_rate".equalsIgnoreCase(quoteField) || "增值税".equals(quoteField))) {
+                        quoteVal = rowData.get("vatRateRatio");
+                    }
+                    expr.append(toNumericString(quoteVal));
+                    break;
                 case "global_variable":
                     // V104: 注册表查 def → 解 key → 取值. globalVariableService 由 CDI 注入,
                     // 通过 @Inject Instance 懒求 (避免循环依赖, 公式包不强依赖 globalvariable 包)

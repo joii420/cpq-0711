@@ -99,6 +99,11 @@ export interface PartListItem {
    */
   categoryCode?: string | null;
   categoryName?: string | null;
+  /** 销售产品绑定的税务分类（来自 ds_quote_material.tax_category_id）。 */
+  taxCategoryId?: string | null;
+  taxCategoryName?: string | null;
+  /** 当前有效 VAT 百分比，例如 "13"。 */
+  vatRate?: string | null;
   configuredCount?: number;
   totalSheetCount?: number;
   lastUpdatedAt?: string | null;
@@ -173,6 +178,10 @@ export interface CustomerPartItem {
   customerProductNo: string;
   customerDrawingNo?: string | null;
   materialNo: string;
+  /** 与销售产品列表相同的 ds_quote_material.tax_category_id 来源，只读展示。 */
+  taxCategoryId?: string | null;
+  taxCategoryName?: string | null;
+  vatRate?: string | null;
 }
 
 export interface CustomerPartListResult {

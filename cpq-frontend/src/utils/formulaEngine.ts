@@ -401,7 +401,7 @@ export function evaluateExpression(
    * 但若调用方传入此袋,则把人类可读的错误原因写入 outDiag.crossTabError,
    * 供渲染层显示 ⚠ 错误态(替代静默 0)。向后兼容: 老调用不传 = 零破坏。
    */
-  outDiag?: { crossTabError?: string },
+  outDiag?: { crossTabError?: string; quotationVatPending?: string },
   /**
    * task-0803 Task 7：BOM 树求值上下文 — tree_ref(PGET/C*)/tree_attr(层级/是否叶子/是否根) 求值用。
    * 不传（非 BOM 页签的既有调用点）= undefined → 两类 token 恒返 0，不影响既有行为。
@@ -523,9 +523,15 @@ export function evaluateExpression(
       case 'product_attribute':
         expr += numericToStr(productAttributes?.[token.attribute_name!]);
         break;
-      case 'quotation_field':
-        expr += numericToStr(quotationFields?.[token.value!]);
+      case 'quotation_field': {
+        const key = token.value!;
+        const isVat = key === 'vat_rate' || key === '增值税';
+        if (isVat && quotationFields?.[key] == null && outDiag && !outDiag.quotationVatPending) {
+          outDiag.quotationVatPending = '待报价税率：当前公式缺少报价行 VAT 快照，正式报价计算时才会取值';
+        }
+        expr += numericToStr(quotationFields?.[key]);
         break;
+      }
       case 'path': {
         // 优先级：driver 行级 basicDataValues > 显式 pathCache > 模块级 _globalPathCache。
         // basicDataValues 来自 useDriverExpansions 按行返回，确保多行 driver 展开时

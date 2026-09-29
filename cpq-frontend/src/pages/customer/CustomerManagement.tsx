@@ -184,6 +184,7 @@ const CustomerManagement: React.FC = () => {
           level: editingCustomer.level,
           industryCode: editingCustomer.industryCode,
           productCategoryId: editingCustomer.productCategoryId,
+          defaultVatRate: editingCustomer.defaultVatRate,
           region: editingCustomer.region,
           address: editingCustomer.address,
           creditLimit: editingCustomer.creditLimit,
@@ -219,7 +220,7 @@ const CustomerManagement: React.FC = () => {
   const handleSave = async (values: any) => {
     try {
       if (editingCustomer) {
-        await customerService.update(editingCustomer.id, values);
+        await customerService.update(editingCustomer.id, { ...values, defaultVatRatePresent: true });
         message.success('更新成功');
       } else {
         if (contacts.length === 0) {
@@ -370,6 +371,10 @@ const CustomerManagement: React.FC = () => {
     {
       title: '等级', dataIndex: 'level', key: 'level',
       render: (l: string) => <Tag color={levelMap[l]?.color}>{levelMap[l]?.label || l}</Tag>
+    },
+    {
+      title: '默认 VAT', dataIndex: 'defaultVatRate', key: 'defaultVatRate',
+      render: (rate: string | number | null | undefined) => rate == null || rate === '' ? '—' : `${rate}%`,
     },
     {
       title: '行业', dataIndex: 'industryCode', key: 'industryCode',
@@ -530,6 +535,10 @@ const CustomerManagement: React.FC = () => {
               placeholder="请选择产品分类"
               options={categories.map(c => ({ value: c.id, label: c.name }))}
             />
+          </Form.Item>
+          <Form.Item name="defaultVatRate" label="报价默认 VAT（可选）"
+            extra="仅作为产品税率缺失时的报价默认值/兜底，不覆盖产品税务分类">
+            <InputNumber min={0} max={100} precision={6} addonAfter="%" style={{ width: '100%' }} placeholder="例如 13" />
           </Form.Item>
           <Form.Item name="region" label="所属区域">
             <Input />

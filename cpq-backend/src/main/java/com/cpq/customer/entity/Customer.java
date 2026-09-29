@@ -35,6 +35,10 @@ public class Customer extends PanacheEntityBase {
     @Column(name = "product_category_id")
     public UUID productCategoryId;
 
+    /** 报价默认/兜底 VAT；百分比数值（13.00 = 13%），NULL 表示未设置。 */
+    @Column(name = "default_vat_rate", precision = 7, scale = 4)
+    public BigDecimal defaultVatRate;
+
     @Column(length = 100)
     public String region;
 

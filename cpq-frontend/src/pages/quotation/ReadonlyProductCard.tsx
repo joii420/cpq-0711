@@ -50,6 +50,15 @@ const TRACE_FIELD_NAMES = new Set([
   'element_actual_unit_price',
 ]);
 
+function vatSourceLabel(source?: string): string {
+  switch (source) {
+    case 'PRODUCT_CATEGORY': return '产品税务分类';
+    case 'QUOTATION_DEFAULT': return '报价单默认';
+    case 'DEFAULT_CATEGORY': return '系统默认分类';
+    default: return '税率快照';
+  }
+}
+
 /** 判断是否为需要追溯的关键字段（单价/费用/公式衍生字段） */
 function isTraceField(field: ComponentField): boolean {
   const key = field.name || '';
@@ -595,6 +604,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           )}
           {lineItem.customerProductNo && (
             <span className="qt-sku-badge">客户产品编号: {lineItem.customerProductNo}</span>
+          )}
+          {lineItem.vatRate != null && (
+            <span
+              className="qt-vat-badge"
+              title={`报价行 VAT 快照，来源：${vatSourceLabel(lineItem.vatSource)}；历史报价不跟随主数据变化`}
+            >
+              VAT {lineItem.vatRate}% · {vatSourceLabel(lineItem.vatSource)}
+            </span>
           )}
           {/* 🚫 产品分类徽标不许删（AC-R6，原型图状态 5）。它在现网恒不显示
               —— 实测全库 quotation_line_item_snapshot.product_category 零行非空 ——

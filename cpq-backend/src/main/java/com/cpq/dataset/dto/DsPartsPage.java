@@ -111,6 +111,21 @@ public final class DsPartsPage {
             dynamic.put("customerName", value);
         }
 
+        /** 销售产品的税务分类主键；产品管理列表只读展示。 */
+        public void putTaxCategoryId(String value) {
+            dynamic.put("taxCategoryId", value);
+        }
+
+        /** 销售产品当前有效税务分类名称。 */
+        public void putTaxCategoryName(String value) {
+            dynamic.put("taxCategoryName", value);
+        }
+
+        /** 销售产品当前有效 VAT 百分比，以字符串保留精度。 */
+        public void putVatRate(String value) {
+            dynamic.put("vatRate", value);
+        }
+
         @JsonAnyGetter
         public Map<String, Object> getDynamic() {
             return dynamic;

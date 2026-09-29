@@ -6874,3 +6874,5 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 [2026-09-27] 客户管理 - 限定项与收尾 | `dev-docs/INDEX.md`、`BACKLOG.md` | 旧 `CustomerResourceTest` 未执行（其夹具会删除共享数据），旧 API/E2E 未执行（无长期服务）；前端 `npm run build` 未执行（worktree 无独立依赖，TypeScript 检查已通过）。worktree 已移除，分支 `feat/task-260926-customer-code-import` 保留待用户执行 `git branch -d`。已自检：后端编译/测试编译、7/7 API、Excel 黑盒 AC-7~AC-14、前端 tsc、diff-check 与三项项目 hook 均已执行并记录。
 
 [2026-09-28] 数据库初始化 - 增加默认产品分类与默认客户所属行业种子 | `deploy/db/cpq-init-empty.sql` | 路径 B 直接修复：新增产品分类 `100000/默认分类` 与行业 `200000/默认行业` 两条初始化数据；静态检查确认 SQL 括号/分号、Navicat 兼容约束及 `git diff --check` 通过。
+
+[2026-09-28] 增值税税率模块 - 进入实现并完成首轮验证 | `cpq-backend/src/main/resources/db/migration/V446__task260927_vat_schema.sql`、`cpq-backend/src/main/java/com/cpq/tax/`、报价/产品/客户/公式相关前后端文件、`dev-docs/task-260927-增值税税率模块/test-report.md` | 采用 `tax_category` + 生效日期版本；默认分类 `GENERAL_GOODS/一般货物/13%` 幂等种子；新报价行按产品有效税率→报价默认→默认分类解析并保存不可变 VAT 快照，重算/改价不回查主数据；`[增值税]` 返回比例值（13%→0.13），不自动给所有价格加税；客户产品与销售产品展示同一 `ds_quote_material.tax_category_id` 来源；后端编译/迁移自检/专用 6 项测试、前端 build 与 1439 项单测通过，真实服务 E2E/导入错误交互/三方言含税策略仍待专用环境补验。

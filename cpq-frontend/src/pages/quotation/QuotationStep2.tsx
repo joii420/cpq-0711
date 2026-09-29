@@ -290,9 +290,32 @@ export interface LineItem {
   lineTotalAmount?: DecimalString;
   /** 命中的折扣规则编号（V1 = ANNUAL_VOLUME_STEP_V1） */
   discountRuleCode?: string;
+  /** VAT snapshot captured when the quotation row was created. vatRate is percentage; vatRateRatio is 0..1. */
+  taxCategoryId?: string;
+  taxCategoryVersionId?: string;
+  vatRate?: DecimalString;
+  vatRateRatio?: DecimalString;
+  vatSource?: string;
+  vatEffectiveFrom?: string;
+  vatResolvedAt?: string;
 }
 
 export type LineItemUpdater = Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>);
+
+/** Formula token context: [增值税] always reads the immutable line snapshot ratio (13% -> 0.13). */
+function vatQuotationFields(item: LineItem): DecimalContext {
+  const raw = item.vatRateRatio ?? (item.vatRate != null ? toCalculationString(toDecimal(item.vatRate).div(100)) : undefined);
+  return raw == null ? {} : { vat_rate: normalizeDecimalString(raw), '增值税': normalizeDecimalString(raw) };
+}
+
+function vatSourceLabel(source?: string): string {
+  switch (source) {
+    case 'PRODUCT_CATEGORY': return '产品税务分类';
+    case 'QUOTATION_DEFAULT': return '报价单默认';
+    case 'DEFAULT_CATEGORY': return '系统默认分类';
+    default: return '税率快照';
+  }
+}
 
 export interface QuotationStep2Props {
   lineItems: LineItem[];
@@ -841,7 +864,7 @@ function computeAllFormulas(
       }
       // 错误旁路袋(数值零改): cross_tab_ref 细项多命中时,evaluateExpression 仍返 0/null,
       // 但把可读原因写入 diag,本字段求值后转存到 out.errors[name],供渲染层显示 ⚠。
-      const diag: { crossTabError?: string } = {};
+      const diag: { crossTabError?: string; quotationVatPending?: string } = {};
       const val = expr
         ? evaluateExpression(
             expr, fieldValues, allComponentSubtotals || {}, undefined, quotationFields,
@@ -857,6 +880,7 @@ function computeAllFormulas(
       results[name] = val;
       if (val != null) fieldValues[name] = val; // feed result for downstream formulas
       if (diag.crossTabError && out?.errors) out.errors[name] = diag.crossTabError;
+      if (diag.quotationVatPending && out?.errors) out.errors[name] = diag.quotationVatPending;
     } catch {
       results[name] = null;
     }
@@ -1598,6 +1622,7 @@ export function buildCrossTabRows(
   partNo: string | undefined,
   lookupExpansion: (comp: ComponentDataItem) => (import('./useDriverExpansions').DriverExpansion | undefined),
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  quotationFields?: DecimalContext,
 ): { store: Record<string, Array<Record<string, any>>>; columnSumsByComp: Record<string, DecimalContext> } {
   const normals = componentData.filter(c => c?.fields && c.componentType === 'NORMAL');
   const ids = normals.map(c => c.componentId || c.componentCode || c.tabName);
@@ -1650,7 +1675,7 @@ export function buildCrossTabRows(
         });
       }
       const treeResults = computeTabFormulasTree(
-        comp, treeRowInputs, allComponentSubtotals, undefined, undefined, partNo, globalVariableDefs, store);
+        comp, treeRowInputs, allComponentSubtotals, quotationFields, undefined, partNo, globalVariableDefs, store);
       for (let i = 0; i < s.totalRows; i++) {
         const rr = buildResolvedRow(comp.fields!, bakedRows[i], driverRows[i], bdvArr[i], treeResults[i] ?? {});
         // task-0803（2026-08-04）：带上树坐标，供 putCrossTab 给「喂给 cross_tab 的副本」注入树属性
@@ -1674,7 +1699,7 @@ export function buildCrossTabRows(
       const basicDataValues = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.basicDataValues : undefined;
       const driverRow = ra.expIndex >= 0 ? exp!.rows[ra.expIndex]?.driverRow : undefined;
       const formulaCache = computeAllFormulas(
-        comp, row, allComponentSubtotals, undefined, undefined, partNo, basicDataValues,
+        comp, row, allComponentSubtotals, quotationFields, undefined, partNo, basicDataValues,
         undefined, globalVariableDefs, store,
         prevRowValues, // 串入上一行公式结果（previous_row_subtotal token 按本列取）
       );
@@ -1990,7 +2015,7 @@ export function getComponentSubtotals(
     // partNo + driverExpansion 一起传 —— BASIC_DATA 字段才能按行取值，
     // 不然落到全局 path cache 第一项 / 当 0 算（产品小计 156.80 vs 列小计 750.80 的根因）
     const byCol = computeTabSubtotalsByColumn(
-      comp, componentSubtotals, undefined, undefined, partNo, lookupExpansion(comp),
+      comp, componentSubtotals, vatQuotationFields(item), undefined, partNo, lookupExpansion(comp),
       globalVariableDefs,
     );
     for (const [colName, colVal] of Object.entries(byCol)) {
@@ -2072,7 +2097,8 @@ export function buildLineItemEvalContext(
   // 抛错前已回填的部分保留 —— 与改造前 getComponentSubtotalsFull 语义逐字一致），
   // crossTabRows 退空对象（等价于改造前"根本没有 store"的旧行为），不崩折扣/保存链路。
   try {
-    const { store } = buildCrossTabRows(item.componentData, subtotals, partNo, lookupExpansion, globalVariableDefs);
+    const { store } = buildCrossTabRows(item.componentData, subtotals, partNo, lookupExpansion, globalVariableDefs,
+      vatQuotationFields(item));
     return { subtotals, crossTabRows: store };
   } catch {
     return { subtotals, crossTabRows: {} };
@@ -2103,7 +2129,7 @@ export function evalProductSubtotalFromSubtotals(
     if (formula.expression && formula.expression.length > 0) {
       try {
         return formatProductCardSubtotal(
-          evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs),
+        evaluateExpression(formula.expression, {}, componentSubtotals, productAttrs, vatQuotationFields(item)),
         );
       } catch {
         return '0';
@@ -2115,7 +2141,7 @@ export function evalProductSubtotalFromSubtotals(
   if (item.subtotalFormula && item.subtotalFormula.length > 0) {
     try {
       return formatProductCardSubtotal(
-        evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs),
+        evaluateExpression(item.subtotalFormula, {}, componentSubtotals, productAttrs, vatQuotationFields(item)),
       );
     } catch {
       return '0';
@@ -3112,6 +3138,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // Compute cross-component subtotals for formula evaluation in the active tab
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
   const allComponentSubtotals: DecimalContext = {};
+  const lineVatFields = vatQuotationFields(item);
   for (const comp of item.componentData) {
     // partNo + driverExpansion 一起传给 computeTabSubtotal —— 让含 BASIC_DATA 字段的公式
     // 按 rowCount 迭代 driver 展开行，每行用各自的 basicDataValues。
@@ -3123,7 +3150,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
       ? driverExpansions?.[driverExpansionKey(lineItemIdSub, item.productPartNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]))]
       : undefined;
     const byCol = computeTabSubtotalsByColumn(
-      comp, allComponentSubtotals, undefined, undefined, item.productPartNo, expansion,
+      comp, allComponentSubtotals, lineVatFields, undefined, item.productPartNo, expansion,
       globalVariableDefs,
     );
     const subtotal = toCalculationString(sumDecimal(Object.values(byCol)));
@@ -3156,6 +3183,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         : undefined;
     },
     globalVariableDefs,
+    lineVatFields,
   );
 
   // Dynamic product attribute fields from template definition
@@ -3212,6 +3240,14 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           {item.customerProductNo && (
             <span className="qt-sku-badge">
               客户产品编号: {highlightText(item.customerProductNo, highlightTerm)}
+            </span>
+          )}
+          {item.vatRate != null && (
+            <span
+              className="qt-vat-badge"
+              title={`报价行 VAT 快照，来源：${vatSourceLabel(item.vatSource)}；重新计算不会重新读取主数据`}
+            >
+              VAT {formatNumber(item.vatRate)}% · {vatSourceLabel(item.vatSource)}
             </span>
           )}
         </div>
@@ -3585,7 +3621,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                             parentId: (r as any).__sys?.parentId,
                             lvl: (r as any).__sys?.lvl,
                           })),
-                          allComponentSubtotals, undefined, undefined, item.productPartNo,
+                          allComponentSubtotals, lineVatFields, undefined, item.productPartNo,
                           globalVariableDefs, crossTabRows,
                         )
                       : undefined;
@@ -3612,7 +3648,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         ? (treeResultsActive[__treeRowIdx] ?? {})
                         : computeAllFormulas(
                             activeComponent, r.row, allComponentSubtotals,
-                            undefined, undefined, item.productPartNo, r.basicDataValues,
+                            lineVatFields, undefined, item.productPartNo, r.basicDataValues,
                             undefined, globalVariableDefs, crossTabRows, prevRowValues,
                             { errors: errForRow },
                           );

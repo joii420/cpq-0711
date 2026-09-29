@@ -3396,12 +3396,21 @@ public class CardSnapshotService {
      */
     private Map<String, BigDecimal> buildProductAttributesContext(
             QuotationLineItem li, UUID quotationId, UUID templateId) {
-        if (li == null || li.productAttributeValues == null) return java.util.Map.of();
+        if (li == null) return java.util.Map.of();
+        // [增值税] is deliberately a formula input, not an automatic surcharge.
+        // Use the immutable line snapshot ratio (13% -> 0.13), so price edits and
+        // subsequent recalculation never consult current tax-category master data.
+        Map<String, BigDecimal> vatOnly = new java.util.LinkedHashMap<>();
+        if (li.vatRateRatio != null) {
+            vatOnly.put("vat_rate", li.vatRateRatio);
+            vatOnly.put("增值税", li.vatRateRatio);
+        }
+        if (li.productAttributeValues == null) return vatOnly;
         String valuesJson = li.productAttributeValues.trim();
-        if (valuesJson.isEmpty() || "{}".equals(valuesJson)) return java.util.Map.of();
+        if (valuesJson.isEmpty() || "{}".equals(valuesJson)) return vatOnly;
         try {
             JsonNode valuesNode = MAPPER.readTree(valuesJson);
-            if (!valuesNode.isObject() || valuesNode.isEmpty()) return java.util.Map.of();
+            if (!valuesNode.isObject() || valuesNode.isEmpty()) return vatOnly;
 
             JsonNode schema = null;
             if (quotationId != null) {
@@ -3423,9 +3432,9 @@ public class CardSnapshotService {
                     if (pa.isArray()) schema = pa;
                 }
             }
-            if (schema == null) return java.util.Map.of();
+            if (schema == null) return vatOnly;
 
-            Map<String, BigDecimal> out = new java.util.LinkedHashMap<>();
+            Map<String, BigDecimal> out = new java.util.LinkedHashMap<>(vatOnly);
             for (JsonNode attr : schema) {
                 if (!"NUMBER".equals(attr.path("field_type").asText(""))) continue;
                 String name = attr.path("name").asText("");
@@ -3439,7 +3448,7 @@ public class CardSnapshotService {
             return out;
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] buildProductAttributesContext failed li=%s: %s", li.id, e.getMessage());
-            return java.util.Map.of();
+            return vatOnly;
         }
     }
 

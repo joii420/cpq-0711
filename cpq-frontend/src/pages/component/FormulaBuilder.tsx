@@ -287,6 +287,15 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
             数字
           </button>
         </Popover>
+        <button
+          className="cm-op-chip"
+          disabled={!activeFormulaKey}
+          style={{ minWidth: 64 }}
+          title="取当前报价行税率快照，13% 会以 0.13 参与公式计算"
+          onClick={() => appendToken({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' })}
+        >
+          [增值税]
+        </button>
         {!activeFormulaKey && (
           <span className="cm-op-chip-hint">（先点击公式行激活）</span>
         )}

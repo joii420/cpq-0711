@@ -150,6 +150,9 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
     { title: '客户产品编号', dataIndex: 'customerProductNo', key: 'customerProductNo', width: 190, ellipsis: true, render: renderTextCell },
     { title: '客户图号', dataIndex: 'customerDrawingNo', key: 'customerDrawingNo', width: 140, ellipsis: true, render: renderTextCell },
     { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo', width: 160, ellipsis: true, render: renderTextCell },
+    { title: '税务分类', dataIndex: 'taxCategoryName', key: 'taxCategoryName', width: 140, ellipsis: true, render: renderTextCell },
+    { title: '增值税', dataIndex: 'vatRate', key: 'vatRate', width: 100, align: 'right', ellipsis: true,
+      render: (value: string | null | undefined) => value == null || value === '' ? '—' : `${value}%` },
   ];
 
   // 三种空态必须可区分（原型 05）：

@@ -53,6 +53,21 @@ const prodAttr = (name: string): ExpressionToken => ({
   type: 'product_attribute',
   attribute_name: name,
 });
+const vat = (): ExpressionToken => ({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' });
+
+describe('formulaEngine - VAT quotation snapshot', () => {
+  it('uses the immutable line ratio: 100 × (1 + 0.13) = 113', () => {
+    expectLegacyDecimal(evaluateExpression([num('100'), op('*'), open, num('1'), op('+'), vat(), close], {}, {}, {}, { vat_rate: '0.13' }), '113');
+  });
+
+  it('marks missing quotation context as pending instead of silently presenting a valid tax result', () => {
+    const diag: { quotationVatPending?: string } = {};
+    const value = evaluateExpressionDecimal([vat()], {}, {}, {}, undefined,
+      undefined, undefined, undefined, undefined, undefined, undefined, undefined, diag);
+    expect(value).toBe('0');
+    expect(diag.quotationVatPending).toContain('待报价税率');
+  });
+});
 
 // ─── Basic arithmetic ────────────────────────────────────────────────────────
 

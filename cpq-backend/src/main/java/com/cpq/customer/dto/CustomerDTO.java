@@ -19,6 +19,7 @@ public class CustomerDTO {
     public String industry;
     public String industryCode;
     public UUID productCategoryId;   // task-0712 update-071501; 不返 productCategoryName(D5，前端自行按 product-categories 列表映射)
+    public BigDecimal defaultVatRate;
     public String region;
     public String address;
     public BigDecimal accumulatedAmount;
@@ -42,6 +43,7 @@ public class CustomerDTO {
         dto.industry = customer.industry;
         dto.industryCode = customer.industryCode;
         dto.productCategoryId = customer.productCategoryId;
+        dto.defaultVatRate = customer.defaultVatRate;
         dto.region = customer.region;
         dto.address = customer.address;
         dto.accumulatedAmount = customer.accumulatedAmount;

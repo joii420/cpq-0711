@@ -94,6 +94,11 @@ public class PlainTableWriter {
         List<ColumnDef> dbCols = sheet.persistedColumns();
         List<String> allCols = new ArrayList<>();
         for (ColumnDef c : dbCols) allCols.add(SqlIdent.of(c.name));
+        // System-owned product VAT binding is deliberately not an Excel column. New
+        // sales products receive the configured default category at insert time; an
+        // existing row is never backfilled by a later import.
+        List<String> internalCols = sheet.internalColumns();
+        allCols.addAll(internalCols);
         allCols.addAll(SYS_COLUMNS);
         // 🚨 task-260907 · B-1 ④：customer_no 是静态系统列、不在 persistedColumns 里，
         //    这里不显式加 = 列建了、值恒 NULL（而且 NOT NULL 会让整条 INSERT 失败）。
@@ -133,7 +138,11 @@ public class PlainTableWriter {
                 sql.append('(');
                 for (int c = 0; c < allCols.size(); c++) {
                     if (c > 0) sql.append(", ");
-                    sql.append(":p").append(i).append('_').append(c);
+                    if ("tax_category_id".equals(allCols.get(c)) && "ds_quote_material".equals(sheet.tableName)) {
+                        sql.append("(SELECT id FROM tax_category WHERE is_default = TRUE AND status = 'ACTIVE' LIMIT 1)");
+                    } else {
+                        sql.append(":p").append(i).append('_').append(c);
+                    }
                 }
                 sql.append(')');
             }

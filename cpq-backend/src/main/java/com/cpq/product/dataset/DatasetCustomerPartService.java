@@ -54,7 +54,9 @@ public class DatasetCustomerPartService {
             new DsCustomerParts.Column("customerPartName",  "客户料号名称", "STRING"),
             new DsCustomerParts.Column("customerProductNo", "客户产品编号", "STRING"),
             new DsCustomerParts.Column("customerDrawingNo", "客户图号",     "STRING"),
-            new DsCustomerParts.Column("materialNo",        "销售料号",     "STRING")
+            new DsCustomerParts.Column("materialNo",        "销售料号",     "STRING"),
+            new DsCustomerParts.Column("taxCategoryName",   "税务分类",     "STRING"),
+            new DsCustomerParts.Column("vatRate",           "增值税",       "DECIMAL")
     );
 
     /**
@@ -107,7 +109,15 @@ public class DatasetCustomerPartService {
 
         // ── WHERE：customerNo 精确 AND keyword 三列模糊 ─────────────────────
         // 🚨 必须 LEFT JOIN：INNER JOIN 会把未建档客户的行静默丢掉（实测 17 → 14），父任务 AC-2 断言 17。
-        String from = "FROM " + table + " t LEFT JOIN customer c ON c.code = t.customer_no ";
+        String from = "FROM " + table + " t "
+                + "LEFT JOIN customer c ON c.code = t.customer_no "
+                + "LEFT JOIN ds_quote_material m ON m.customer_no = t.customer_no AND m.material_no = t.material_no "
+                + "LEFT JOIN tax_category tc ON tc.id = m.tax_category_id "
+                + "LEFT JOIN LATERAL (SELECT v.vat_rate FROM tax_category_vat_version v "
+                + "WHERE v.tax_category_id = tc.id AND v.status = 'ACTIVE' "
+                + "AND v.effective_from <= CURRENT_DATE "
+                + "AND (v.effective_to IS NULL OR CURRENT_DATE < v.effective_to) "
+                + "ORDER BY v.effective_from DESC LIMIT 1) tv ON TRUE ";
         List<String> conds = new ArrayList<>();
 
         // customerNo：参数绑定（非拼接），空白视为「所有客户」⇒ 不加条件 ⇒ 父任务 17 行的形状不变。
@@ -150,7 +160,8 @@ public class DatasetCustomerPartService {
         // ── 分页数据（第 2 条 SQL；LEFT JOIN 一次带出客户名，禁逐行查） ──────
         Query dataQuery = em.createNativeQuery(
                 "SELECT t.customer_no, c.name, t.customer_part_name, "
-              + "       t.customer_product_no, t.customer_drawing_no, t.material_no "
+              + "       t.customer_product_no, t.customer_drawing_no, t.material_no, "
+              + "       m.tax_category_id, tc.name, tv.vat_rate "
               + from + where + orderBy);
         params.forEach(dataQuery::setParameter);
         dataQuery.setFirstResult(safePage * safeSize);
@@ -167,6 +178,9 @@ public class DatasetCustomerPartService {
             it.customerProductNo = str(r[3]);
             it.customerDrawingNo = str(r[4]);
             it.materialNo        = str(r[5]);
+            it.taxCategoryId     = str(r[6]);
+            it.taxCategoryName   = str(r[7]);
+            it.vatRate           = plainDecimal(r[8]);
             items.add(it);
         }
         return new DsCustomerParts(total, COLUMNS, items);
@@ -229,5 +243,11 @@ public class DatasetCustomerPartService {
 
     private static String str(Object v) {
         return v == null ? null : v.toString();
+    }
+
+    private static String plainDecimal(Object v) {
+        if (v == null) return null;
+        if (v instanceof java.math.BigDecimal bd) return bd.stripTrailingZeros().toPlainString();
+        return v.toString();
     }
 }

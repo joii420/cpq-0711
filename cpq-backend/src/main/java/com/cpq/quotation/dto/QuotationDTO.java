@@ -36,6 +36,8 @@ public class QuotationDTO {
     public BigDecimal finalDiscountRate;
     public BigDecimal taxRate;
     public BigDecimal taxAmount;
+    public BigDecimal defaultVatRate;
+    public String defaultVatSource;
     public String discountAdjustmentReason;
     public Boolean isManuallyAdjusted;
     public UUID sourceQuotationId;
@@ -152,6 +154,8 @@ public class QuotationDTO {
         dto.finalDiscountRate = q.finalDiscountRate;
         dto.taxRate = q.taxRate;
         dto.taxAmount = q.taxAmount;
+        dto.defaultVatRate = q.defaultVatRate;
+        dto.defaultVatSource = q.defaultVatSource;
         dto.discountAdjustmentReason = q.discountAdjustmentReason;
         dto.isManuallyAdjusted = q.isManuallyAdjusted;
         dto.sourceQuotationId = q.sourceQuotationId;
@@ -175,6 +179,13 @@ public class QuotationDTO {
         public UUID id;
         public UUID productId;
         public UUID templateId;
+        public UUID taxCategoryId;
+        public UUID taxCategoryVersionId;
+        public BigDecimal vatRate;
+        public BigDecimal vatRateRatio;
+        public String vatSource;
+        public java.time.LocalDate vatEffectiveFrom;
+        public OffsetDateTime vatResolvedAt;
         // 前端 driver 展开 / BASIC_DATA 路径解析全靠 productPartNo；DB 端没有冗余列，
         // 这里通过 product_id JOIN product 取，再回退 product_part_no_snapshot。
         public String productPartNo;
@@ -239,6 +250,13 @@ public class QuotationDTO {
             dto.id = li.id;
             dto.productId = li.productId;
             dto.templateId = li.templateId;
+            dto.taxCategoryId = li.taxCategoryId;
+            dto.taxCategoryVersionId = li.taxCategoryVersionId;
+            dto.vatRate = li.vatRate;
+            dto.vatRateRatio = li.vatRateRatio;
+            dto.vatSource = li.vatSource;
+            dto.vatEffectiveFrom = li.vatEffectiveFrom;
+            dto.vatResolvedAt = li.vatResolvedAt;
             dto.customerPartNo = li.customerPartNo;
             dto.partVersionLocked = li.partVersionLocked;
             dto.productAttributeValues = li.productAttributeValues;

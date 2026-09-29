@@ -22,6 +22,9 @@ public class CreateCustomerRequest {
     // task-0712 update-071501: 产品分类绑定。前端保证必选(默认"默认分类")；
     // 后端兜底: 为空时自动填 name='默认分类' 的 id(不强加 @NotNull，避免存量兼容问题，见 CustomerService.create)。
     public UUID productCategoryId;
+    public BigDecimal defaultVatRate;
+    /** Update-only presence bit so an explicit null can clear the optional default VAT. */
+    public Boolean defaultVatRatePresent;
     public String region;
     public String address;
     @JsonDeserialize(using = DecimalStringDeserializer.class)

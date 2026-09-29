@@ -249,7 +249,15 @@ public class FormulaCalculator {
                 break;
             }
             case "quotation_field": {
-                BigDecimal v = ctx.quotationFields.get(token.path("value").asText(""));
+                String key = token.path("value").asText("");
+                BigDecimal v = ctx.quotationFields.get(key);
+                // VAT is a row snapshot, not a mutable quotation-global setting.  The
+                // snapshot is carried in the existing row context so legacy callers with
+                // an empty quotationFields map still resolve [增值税]/[vat_rate].
+                if (v == null && ("vat_rate".equalsIgnoreCase(key) || "增值税".equals(key))) {
+                    v = ctx.productAttributes.get("vat_rate");
+                    if (v == null) v = ctx.productAttributes.get("增值税");
+                }
                 expr.append(numStr(v != null ? v : ZERO));
                 break;
             }

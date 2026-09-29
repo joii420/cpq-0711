@@ -176,6 +176,9 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
     // 时为 null → 渲染 `—`，**不是空白**（AC-5④）。
     { title: '客户名称', dataIndex: 'customerName', key: 'customerName', width: 150, ellipsis: true, render: renderTextCell },
     { title: '销售料号', dataIndex: 'axisValue', key: 'axisValue', width: 170, ellipsis: true, render: renderTextCell },
+    { title: '税务分类', dataIndex: 'taxCategoryName', key: 'taxCategoryName', width: 140, ellipsis: true, render: renderTextCell },
+    { title: '增值税', dataIndex: 'vatRate', key: 'vatRate', width: 100, align: 'right', ellipsis: true,
+      render: (value: string | null | undefined) => value == null || value === '' ? '—' : `${value}%` },
     // 🆕 F-5 / AC-8：产品分类列。**位置第 2 位（销售料号之后）是用户 2026-09-03 裁决**，
     //    照报价 Excel 物料 sheet 的列序（销售料号 · 产品分类 · 品名 · 规格 · 尺寸 · 旧料号 ·
     //    单重 · 生产料号 · 类型），让页面与导入模板保持一致。

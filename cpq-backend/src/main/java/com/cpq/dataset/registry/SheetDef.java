@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 一个 Excel sheet ↔ 一张主表 的元数据（task-260902 · backtask B-3 · 需求文档 R-1）。
@@ -19,6 +20,13 @@ public final class SheetDef {
     /** 每张主表统一追加的系统列（R-1），顺序与迁移一致。 */
     public static final List<String> SYSTEM_COLUMNS =
             List.of("source", "created_at", "created_by", "updated_at", "updated_by");
+    /**
+     * 业务导入之外、由系统自动维护的列。它们必须参与 Registry↔DDL 自检，
+     * 但不能进入 Excel persistedColumns（否则历史导入模板会被要求增加隐藏列）。
+     */
+    public static final Map<String, String> INTERNAL_COLUMN_TYPES = Map.of(
+            "ds_quote_material.tax_category_id", "uuid"
+    );
     /** 带版本表额外追加的两列（R-1）。 */
     public static final List<String> VERSION_COLUMNS = List.of("version_no", "row_fingerprint");
     /** _history 相对主表额外追加的三列（R-5）。 */
@@ -290,11 +298,25 @@ public final class SheetDef {
         List<String> out = new ArrayList<>();
         out.add("id");
         for (ColumnDef c : persistedColumns()) out.add(c.name);
+        addInternalColumns(out);
         if (versioned) out.addAll(VERSION_COLUMNS);
         if (versioned && withSourceQuotation) out.add(SOURCE_QUOTATION_COLUMN);
         out.addAll(SYSTEM_COLUMNS);
         if (customerScoped) out.addAll(CUSTOMER_COLUMNS);   // task-260907 · B-1
         return out;
+    }
+
+    @JsonIgnore
+    public List<String> internalColumns() {
+        String prefix = tableName + ".";
+        return INTERNAL_COLUMN_TYPES.keySet().stream()
+                .filter(k -> k.startsWith(prefix))
+                .map(k -> k.substring(prefix.length()))
+                .toList();
+    }
+
+    private void addInternalColumns(List<String> out) {
+        out.addAll(internalColumns());
     }
 
     /** {@code _history} 表应有的全部列名（主表 id → origin_id，本表自带新 id）+ 归档三列（R-5 / AC-5）。 */
