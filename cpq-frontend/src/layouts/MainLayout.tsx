@@ -88,7 +88,6 @@ const allMenuItems: MenuItem[] = [
       // task-0729 屏 6.2：更新任务常驻页，与「价格调整审核」并列、权限同（fronttask §5.2「落位」）
       { key: '/pricing/jobs', label: '更新任务', roles: ['PRICING_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/system/approval-rules', label: '审批流', roles: ['SYSTEM_ADMIN'] },
-      { key: '/system/currencies', label: '币种管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
     ],
   },
   {
@@ -139,13 +138,14 @@ const allMenuItems: MenuItem[] = [
     key: '/system',
     icon: <SettingOutlined />,
     label: '系统管理',
-    roles: ['SYSTEM_ADMIN'],
+    roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'],
     children: [
       { key: '/system/users', label: '用户管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/regions', label: '区域管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/departments', label: '部门管理', roles: ['SYSTEM_ADMIN'] },
       { key: '/system/notifications', label: '通知列表', roles: ALL_ROLES },
       { key: '/system/operation-logs', label: '操作日志', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
+      { key: '/system/currencies', label: '币种管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
     ],
   },
 ];

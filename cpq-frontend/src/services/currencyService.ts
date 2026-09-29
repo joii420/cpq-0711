@@ -19,7 +19,13 @@ export const currencyService = {
   rates: (code: string, params?: { fromDate?: string; toDate?: string; status?: string }) =>
     api.get(`/currencies/${encodeURIComponent(code)}/rates`, { params }) as Promise<{ data: { currency: string; items: ExchangeRateDTO[] } }>,
   addRate: (code: string, payload: Pick<ExchangeRateDTO, 'rate' | 'effectiveDate' | 'source'>) =>
-    api.post(`/currencies/${encodeURIComponent(code)}/rates`, payload),
+    api.post(`/currencies/${encodeURIComponent(code)}/rates`, payload) as Promise<{ data: ExchangeRateDTO }>,
+  updateRate: (code: string, id: string, payload: Pick<ExchangeRateDTO, 'rate' | 'effectiveDate' | 'source'>) =>
+    api.put(`/currencies/${encodeURIComponent(code)}/rates/${encodeURIComponent(id)}`, payload) as Promise<{ data: ExchangeRateDTO }>,
+  downloadRateTemplate: (code: string) =>
+    api.get(`/currencies/${encodeURIComponent(code)}/rates/import-template`, { responseType: 'blob' }) as Promise<Blob>,
+  matrixRates: (code: string, params?: { fromDate?: string; toDate?: string }) =>
+    api.get(`/currencies/${encodeURIComponent(code)}/rates/matrix`, { params }) as Promise<{ data: { currency: string; items: ExchangeRateDTO[] } }>,
   importRates: (code: string, file: File) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -35,4 +41,3 @@ export const currencyService = {
   simulate: async (customerNo: string, payload: { currency: string; baseDate: string } & Omit<ExchangeRateStrategyDTO, 'customerNo' | 'id' | 'version' | 'updatedAt' | 'updatedByName'>) =>
     unwrap<ExchangeRateSimulationResult>(await api.post(`/customers/${encodeURIComponent(customerNo)}/exchange-rate-strategy/simulate`, payload)),
 };
-
