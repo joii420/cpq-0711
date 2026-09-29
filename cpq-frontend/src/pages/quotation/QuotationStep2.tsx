@@ -4051,13 +4051,16 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         <div className="qt-subtotal-line qt-subtotal-total">
           <span className="qt-subtotal-label">产品小计</span>
           <span className="qt-subtotal-value">
-            {formatCurrency(
-              item.componentData.length > 0
-                // B3: 传 allComponentSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
-                // 消除函数内 PASS1 重算双口径（产品小计与渲染行同源）。
+            {(() => {
+              const subtotal = item.componentData.length > 0
                 ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
-                : item.subtotal
-            )}
+                : item.subtotal;
+              const rate = quoteExchangeRate && !toDecimal(quoteExchangeRate).isZero() ? toDecimal(quoteExchangeRate) : toDecimal('1');
+              return <>
+                {formatCurrency(subtotal)}
+                {cardSide === 'COSTING' && quoteCurrency && quoteCurrency !== 'CNY' && <span style={{ marginLeft: 12, color: '#1677ff' }}>{formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), { isComputed: true }) ?? '0'} {quoteCurrency}</span>}
+              </>;
+            })()}
           </span>
         </div>
       </div>
