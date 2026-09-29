@@ -139,7 +139,10 @@ const FormulaEditorPanel: React.FC<Props> = ({
         label: variable.label,
         title: variable.title,
         style: { color: '#1677ff', borderColor: '#91caff' },
-        onClick: () => onInsert(variable.label),
+        // Keep the visible label user-friendly while persisting a distinct
+        // marker.  `[汇率]` is also a valid legacy component field name, so
+        // inserting that raw text would make old and new meanings ambiguous.
+        onClick: () => onInsert('{@EXCHANGE_RATE}'),
       })),
     }]),
     {

@@ -30,6 +30,7 @@
  *   [alias(总计)]       — sibling's whole-tab total (no dot, (总计) suffix) → component_subtotal
  *                         (is_tab_total=true, value = AMOUNT_TOTAL_KEY sentinel)
  *   {path}              — BNF path token (minimal / out-of-scope for page-tab formulas)
+ *   {@EXCHANGE_RATE}   — quotation exchange-rate business variable (shown as [汇率])
  *   + - * / × ÷         — arithmetic operators (× → *, ÷ → /)
  *   ( )                 — bracket_open / bracket_close
  *   numeric literals    — number tokens
@@ -1166,19 +1167,19 @@ export function expressionToTokens(
         break;
 
       case 'brace_expr':
-        // BNF path token — minimal support
-        result.push({ type: 'path', path: raw.body });
+        // The exchange-rate business variable uses a distinct persisted
+        // marker so legacy component fields named `[汇率]` keep their
+        // original same-component-field semantics.
+        if (raw.body.trim() === '@EXCHANGE_RATE') {
+          result.push({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' });
+        } else {
+          // BNF path token — minimal support
+          result.push({ type: 'path', path: raw.body });
+        }
         break;
 
       case 'bracket_expr': {
         const body = raw.body.trim();
-
-        // task-260927：报价单创建时固化的客户汇率快照，使用独立业务变量标签，
-        // 不与左侧组件中可能存在的同名普通字段混淆。
-        if (body === '汇率') {
-          result.push({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' });
-          break;
-        }
 
         // repair-260916 P1：[页签.列(小计)] → 整列小计（component_subtotal）；
         // [页签(小计)] / 本页签 / 未勾小计的列 → 按 5.1 报错。
@@ -1329,7 +1330,12 @@ export function tokensToDrawerExpression(
         break;
 
       case 'global_variable':
-        parts.push(token.label ?? (token.code === 'EXCHANGE_RATE' ? '[汇率]' : `[${token.code ?? ''}]`));
+        // Keep business variables distinguishable from legacy fields when
+        // the drawer is reopened.  FormulaRichInput renders this marker as
+        // the friendly `[汇率]` label.
+        parts.push(token.code === 'EXCHANGE_RATE'
+          ? '{@EXCHANGE_RATE}'
+          : (token.label ?? `[${token.code ?? ''}]`));
         break;
 
       case 'component_subtotal': {
@@ -1580,7 +1586,11 @@ export function parseFormulaSegments(
       flush();
       const raw = expr.slice(i, end + 1);
       const body = expr.slice(i + 1, end).trim();
-      segs.push({ raw, isBlock: true, display: body, color: null });
+      if (body === '@EXCHANGE_RATE') {
+        segs.push({ raw, isBlock: true, display: '[汇率]', color: 'purple' });
+      } else {
+        segs.push({ raw, isBlock: true, display: body, color: null });
+      }
       word = ''; // 花括号内容不贡献函数名
       i = end + 1;
       continue;

@@ -96,10 +96,15 @@ const selfRKF = ['料号'];
 // ─────────────────────────────────────────────
 
 describe('expressionToTokens — basic', () => {
-  it('parses and round-trips the quotation exchange-rate business variable', () => {
-    const tokens = expressionToTokens('[汇率] * 2', allTabs);
+  it('parses and round-trips the quotation exchange-rate business variable marker', () => {
+    const tokens = expressionToTokens('{@EXCHANGE_RATE} * 2', allTabs);
     expect(tokens[0]).toMatchObject({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' });
-    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('[汇率] * 2');
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('{@EXCHANGE_RATE} * 2');
+  });
+
+  it('keeps legacy same-component field [汇率] as a field token', () => {
+    const tokens = expressionToTokens('[汇率]', allTabs);
+    expect(tokens).toEqual([{ type: 'field', value: '汇率' }]);
   });
   it('plain same-component field [单重]', () => {
     const tokens = expressionToTokens('[单重]', allTabs, selfRKF);
@@ -1291,6 +1296,13 @@ describe('parseFormulaSegments', () => {
   it('{路径} → 中性块 color null', () => {
     const segs = parseFormulaSegments('{a.b}', allTabs, self, true);
     expect(segs[0]).toMatchObject({ isBlock: true, color: null, display: 'a.b' });
+  });
+
+  it('{@EXCHANGE_RATE} → 显示为 [汇率]，但保留独立 raw 标记', () => {
+    const segs = parseFormulaSegments('{@EXCHANGE_RATE}', allTabs, self, true);
+    expect(segs[0]).toMatchObject({
+      raw: '{@EXCHANGE_RATE}', isBlock: true, color: 'purple', display: '[汇率]',
+    });
   });
 
   it('空串 → []', () => {
