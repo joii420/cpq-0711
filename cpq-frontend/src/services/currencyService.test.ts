@@ -42,6 +42,17 @@ describe('currencyService REST contract', () => {
     });
   });
 
+  it('supports rate editing, matrix queries and template downloads', async () => {
+    await currencyService.updateRate('USD', 'rate-1', { rate: '7.300000000000', effectiveDate: '2026-09-27', source: 'MANUAL' });
+    expect(api.put).toHaveBeenCalledWith('/currencies/USD/rates/rate-1', {
+      rate: '7.300000000000', effectiveDate: '2026-09-27', source: 'MANUAL',
+    });
+    await currencyService.matrixRates('USD', { fromDate: '2026-09-01', toDate: '2026-09-30' });
+    expect(api.get).toHaveBeenCalledWith('/currencies/USD/rates/matrix', { params: { fromDate: '2026-09-01', toDate: '2026-09-30' } });
+    await currencyService.downloadRateTemplate('USD');
+    expect(api.get).toHaveBeenCalledWith('/currencies/USD/rates/import-template', { responseType: 'blob' });
+  });
+
   it('builds a single-currency multipart import request', async () => {
     const file = new File(['xlsx'], 'rates.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     await currencyService.importRates('USD', file);
