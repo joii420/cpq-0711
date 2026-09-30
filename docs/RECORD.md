@@ -6877,3 +6877,5 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 
 [2026-09-28] 增值税税率模块 - 进入实现并完成首轮验证 | `cpq-backend/src/main/resources/db/migration/V446__task260927_vat_schema.sql`、`cpq-backend/src/main/java/com/cpq/tax/`、报价/产品/客户/公式相关前后端文件、`dev-docs/task-260927-增值税税率模块/test-report.md` | 采用 `tax_category` + 生效日期版本；默认分类 `GENERAL_GOODS/一般货物/13%` 幂等种子；新报价行按产品有效税率→报价默认→默认分类解析并保存不可变 VAT 快照，重算/改价不回查主数据；`[增值税]` 返回比例值（13%→0.13），不自动给所有价格加税；客户产品与销售产品展示同一 `ds_quote_material.tax_category_id` 来源；后端编译/迁移自检/专用 6 项测试、前端 build 与 1439 项单测通过，真实服务 E2E/导入错误交互/三方言含税策略仍待专用环境补验。
 [2026-09-28] 币种管理与报价换算 - 闸门 A 放行并开工 | `dev-docs/task-260927-币种管理与报价换算/`、分支 `feat/task-260927-currency` | 用户确认“开工”；任务文档已提交 `458ad2d9`，建立独立 worktree，后端/前端/测试三路并行开发。原型已确认，开发范围为 AC-1~AC-27；历史数据不回算，报价单创建后汇率快照不可切换/刷新。
+
+[2026-09-29] 报价数据导入 - 修复 VAT 内部列导致的 p0_9 参数错位 | cpq-backend/src/main/java/com/cpq/dataset/versioning/PlainTableWriter.java、cpq-backend/src/test/java/com/cpq/dataset/versioning/PlainTableWriterTest.java | ds_quote_material.tax_category_id 由 SQL 默认分类子查询生成，写入参数绑定仍把它当普通占位符，导致导入阶段报 No parameter named :p0_9 并整批回滚；现 SQL 生成与绑定共用内部列判定，内部生成列只推进游标不绑定参数，补回归测试覆盖 source/customer_no 参数位置。

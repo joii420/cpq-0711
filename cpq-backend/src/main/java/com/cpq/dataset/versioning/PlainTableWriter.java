@@ -138,7 +138,7 @@ public class PlainTableWriter {
                 sql.append('(');
                 for (int c = 0; c < allCols.size(); c++) {
                     if (c > 0) sql.append(", ");
-                    if ("tax_category_id".equals(allCols.get(c)) && "ds_quote_material".equals(sheet.tableName)) {
+                    if (isGeneratedColumn(sheet, allCols.get(c))) {
                         sql.append("(SELECT id FROM tax_category WHERE is_default = TRUE AND status = 'ACTIVE' LIMIT 1)");
                     } else {
                         sql.append(":p").append(i).append('_').append(c);
@@ -158,6 +158,17 @@ public class PlainTableWriter {
                     q.setParameter("p" + i + "_" + c, DatasetValues.coerce(col, row.get(col.name)));
                     c++;
                 }
+                // Internal columns are system-owned and are emitted as SQL expressions above,
+                // so they advance the positional column index but do not have bind parameters.
+                // Keeping this cursor aligned with the SQL builder prevents the VAT column
+                // (tax_category_id) from shifting source/metadata parameters onto the wrong names.
+                for (String internalCol : internalCols) {
+                    if (!isGeneratedColumn(sheet, internalCol)) {
+                        throw new IllegalStateException("免版本表内部列未声明生成表达式: "
+                                + sheet.tableName + "." + internalCol);
+                    }
+                    c++;
+                }
                 q.setParameter("p" + i + "_" + c++, source);
                 q.setParameter("p" + i + "_" + c++, operator);
                 q.setParameter("p" + i + "_" + c++, now);
@@ -171,5 +182,10 @@ public class PlainTableWriter {
             }
         }
         return new UpsertResult(inserted, updated);
+    }
+
+    /** Columns whose values are emitted as SQL expressions rather than bind parameters. */
+    static boolean isGeneratedColumn(SheetDef sheet, String column) {
+        return "tax_category_id".equals(column) && "ds_quote_material".equals(sheet.tableName);
     }
 }
