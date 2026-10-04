@@ -129,8 +129,20 @@ public class TaxCategoryService {
         if (r.effectiveFrom == null || (r.effectiveTo != null && !r.effectiveFrom.isBefore(r.effectiveTo))) throw new BusinessException(400, "VAT 生效区间无效");
     }
     private boolean overlap(UUID id, LocalDate from, LocalDate to, UUID exclude) {
-        String sql = "SELECT count(*) FROM tax_category_vat_version WHERE tax_category_id=:id AND status='ACTIVE' AND (:exclude IS NULL OR id<>:exclude) AND effective_from < COALESCE(:to, DATE '9999-12-31') AND COALESCE(effective_to, DATE '9999-12-31') > :from";
-        Number n = (Number) em.createNativeQuery(sql).setParameter("id", id).setParameter("from", from).setParameter("to", to).setParameter("exclude", exclude).getSingleResult();
+        // Do not bind a null UUID into `:exclude IS NULL`. PostgreSQL cannot
+        // reliably infer that parameter's type through Hibernate for the add
+        // path and returns SQLState 42P18, which was surfaced as HTTP 500.
+        String sql = "SELECT count(*) FROM tax_category_vat_version "
+                + "WHERE tax_category_id=:id AND status='ACTIVE' "
+                + "AND effective_from < COALESCE(:to, DATE '9999-12-31') "
+                + "AND COALESCE(effective_to, DATE '9999-12-31') > :from"
+                + (exclude == null ? "" : " AND id<>:exclude");
+        var query = em.createNativeQuery(sql)
+                .setParameter("id", id)
+                .setParameter("from", from)
+                .setParameter("to", to);
+        if (exclude != null) query.setParameter("exclude", exclude);
+        Number n = (Number) query.getSingleResult();
         return n.longValue() > 0;
     }
 }
