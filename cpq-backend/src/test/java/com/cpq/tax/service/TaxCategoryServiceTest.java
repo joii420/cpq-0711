@@ -54,6 +54,50 @@ class TaxCategoryServiceTest {
         assertEquals("TAX_RATE_PERIOD_OVERLAP", error.getMessage());
     }
 
+    @Test
+    @TestTransaction
+    void inactiveVersionDoesNotParticipateUntilReenabled() {
+        TaxCategorySaveRequest category = new TaxCategorySaveRequest();
+        category.code = "VAT_TEST_" + UUID.randomUUID().toString().replace("-", "");
+        category.name = "VAT inactive category";
+        category.status = "ACTIVE";
+        UUID categoryId = service.create(category).id;
+        service.addVersion(categoryId, version("13", LocalDate.of(2026, 1, 1), null));
+
+        TaxCategoryVatVersionSaveRequest disabled = version("9", LocalDate.of(2026, 1, 1), null);
+        disabled.status = "INACTIVE";
+        TaxCategoryVatVersionDTO disabledVersion = service.addVersion(categoryId, disabled);
+        assertEquals("INACTIVE", disabledVersion.status);
+
+        BusinessException error = assertThrows(BusinessException.class,
+                () -> service.updateVersion(categoryId, disabledVersion.id,
+                        version("9", LocalDate.of(2026, 1, 1), null)));
+        assertEquals(409, error.getCode());
+        assertEquals("TAX_RATE_PERIOD_OVERLAP", error.getMessage());
+    }
+
+    @Test
+    @TestTransaction
+    void disablingActiveVersionAllowsLaterActiveVersionToReuseItsDateRange() {
+        TaxCategorySaveRequest category = new TaxCategorySaveRequest();
+        category.code = "VAT_TEST_" + UUID.randomUUID().toString().replace("-", "");
+        category.name = "VAT status category";
+        category.status = "ACTIVE";
+        UUID categoryId = service.create(category).id;
+        TaxCategoryVatVersionDTO old = service.addVersion(categoryId,
+                version("13", LocalDate.of(2026, 1, 1), null));
+
+        TaxCategoryVatVersionSaveRequest disable = version("13", LocalDate.of(2026, 1, 1), null);
+        disable.status = "INACTIVE";
+        TaxCategoryVatVersionDTO disabled = service.updateVersion(categoryId, old.id, disable);
+        assertEquals("INACTIVE", disabled.status);
+
+        TaxCategoryVatVersionDTO replacement = service.addVersion(categoryId,
+                version("9", LocalDate.of(2026, 1, 1), null));
+        assertEquals("ACTIVE", replacement.status);
+        assertEquals(0, new BigDecimal("9").compareTo(replacement.vatRate));
+    }
+
     private static TaxCategoryVatVersionSaveRequest version(String rate, LocalDate from, LocalDate to) {
         TaxCategoryVatVersionSaveRequest request = new TaxCategoryVatVersionSaveRequest();
         request.vatRate = new BigDecimal(rate);

@@ -88,8 +88,12 @@ public class TaxCategoryService {
         TaxCategory c = find(categoryId);
         if (!"ACTIVE".equals(c.status)) throw new BusinessException(400, "停用分类不能新增税率版本");
         validateVersion(r);
-        if (overlap(categoryId, r.effectiveFrom, r.effectiveTo, null)) throw new BusinessException(409, "TAX_RATE_PERIOD_OVERLAP");
-        TaxCategoryVatVersion v = new TaxCategoryVatVersion(); v.taxCategoryId = categoryId; v.vatRate = r.vatRate; v.effectiveFrom = r.effectiveFrom; v.effectiveTo = r.effectiveTo; v.status = status(r.status); v.persist();
+        String nextStatus = status(r.status);
+        // 停用版本保留作历史配置，但不占用生效日期区间；只有启用版本参与冲突判断。
+        if (isActive(nextStatus) && overlap(categoryId, r.effectiveFrom, r.effectiveTo, null)) {
+            throw new BusinessException(409, "TAX_RATE_PERIOD_OVERLAP");
+        }
+        TaxCategoryVatVersion v = new TaxCategoryVatVersion(); v.taxCategoryId = categoryId; v.vatRate = r.vatRate; v.effectiveFrom = r.effectiveFrom; v.effectiveTo = r.effectiveTo; v.status = nextStatus; v.persist();
         return TaxCategoryVatVersionDTO.from(v);
     }
 
@@ -100,10 +104,19 @@ public class TaxCategoryService {
         if (v == null || !categoryId.equals(v.taxCategoryId)) throw new BusinessException(404, "税率版本不存在");
         Number used = (Number) em.createNativeQuery("SELECT count(*) FROM quotation_line_item WHERE tax_category_version_id=:id")
                 .setParameter("id", versionId).getSingleResult();
-        if (used.longValue() > 0) throw new BusinessException(409, "TAX_CATEGORY_VERSION_IN_USE");
         validateVersion(r);
-        if (overlap(categoryId, r.effectiveFrom, r.effectiveTo, versionId)) throw new BusinessException(409, "TAX_RATE_PERIOD_OVERLAP");
-        v.vatRate = r.vatRate; v.effectiveFrom = r.effectiveFrom; v.effectiveTo = r.effectiveTo; if (r.status != null) v.status = status(r.status);
+        String nextStatus = r.status == null ? v.status : status(r.status);
+        if (used.longValue() > 0) {
+            // 快照已引用的版本不可改税率/起始日期；允许补失效日期，以及启用/停用状态调整。
+            if (r.vatRate.compareTo(v.vatRate) != 0 || !r.effectiveFrom.equals(v.effectiveFrom)) {
+                throw new BusinessException(409, "TAX_CATEGORY_VERSION_IN_USE");
+            }
+        }
+        // 停用版本不参与区间冲突；重新启用时必须重新校验当前启用版本。
+        if (isActive(nextStatus) && overlap(categoryId, r.effectiveFrom, r.effectiveTo, versionId)) {
+            throw new BusinessException(409, "TAX_RATE_PERIOD_OVERLAP");
+        }
+        v.vatRate = r.vatRate; v.effectiveFrom = r.effectiveFrom; v.effectiveTo = r.effectiveTo; if (r.status != null) v.status = nextStatus;
         return TaxCategoryVatVersionDTO.from(v);
     }
 
@@ -124,6 +137,7 @@ public class TaxCategoryService {
     private TaxCategory find(UUID id) { TaxCategory c = TaxCategory.findById(id); if (c == null) throw new BusinessException(404, "税务分类不存在"); return c; }
     private static String normalizeCode(String s) { return s == null ? null : s.trim().toUpperCase(Locale.ROOT); }
     private static String status(String s) { return s == null || s.isBlank() ? "ACTIVE" : s.trim().toUpperCase(Locale.ROOT); }
+    private static boolean isActive(String s) { return "ACTIVE".equals(s); }
     private static void validateVersion(TaxCategoryVatVersionSaveRequest r) {
         if (r.vatRate == null || r.vatRate.signum() < 0 || r.vatRate.compareTo(new BigDecimal("100")) > 0) throw new BusinessException(400, "VAT 税率必须在 0 到 100 之间");
         if (r.effectiveFrom == null || (r.effectiveTo != null && !r.effectiveFrom.isBefore(r.effectiveTo))) throw new BusinessException(400, "VAT 生效区间无效");

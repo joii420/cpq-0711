@@ -109,7 +109,7 @@ const TaxCategoryManagement: React.FC = () => {
     } catch (error: any) {
       const messageByCode: Record<string, string> = {
         TAX_RATE_PERIOD_OVERLAP: '税率生效区间与已有启用版本重叠，请先设置原版本失效日期',
-        TAX_CATEGORY_VERSION_IN_USE: '该税率版本已被报价快照使用，不能修改',
+        TAX_CATEGORY_VERSION_IN_USE: '该税率版本已被报价快照使用，只能调整失效日期或启用/停用，不能修改税率和生效日期',
       };
       message.error(messageByCode[error?.message] || error?.message || '保存税率版本失败');
     }
