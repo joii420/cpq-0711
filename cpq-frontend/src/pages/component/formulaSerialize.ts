@@ -31,6 +31,7 @@
  *                         (is_tab_total=true, value = AMOUNT_TOTAL_KEY sentinel)
  *   {path}              — BNF path token (minimal / out-of-scope for page-tab formulas)
  *   {@EXCHANGE_RATE}   — quotation exchange-rate business variable (shown as [汇率])
+ *   {@VAT_RATE}        — quotation-line VAT snapshot business variable (shown as [增值税])
  *   + - * / × ÷         — arithmetic operators (× → *, ÷ → /)
  *   ( )                 — bracket_open / bracket_close
  *   numeric literals    — number tokens
@@ -199,6 +200,8 @@ function renderTreeRefTargetExpr(teList: FormulaToken[]): string {
           return ')';
         case 'path':
           return `{${te.path ?? ''}}`;
+        case 'quotation_field':
+          return te.value === 'vat_rate' || te.value === '增值税' ? '{@VAT_RATE}' : '';
         default:
           // 合法保存的 tree_ref.targetExpr 只含白名单类型（F-7 已在保存前拦截其余类型），
           // 这里防御性兜底为空串而非抛错——避免详情页因历史脏数据/绕过保存的数据直接崩溃。
@@ -662,6 +665,12 @@ function parseValueExpr(
       case 'paren_close':
         result.push({ type: 'bracket_close' });
         break;
+      case 'brace_expr':
+        if (rt.body.trim() === '@VAT_RATE') {
+          result.push({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' });
+          break;
+        }
+        throw new Error(`SUMIF 值表达式中不支持 {路径} 引用`);
       default:
         throw new Error(`SUMIF 值表达式中不支持 ${rt.kind} 类型`);
     }
@@ -957,6 +966,10 @@ export function expressionToTokens(
             } else if (irr.kind === 'paren_close') {
               innerTargetExpr.push({ type: 'bracket_close' });
             } else if (irr.kind === 'brace_expr') {
+              if (irr.body.trim() === '@VAT_RATE') {
+                innerTargetExpr.push({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' });
+                continue;
+              }
               // 修复 spec §2.4：global_variable {路径} 是与行无关的常量，逐行广播安全 → 放行为 path token
               innerTargetExpr.push({ type: 'path', path: irr.body });
             } else {
@@ -1012,6 +1025,10 @@ export function expressionToTokens(
             // 普通聚合函数（非 K*）嵌套仍不支持
             throw new Error(`${fnName}() 内暂不支持嵌套聚合函数`);
           case 'brace_expr':
+            if (rt.body.trim() === '@VAT_RATE') {
+              targetExpr.push({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' });
+              break;
+            }
             throw new Error(`${fnName}() 内暂不支持 {路径} 引用`);
           case 'bracket_expr': {
             const bb = rt.body.trim();
@@ -1172,6 +1189,11 @@ export function expressionToTokens(
         // original same-component-field semantics.
         if (raw.body.trim() === '@EXCHANGE_RATE') {
           result.push({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' });
+        } else if (raw.body.trim() === '@VAT_RATE') {
+          // VAT is a quotation-line snapshot, not a mutable global variable.
+          // Keep it as quotation_field so the calculation layer reads the line
+          // snapshot (13% -> 0.13), including after later price recalculation.
+          result.push({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' });
         } else {
           // BNF path token — minimal support
           result.push({ type: 'path', path: raw.body });
@@ -1338,6 +1360,12 @@ export function tokensToDrawerExpression(
           : (token.label ?? `[${token.code ?? ''}]`));
         break;
 
+      case 'quotation_field':
+        parts.push(token.value === 'vat_rate' || token.value === '增值税'
+          ? '{@VAT_RATE}'
+          : (token.label ?? `[${token.value ?? ''}]`));
+        break;
+
       case 'component_subtotal': {
         // 优先用页签名称回显（按 component_code=alias 查 tabDef→componentName）；
         // tabDefs 空/查不到时回退 component_code，保证显示不破。
@@ -1441,6 +1469,8 @@ export function tokensToDrawerExpression(
                   case 'bracket_open': return '(';
                   case 'bracket_close': return ')';
                   case 'path': return `{${te.path ?? ''}}`;
+                  case 'quotation_field':
+                    return te.value === 'vat_rate' || te.value === '增值税' ? '{@VAT_RATE}' : '';
                   case 'component_subtotal': {
                     // 与顶层 component_subtotal 回显同口径（见本文件顶层同名 case）：
                     // 按 component_code=alias 查页签名，查不到回退 code；is_tab_total / 空列名 → (总计) 形式。
@@ -1588,6 +1618,8 @@ export function parseFormulaSegments(
       const body = expr.slice(i + 1, end).trim();
       if (body === '@EXCHANGE_RATE') {
         segs.push({ raw, isBlock: true, display: '[汇率]', color: 'purple' });
+      } else if (body === '@VAT_RATE') {
+        segs.push({ raw, isBlock: true, display: '[增值税]', color: 'purple' });
       } else {
         segs.push({ raw, isBlock: true, display: body, color: null });
       }
@@ -1675,7 +1707,7 @@ export function checkMappable(tokens: FormulaToken[]): { mappable: boolean; reas
  * 这些 token 在那个上下文里没有稳定语义）。
  */
 const TREE_REF_INNER_ALLOWED_TYPES = new Set<string>([
-  'field', 'operator', 'number', 'bracket_open', 'bracket_close', 'global_variable', 'tree_attr',
+  'field', 'operator', 'number', 'bracket_open', 'bracket_close', 'global_variable', 'quotation_field', 'tree_attr',
 ]);
 
 export interface TreeRefValidationResult {
@@ -1722,7 +1754,7 @@ function scanTreeRefViolations(node: unknown): string | null {
           const innerType = (inner as Record<string, unknown>).type;
           if (typeof innerType === 'string' && innerType && !TREE_REF_INNER_ALLOWED_TYPES.has(innerType)) {
             return `tree_ref.targetExpr 内出现不允许的 token 类型「${innerType}」` +
-              '（白名单：field/operator/number/bracket_open/bracket_close/global_variable/tree_attr）。';
+              '（白名单：field/operator/number/bracket_open/bracket_close/global_variable/quotation_field/tree_attr）。';
           }
         }
       }

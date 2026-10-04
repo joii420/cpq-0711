@@ -17,7 +17,18 @@ type SumifFuncName = 'SUMIF' | 'COUNTIF' | 'AVGIF' | 'MINIF' | 'MAXIF';
 const FUNCS = ['SUM', 'AVG', 'MIN', 'MAX', 'COUNT'];
 const OPS = ['+', '-', '*', '/', '(', ')'];
 const SUMIF_TEXT_FUNCS: SumifFuncName[] = ['SUMIF', 'COUNTIF', 'AVGIF', 'MINIF', 'MAXIF'];
-const BUSINESS_VARIABLES = [{ label: '[汇率]', title: '引用报价单创建时按客户汇率策略固化的目标币种 → CNY 汇率' }];
+const BUSINESS_VARIABLES = [
+  {
+    label: '[汇率]',
+    title: '引用报价单创建时按客户汇率策略固化的目标币种 → CNY 汇率',
+    marker: '{@EXCHANGE_RATE}',
+  },
+  {
+    label: '[增值税]',
+    title: '引用当前报价行生成时固化的 VAT 税率（13% 以 0.13 参与公式计算）',
+    marker: '{@VAT_RATE}',
+  },
+];
 
 // task-0803 F-5（2026-08-04 补）：父子取值函数 / 树属性保留字的一键插入。
 // 此前只有下方紫色框的文字说明、没有按钮，用户在 BOM 页签打开抽屉「看不到这几个选项」，
@@ -140,9 +151,9 @@ const FormulaEditorPanel: React.FC<Props> = ({
         title: variable.title,
         style: { color: '#1677ff', borderColor: '#91caff' },
         // Keep the visible label user-friendly while persisting a distinct
-        // marker.  `[汇率]` is also a valid legacy component field name, so
-        // inserting that raw text would make old and new meanings ambiguous.
-        onClick: () => onInsert('{@EXCHANGE_RATE}'),
+        // marker.  `[汇率]` / `[增值税]` may also be legacy field names, so
+        // inserting raw bracket text would make their meanings ambiguous.
+        onClick: () => onInsert(variable.marker),
       })),
     }]),
     {

@@ -102,6 +102,12 @@ describe('expressionToTokens — basic', () => {
     expect(tokensToDrawerExpression(tokens, allTabs)).toBe('{@EXCHANGE_RATE} * 2');
   });
 
+  it('parses and round-trips the quotation-line VAT snapshot marker', () => {
+    const tokens = expressionToTokens('{@VAT_RATE} * 2', allTabs);
+    expect(tokens[0]).toMatchObject({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' });
+    expect(tokensToDrawerExpression(tokens, allTabs)).toBe('{@VAT_RATE} * 2');
+  });
+
   it('keeps legacy same-component field [汇率] as a field token', () => {
     const tokens = expressionToTokens('[汇率]', allTabs);
     expect(tokens).toEqual([{ type: 'field', value: '汇率' }]);
@@ -1302,6 +1308,13 @@ describe('parseFormulaSegments', () => {
     const segs = parseFormulaSegments('{@EXCHANGE_RATE}', allTabs, self, true);
     expect(segs[0]).toMatchObject({
       raw: '{@EXCHANGE_RATE}', isBlock: true, color: 'purple', display: '[汇率]',
+    });
+  });
+
+  it('{@VAT_RATE} → 显示为 [增值税]，但保留独立 raw 标记', () => {
+    const segs = parseFormulaSegments('{@VAT_RATE}', allTabs, self, true);
+    expect(segs[0]).toMatchObject({
+      raw: '{@VAT_RATE}', isBlock: true, color: 'purple', display: '[增值税]',
     });
   });
 

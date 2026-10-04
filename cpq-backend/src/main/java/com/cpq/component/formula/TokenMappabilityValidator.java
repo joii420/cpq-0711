@@ -14,11 +14,11 @@ public class TokenMappabilityValidator {
      * KSUM 子 token（{@code projectToHostKey=true}）内 targetExpr 允许的 token type 白名单。
      *
      * <p>包含 {@code path}，因为前端全局变量 token 的实际 type 是 {@code path}（不是 {@code global_variable}）。
-     * 拒：{@code b_field}（宿主列）/ {@code component_subtotal} / {@code quotation_field} /
+     * 拒：{@code b_field}（宿主列）/ {@code component_subtotal} /
      *     {@code product_attribute} / {@code previous_row_subtotal}（I1）/ 嵌套 {@code cross_tab_ref}（J）。
      */
     private static final Set<String> KSUM_INNER_ALLOWED_TYPES = Set.of(
-        "field", "operator", "number", "bracket_open", "bracket_close", "path"
+        "field", "operator", "number", "bracket_open", "bracket_close", "path", "quotation_field"
     );
 
     /**
@@ -172,7 +172,7 @@ public class TokenMappabilityValidator {
                             if (!subType.isEmpty() && !KSUM_INNER_ALLOWED_TYPES.contains(subType)) {
                                 return new Result(false,
                                     "KSUM 子引用的 targetExpr 内出现不允许的 token 类型「" + subType + "」" +
-                                    "（白名单：field/operator/number/bracket_open/bracket_close/path）。");
+                                    "（白名单：field/operator/number/bracket_open/bracket_close/path/quotation_field）。");
                             }
 
                             // field token 的 source 必须等于 KSUM 子 token 的 source（禁止跨页签）
@@ -212,7 +212,7 @@ public class TokenMappabilityValidator {
             if (!TREE_REF_INNER_ALLOWED_TYPES.contains(type)) {
                 return new Result(false,
                     "tree_ref.targetExpr 内出现不允许的 token 类型「" + type + "」" +
-                    "（白名单：field/operator/number/bracket_open/bracket_close/global_variable/tree_attr）。");
+                    "（白名单：field/operator/number/bracket_open/bracket_close/global_variable/quotation_field/tree_attr）。");
             }
         }
         return new Result(true, null);

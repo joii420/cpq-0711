@@ -64,7 +64,7 @@ describe('F-12 条件聚合按钮组', () => {
     console.log('[NORMAL groups]', JSON.stringify(g));
     expect(Object.keys(g).length).toBeGreaterThan(0);
     expect(g['运算符']).toEqual(['+', '-', '*', '/', '(', ')']);
-    expect(g['业务变量']).toEqual(['[汇率]']);
+    expect(g['业务变量']).toEqual(['[汇率]', '[增值税]']);
   });
 
   it('AC-18⑤ Excel 组件：没有「条件聚合」组，也没有任何 SUMIF 类按钮', () => {
