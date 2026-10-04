@@ -323,7 +323,15 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
         taxCategoryName={activeRow?.taxCategoryName}
         vatRate={activeRow?.vatRate}
         onTaxCategorySaved={(result) => {
-          if (activeRow) handleTaxCategorySaved(activeRow.customerNo, activeRow.axisValue, result);
+          if (activeRow) {
+            setActiveRow((prev) => (prev ? {
+              ...prev,
+              taxCategoryId: result.taxCategoryId,
+              taxCategoryName: result.taxCategoryName,
+              vatRate: result.vatRate,
+            } : prev));
+            handleTaxCategorySaved(activeRow.customerNo, activeRow.axisValue, result);
+          }
         }}
         onClose={() => setDrawerOpen(false)}
       />
