@@ -252,14 +252,6 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
             {btn.label}
           </button>
         ))}
-        <button
-          className="cm-op-chip"
-          disabled={!activeFormulaKey}
-          title="显式引用报价单创建时固化的目标币种→CNY汇率"
-          onClick={() => appendToken({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' })}
-        >
-          [汇率]
-        </button>
         <Popover
           open={numberPopoverOpen}
           onOpenChange={(open) => {
@@ -295,10 +287,24 @@ const FormulaBuilder: React.FC<FormulaBuilderProps> = ({
             数字
           </button>
         </Popover>
+        {!activeFormulaKey && (
+          <span className="cm-op-chip-hint">（先点击公式行激活）</span>
+        )}
+      </div>
+
+      <div className="cm-formula-toolbar">
+        <span className="cm-formula-toolbar-label">业务变量:</span>
         <button
           className="cm-op-chip"
           disabled={!activeFormulaKey}
-          style={{ minWidth: 64 }}
+          title="显式引用报价单创建时固化的目标币种→CNY汇率"
+          onClick={() => appendToken({ type: 'global_variable', code: 'EXCHANGE_RATE', label: '[汇率]' })}
+        >
+          [汇率]
+        </button>
+        <button
+          className="cm-op-chip"
+          disabled={!activeFormulaKey}
           title="取当前报价行税率快照，13% 会以 0.13 参与公式计算"
           onClick={() => appendToken({ type: 'quotation_field', value: 'vat_rate', label: '[增值税]' })}
         >
