@@ -23,6 +23,7 @@ import { describe, it, expect } from 'vitest';
 import {
   expressionToTokens,
   tokensToDrawerExpression,
+  toFormulaDisplayExpression,
   checkMappable,
   comparable,
   isSubset,
@@ -199,6 +200,16 @@ describe('expressionToTokens — basic', () => {
     expect(b).toHaveLength(1);
     expect(b[0]).toMatchObject({ type: 'field', value: '单重' });
     expect(a[0]).toMatchObject({ type: 'field', value: '单重' });
+  });
+});
+
+describe('toFormulaDisplayExpression', () => {
+  it('replaces internal business-variable markers with user-facing labels', () => {
+    expect(toFormulaDisplayExpression('{@VAT_RATE} / {@EXCHANGE_RATE}')).toBe('[增值税] / [汇率]');
+  });
+
+  it('leaves ordinary formula text unchanged', () => {
+    expect(toFormulaDisplayExpression('[材料成本] * 1.13')).toBe('[材料成本] * 1.13');
   });
 });
 

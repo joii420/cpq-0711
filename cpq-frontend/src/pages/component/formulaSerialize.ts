@@ -1546,6 +1546,19 @@ export function tokensToDrawerExpression(
   return parts.join('').replace(/\s{2,}/g, ' ').trim();
 }
 
+/**
+ * Convert internal business-variable markers to user-facing labels.
+ *
+ * `tokensToDrawerExpression` intentionally keeps these markers stable so the
+ * formula drawer can round-trip them back into business-variable tokens.  The
+ * read-only formula list must not expose those implementation details.
+ */
+export function toFormulaDisplayExpression(expression: string): string {
+  return expression
+    .replace(/\{@EXCHANGE_RATE\}/g, '[汇率]')
+    .replace(/\{@VAT_RATE\}/g, '[增值税]');
+}
+
 // ─────────────────────────────────────────────
 // checkMappable
 // ─────────────────────────────────────────────

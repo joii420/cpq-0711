@@ -38,7 +38,7 @@ import FormulaCycleDrawer, { type FormulaCycle } from './FormulaCycleDrawer';
 import SqlViewListPanel from './SqlViewListPanel';
 import SqlViewBuilderTab, { type SqlViewBuilderTabHandle } from './SqlViewBuilderTab';
 import TabJoinFormulaDrawer, { type TabJoinFormulaSavePayload } from '../template/TabJoinFormulaDrawer';
-import { tokensToDrawerExpression } from './formulaSerialize';
+import { tokensToDrawerExpression, toFormulaDisplayExpression } from './formulaSerialize';
 // task-260904 F-8（AC-24）：§1.35 双判据的唯一前端实现，5 处语义闸门共用，不许各写一份 `tabType === 'BOM'`
 import {
   isTreeTab, semanticFromTabType, tabSemanticLabel,
@@ -416,7 +416,7 @@ const FormulaListPanel: React.FC<{
   autoFocusKey?: string | null;
 }> = ({ formulas, tabDefs, onConfig, onAdd, onRename, onDelete, autoFocusKey }) => {
   const renderExpression = (f: FormulaItem) => {
-    const expr = tokensToDrawerExpression(f.expression || [], tabDefs);
+    const expr = toFormulaDisplayExpression(tokensToDrawerExpression(f.expression || [], tabDefs));
     return expr
       ? <span style={{ fontFamily: 'Consolas, Monaco, monospace', fontSize: 12 }}>{expr}</span>
       : <span style={{ color: '#bfbfbf' }}>（空表达式，点「配置」编辑）</span>;
