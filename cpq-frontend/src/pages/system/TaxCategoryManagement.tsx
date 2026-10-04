@@ -30,6 +30,7 @@ const TaxCategoryManagement: React.FC = () => {
   const [versions, setVersions] = useState<TaxVatVersion[]>([]);
   const [versionsLoading, setVersionsLoading] = useState(false);
   const [versionModalOpen, setVersionModalOpen] = useState(false);
+  const [editingVersion, setEditingVersion] = useState<TaxVatVersion | null>(null);
   const [versionForm] = Form.useForm<{ vatRate: number; effectiveFrom: Dayjs; effectiveTo?: Dayjs; status?: string }>();
 
   const load = useCallback(async () => {
@@ -88,20 +89,41 @@ const TaxCategoryManagement: React.FC = () => {
   const saveVersion = async () => {
     if (!versionCategory) return;
     const values = await versionForm.validateFields();
+    const payload = {
+      vatRate: values.vatRate,
+      effectiveFrom: values.effectiveFrom.format('YYYY-MM-DD'),
+      effectiveTo: values.effectiveTo?.format('YYYY-MM-DD') || null,
+      status: values.status || 'ACTIVE',
+    };
     try {
-      await taxCategoryService.addVersion(versionCategory.id, {
-        vatRate: values.vatRate,
-        effectiveFrom: values.effectiveFrom.format('YYYY-MM-DD'),
-        effectiveTo: values.effectiveTo?.format('YYYY-MM-DD') || null,
-        status: values.status || 'ACTIVE',
-      });
-      message.success('税率版本已新增');
+      if (editingVersion) {
+        await taxCategoryService.updateVersion(versionCategory.id, editingVersion.id, payload);
+      } else {
+        await taxCategoryService.addVersion(versionCategory.id, payload);
+      }
+      message.success(editingVersion ? '税率版本已更新' : '税率版本已新增');
       setVersionModalOpen(false);
+      setEditingVersion(null);
       await openVersions(versionCategory);
       await load();
     } catch (error: any) {
-      message.error(error?.message || '保存税率版本失败');
+      const messageByCode: Record<string, string> = {
+        TAX_RATE_PERIOD_OVERLAP: '税率生效区间与已有启用版本重叠，请先设置原版本失效日期',
+        TAX_CATEGORY_VERSION_IN_USE: '该税率版本已被报价快照使用，不能修改',
+      };
+      message.error(messageByCode[error?.message] || error?.message || '保存税率版本失败');
     }
+  };
+
+  const openVersionEdit = (version: TaxVatVersion) => {
+    setEditingVersion(version);
+    versionForm.setFieldsValue({
+      vatRate: Number(version.vatRate),
+      effectiveFrom: dayjs(version.effectiveFrom),
+      effectiveTo: version.effectiveTo ? dayjs(version.effectiveTo) : undefined,
+      status: version.status,
+    });
+    setVersionModalOpen(true);
   };
 
   const columns: ColumnsType<TaxCategory> = [
@@ -156,16 +178,17 @@ const TaxCategoryManagement: React.FC = () => {
       </Modal>
 
       <Drawer title={versionCategory ? `${versionCategory.name} · VAT 税率版本` : 'VAT 税率版本'} open={!!versionCategory}
-        onClose={() => setVersionCategory(null)} width={720} extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { versionForm.resetFields(); versionForm.setFieldsValue({ status: 'ACTIVE', effectiveFrom: dayjs() }); setVersionModalOpen(true); }}>新增版本</Button>}>
+        onClose={() => setVersionCategory(null)} width={720} extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingVersion(null); versionForm.resetFields(); versionForm.setFieldsValue({ status: 'ACTIVE', effectiveFrom: dayjs() }); setVersionModalOpen(true); }}>新增版本</Button>}>
         <Table<TaxVatVersion> rowKey="id" loading={versionsLoading} dataSource={versions} pagination={false} columns={[
           { title: 'VAT', dataIndex: 'vatRate', render: percentText },
           { title: '生效日期', dataIndex: 'effectiveFrom' },
           { title: '失效日期', dataIndex: 'effectiveTo', render: dateText },
           { title: '状态', dataIndex: 'status', render: (value: string) => <Tag color={value === 'ACTIVE' ? 'green' : 'default'}>{value === 'ACTIVE' ? '启用' : '停用'}</Tag> },
+          { title: '操作', key: 'actions', width: 80, render: (_: unknown, row: TaxVatVersion) => <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openVersionEdit(row)}>编辑</Button> },
         ]} />
       </Drawer>
 
-      <Modal title="新增 VAT 税率版本" open={versionModalOpen} onCancel={() => setVersionModalOpen(false)} onOk={() => void saveVersion()} okText="保存" cancelText="取消">
+      <Modal title={editingVersion ? '编辑 VAT 税率版本' : '新增 VAT 税率版本'} open={versionModalOpen} onCancel={() => { setVersionModalOpen(false); setEditingVersion(null); }} onOk={() => void saveVersion()} okText="保存" cancelText="取消">
         <Form form={versionForm} layout="vertical">
           <Form.Item name="vatRate" label="VAT 税率（百分比）" rules={[{ required: true, message: '请输入税率' }]}><InputNumber min={0} max={100} precision={6} addonAfter="%" style={{ width: '100%' }} /></Form.Item>
           <Form.Item name="effectiveFrom" label="生效日期" rules={[{ required: true, message: '请选择生效日期' }]}><DatePicker style={{ width: '100%' }} /></Form.Item>
