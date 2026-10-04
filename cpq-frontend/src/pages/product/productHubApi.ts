@@ -35,6 +35,7 @@ import type {
   CustomerPartListResult,
   CustomerOptionsResult,
   CustomerCandidatesResult,
+  TaxCategoryBindingResult,
 } from './productHubTypes';
 
 /**
@@ -78,6 +79,7 @@ export interface SheetDatasetApi {
   getOverview(axisValue: string, customerNo?: string): Promise<PartOverview>;
   getRows(axisValue: string, sheetKey: string, version?: number, customerNo?: string): Promise<SheetRowsResult>;
   getVersions(axisValue: string, sheetKey: string, customerNo?: string): Promise<VersionsResult>;
+  updateTaxCategory(axisValue: string, customerNo: string, taxCategoryId: string): Promise<TaxCategoryBindingResult>;
 }
 
 /**
@@ -121,6 +123,14 @@ export function createSheetApi(basePath: string): SheetDatasetApi {
         { params: customerNo === undefined ? {} : { customerNo } },
       );
       return unwrap<VersionsResult>(res);
+    },
+    async updateTaxCategory(axisValue, customerNo, taxCategoryId) {
+      const res = await api.put(
+        `${basePath}/parts/${enc(axisValue)}/tax-category`,
+        { taxCategoryId },
+        { params: { customerNo } },
+      );
+      return unwrap<TaxCategoryBindingResult>(res);
     },
   };
 }

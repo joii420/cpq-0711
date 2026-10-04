@@ -16,6 +16,7 @@ import jakarta.ws.rs.core.Response;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * 三套数据集的<b>维护端</b>端点（task-260902 · B-9 / B-10 / B-11）。
@@ -226,6 +227,26 @@ public class DatasetMaintenanceResource {
             Map<String, Object> patch) {
         String operator = sessionHelper.getCurrentUserIdOrFallback(httpRequest).toString();
         return ApiResponse.success(service.updatePart(dataset, axisValue, patch, operator, customerNo));
+    }
+
+    /**
+     * Product metadata binding used by 产品管理 → 销售产品.
+     *
+     * <p>This is intentionally separate from the generic one-column patch endpoint:
+     * tax_category_id is an internal column, so accepting it through the generic
+     * Registry patch would bypass the active-category and customer-scope checks.
+     */
+    @PUT
+    @Path("/{dataset}/parts/{axisValue}/tax-category")
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
+    public ApiResponse<DsTaxCategoryBindingResult> updateTaxCategory(
+            @PathParam("dataset") String dataset,
+            @PathParam("axisValue") String axisValue,
+            @QueryParam("customerNo") String customerNo,
+            DsTaxCategoryBindingRequest request) {
+        String operator = sessionHelper.getCurrentUserIdOrFallback(httpRequest).toString();
+        UUID categoryId = request == null ? null : request.taxCategoryId;
+        return ApiResponse.success(service.updateTaxCategory(dataset, axisValue, customerNo, categoryId, operator));
     }
 
     /**

@@ -31,11 +31,12 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Drawer, Tabs, Select, Space, Tag, Spin, Empty, Typography, Alert, message,
+  Drawer, Tabs, Select, Space, Tag, Spin, Empty, Typography, Alert, message, Button,
 } from 'antd';
 import { LockOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import ReadonlySheetTable from './ReadonlySheetTable';
 import { quoteSheetApi } from './productHubApi';
+import { taxCategoryService, type TaxCategory } from '../../services/taxCategoryService';
 import type {
   SheetMeta, PartOverview, OverviewSheet, VersionInfo, SheetRow,
 } from './productHubTypes';
@@ -193,16 +194,24 @@ interface Props {
   customerNo: string;
   /** 客户展示文案，用于标题标签与正文提示条（原型 `04`）。 */
   customerLabel: string;
+  taxCategoryId?: string | null;
+  taxCategoryName?: string | null;
+  vatRate?: string | null;
+  onTaxCategorySaved?: (result: { taxCategoryId: string; taxCategoryName?: string | null; vatRate?: string | null }) => void;
   onClose: () => void;
 }
 
 const ProductSalesPartDrawer: React.FC<Props> = ({
-  open, axisValue, fallbackMaterialName, customerNo, customerLabel, onClose,
+  open, axisValue, fallbackMaterialName, customerNo, customerLabel,
+  taxCategoryId, taxCategoryName, vatRate, onTaxCategorySaved, onClose,
 }) => {
   const [sheets, setSheets] = useState<SheetMeta[]>(SHEETS_CACHE ?? []);
   const [overview, setOverview] = useState<PartOverview | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeKey, setActiveKey] = useState<string>('');
+  const [categories, setCategories] = useState<TaxCategory[]>([]);
+  const [selectedTaxCategoryId, setSelectedTaxCategoryId] = useState<string>();
+  const [savingTaxCategory, setSavingTaxCategory] = useState(false);
 
   useEffect(() => {
     if (!open || !axisValue) return;
@@ -223,8 +232,16 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
         // AC-11 步骤⑦：每次打开抽屉都重置到**第一个 tab**，不保留上次停留位置
         setActiveKey(metaSheets.length > 0 ? metaSheets[0].sheetKey : '');
         // 🔄 F-5：customerNo 取自壳页 props
-        const ov = await quoteSheetApi.getOverview(axisValue, customerNo);
-        if (!cancelled) setOverview(ov);
+        const [ov, categoryResponse] = await Promise.all([
+          quoteSheetApi.getOverview(axisValue, customerNo),
+          taxCategoryService.list({ status: 'ACTIVE' }),
+        ]);
+        if (!cancelled) {
+          setOverview(ov);
+          const activeCategories = (categoryResponse.data ?? []).filter((c) => c.status === 'ACTIVE');
+          setCategories(activeCategories);
+          setSelectedTaxCategoryId(taxCategoryId ?? activeCategories.find((c) => c.isDefault)?.id);
+        }
       } catch (e) {
         if (!cancelled) message.error((e as Error)?.message ?? '加载失败');
       } finally {
@@ -232,7 +249,24 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
       }
     })();
     return () => { cancelled = true; };
-  }, [open, axisValue, customerNo]);
+  }, [open, axisValue, customerNo, taxCategoryId]);
+
+  const saveTaxCategory = useCallback(async () => {
+    if (!axisValue || !selectedTaxCategoryId) {
+      message.warning('请选择税务分类');
+      return;
+    }
+    setSavingTaxCategory(true);
+    try {
+      const result = await quoteSheetApi.updateTaxCategory(axisValue, customerNo, selectedTaxCategoryId);
+      onTaxCategorySaved?.(result);
+      message.success('税务分类已保存');
+    } catch (e) {
+      message.error((e as Error)?.message ?? '税务分类保存失败');
+    } finally {
+      setSavingTaxCategory(false);
+    }
+  }, [axisValue, customerNo, onTaxCategorySaved, selectedTaxCategoryId]);
 
   const overviewMap = useMemo(() => {
     const m = new Map<string, OverviewSheet>();
@@ -300,6 +334,31 @@ const ProductSalesPartDrawer: React.FC<Props> = ({
           </span>
         )}
       />
+      <div style={{ border: '1px solid #f0f0f0', borderRadius: 6, padding: '10px 12px', marginBottom: 12, background: '#fafafa' }}>
+        <Space wrap size={12}>
+          <Text strong>税务分类</Text>
+          <Select
+            showSearch
+            optionFilterProp="label"
+            style={{ minWidth: 280 }}
+            value={selectedTaxCategoryId}
+            placeholder={taxCategoryName ?? '请选择税务分类'}
+            options={categories.map((c) => ({
+              value: c.id,
+              label: `${c.name}（${c.code}）${c.effectiveVatRate != null ? ` · ${c.effectiveVatRate}%` : ''}`,
+            }))}
+            onChange={setSelectedTaxCategoryId}
+            loading={categories.length === 0 && loading}
+          />
+          <Text type="secondary">当前 VAT：{vatRate == null ? '未设置' : `${vatRate}%`}</Text>
+          <Button type="primary" size="small" loading={savingTaxCategory} onClick={() => { void saveTaxCategory(); }}>
+            保存绑定
+          </Button>
+        </Space>
+        <div style={{ marginTop: 6, fontSize: 12, color: 'rgba(0,0,0,.45)' }}>
+          客户产品页只读展示此绑定；报价新行仍按产品税务分类优先生成 VAT 快照。
+        </div>
+      </div>
       {loading && sheets.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 40 }}><Spin /></div>
       ) : sheets.length === 0 ? (

@@ -72,6 +72,7 @@
         <th style="width:120px">属性值</th>
         {#if showDiscount}<th style="width:80px">折扣率(%)</th><th style="width:100px">单价(元)</th><th style="width:100px">折扣金额(元)</th><th style="width:100px">折后单价(元)</th><th style="width:100px">行合计(元)</th>{/if}
         {#if !showDiscount}<th style="width:100px">小计(元)</th>{/if}
+        <th style="width:65px">VAT(%)</th><th style="width:100px">未税金额(元)</th><th style="width:100px">税额(元)</th><th style="width:100px">含税金额(元)</th>
       </tr>
     </thead>
     <tbody>
@@ -83,6 +84,7 @@
         <td style="text-align:left;font-size:10px">{item.attributeValues}</td>
         {#if showDiscount}<td>{item.discountRate}</td><td style="text-align:right">{item.lineUnitPrice}</td><td style="text-align:right">{item.lineDiscountAmount}</td><td style="text-align:right">{item.lineFinalPrice}</td><td style="text-align:right">{item.lineTotalAmount}</td>{/if}
         {#if !showDiscount}<td style="text-align:right">{item.subtotal}</td>{/if}
+        <td>{item.vatRate}</td><td style="text-align:right">{item.untaxedAmount}</td><td style="text-align:right">{item.vatAmount}</td><td style="text-align:right">{item.amountWithVat}</td>
       </tr>
       {/for}
     </tbody>
@@ -93,7 +95,9 @@
   <table class="summary-table">
     <tr class="amount-row"><td>原价合计：</td><td style="text-align:right">￥{quotation.originalAmount}</td></tr>
     {#if showDiscount}<tr><td>折扣率：</td><td style="text-align:right">{quotation.finalDiscountRate}%</td></tr>{/if}
-    <tr class="amount-row"><td style="font-size:13px">报价总金额：</td><td style="text-align:right;font-size:14px;color:#c00">￥{quotation.totalAmount}</td></tr>
+    <tr class="amount-row"><td style="font-size:13px">未税报价总金额：</td><td style="text-align:right;font-size:14px">￥{quotation.totalAmount}</td></tr>
+    <tr class="amount-row"><td style="font-size:13px">税额合计：</td><td style="text-align:right;font-size:14px">￥{quotation.vatTotal}</td></tr>
+    <tr class="amount-row"><td style="font-size:13px;color:#c00">含税报价总金额：</td><td style="text-align:right;font-size:14px;color:#c00">￥{quotation.taxedTotal}</td></tr>
   </table>
 </div>
 

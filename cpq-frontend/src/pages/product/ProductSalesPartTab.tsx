@@ -167,6 +167,18 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
     ));
   }, []);
 
+  const handleTaxCategorySaved = useCallback((rowCustomerNo: string, axisValue: string, result: {
+    taxCategoryId: string;
+    taxCategoryName?: string | null;
+    vatRate?: string | null;
+  }) => {
+    setItems((prev) => prev.map((it) => (
+      it.customerNo === rowCustomerNo && it.axisValue === axisValue
+        ? { ...it, taxCategoryId: result.taxCategoryId, taxCategoryName: result.taxCategoryName, vatRate: result.vatRate }
+        : it
+    )));
+  }, []);
+
   // 列顺序即 AC-4/AC-5②，不得调整
   const columns: ColumnsType<PartListItem> = [
     // 🆕 F-4 / AC-5②：客户两列置最左——它们是行身份的一部分，不是附属信息
@@ -307,6 +319,12 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
         //    客户必选后两者恒相等，但契约以壳页为准——见 `ProductSalesPartDrawer.tsx` 顶部注释。
         customerNo={customerNo}
         customerLabel={customerLabel}
+        taxCategoryId={activeRow?.taxCategoryId}
+        taxCategoryName={activeRow?.taxCategoryName}
+        vatRate={activeRow?.vatRate}
+        onTaxCategorySaved={(result) => {
+          if (activeRow) handleTaxCategorySaved(activeRow.customerNo, activeRow.axisValue, result);
+        }}
         onClose={() => setDrawerOpen(false)}
       />
     </div>

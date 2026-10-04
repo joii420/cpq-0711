@@ -121,8 +121,8 @@
 
 - 组件公式字段的标签元数据增加 `{label:"增值税", token:"vat_rate", valueType:"RATIO"}`；序列化 token 统一为 `{"type":"vat_rate"}`，不使用全局变量 token。
 - 报价行上下文绑定 `vatRateRatio`；无报价行快照的运行上下文返回结构化状态 `{code:"VAT_QUOTE_CONTEXT_REQUIRED", label:"待报价税率"}`，不能读取系统当前税率。
-- 物料元素 BOM 的含税价格策略为可选派生结果：`taxIncludedUnitPrice = elementUnitPrice × (1 + vatRateRatio)`，不得覆盖未税策略；没有报价上下文时返回上述状态。
-- 该策略在 QUOTE、COST_BASIC、COST_DETAIL 三处使用同一契约；是否在组件/模板公式中引用 VAT 仍由用户配置，不自动给所有金额加税。
+- 本期不新增物料元素 BOM 的含税价格策略字段；现有 BOM 配置契约保持不变。
+- 是否在组件/模板公式中引用 VAT 仍由用户配置，不自动给所有金额加税。报价 HTML/PDF/Excel 输出的 VAT、税额与含税金额只使用报价行快照。
 
 ## 7. 错误码
 

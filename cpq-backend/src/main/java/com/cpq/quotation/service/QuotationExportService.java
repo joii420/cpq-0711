@@ -92,6 +92,10 @@ public class QuotationExportService {
         sheet.setColumnWidth(3, 8000);
         sheet.setColumnWidth(4, 4000);
         sheet.setColumnWidth(5, 5000);
+        sheet.setColumnWidth(6, 3500);
+        sheet.setColumnWidth(7, 5000);
+        sheet.setColumnWidth(8, 5000);
+        sheet.setColumnWidth(9, 5000);
 
         CellStyle headerStyle = createHeaderStyle(workbook);
         CellStyle titleStyle = createTitleStyle(workbook);
@@ -138,10 +142,17 @@ public class QuotationExportService {
         } else {
             createHeaderCell(lineHeader, col++, "小计(元)", headerStyle);
         }
+        createHeaderCell(lineHeader, col++, "VAT(%)", headerStyle);
+        createHeaderCell(lineHeader, col++, "未税金额(元)", headerStyle);
+        createHeaderCell(lineHeader, col++, "税额(元)", headerStyle);
+        createHeaderCell(lineHeader, col++, "含税金额(元)", headerStyle);
 
         // Line items data
         int lineNum = 1;
         BigDecimal grandTotal = BigDecimal.ZERO;
+        BigDecimal untaxedTotal = BigDecimal.ZERO;
+        BigDecimal vatTotal = BigDecimal.ZERO;
+        BigDecimal taxedTotal = BigDecimal.ZERO;
         if (q.lineItems != null) {
             for (QuotationDTO.LineItemDTO li : q.lineItems) {
                 Row dataRow = sheet.createRow(row++);
@@ -183,6 +194,16 @@ public class QuotationExportService {
                         grandTotal = grandTotal.add(li.subtotal);
                     }
                 }
+                BigDecimal untaxed = lineAmount(li);
+                BigDecimal vat = vatAmount(untaxed, li);
+                BigDecimal taxed = untaxed.add(vat);
+                writeAmountCell(dataRow.createCell(col++), li.vatRate);
+                writeAmountCell(dataRow.createCell(col++), untaxed);
+                writeAmountCell(dataRow.createCell(col++), vat);
+                writeAmountCell(dataRow.createCell(col++), taxed);
+                untaxedTotal = untaxedTotal.add(untaxed);
+                vatTotal = vatTotal.add(vat);
+                taxedTotal = taxedTotal.add(taxed);
             }
         }
 
@@ -202,11 +223,23 @@ public class QuotationExportService {
 
         Row totalRow = sheet.createRow(row++);
         Cell totalLabel = totalRow.createCell(col - 2);
-        totalLabel.setCellValue("报价总金额:");
+        totalLabel.setCellValue("未税报价总金额:");
         totalLabel.setCellStyle(boldStyle);
         Cell totalCell = totalRow.createCell(col - 1);
-        writeAmountCell(totalCell, q.totalAmount != null ? q.totalAmount : BigDecimal.ZERO);
+        writeAmountCell(totalCell, untaxedTotal);
         totalCell.setCellStyle(amountStyle);
+
+        Row vatRow = sheet.createRow(row++);
+        vatRow.createCell(col - 2).setCellValue("税额合计:");
+        writeAmountCell(vatRow.createCell(col - 1), vatTotal);
+
+        Row taxedRow = sheet.createRow(row);
+        Cell taxedLabel = taxedRow.createCell(col - 2);
+        taxedLabel.setCellValue("含税报价总金额:");
+        taxedLabel.setCellStyle(boldStyle);
+        Cell taxedCell = taxedRow.createCell(col - 1);
+        writeAmountCell(taxedCell, taxedTotal);
+        taxedCell.setCellStyle(amountStyle);
     }
 
     /** Precision values are always exported as display-formatted text cells. */
@@ -261,8 +294,32 @@ public class QuotationExportService {
             BigDecimal lineTotal = li.lineTotalAmount != null ? li.lineTotalAmount
                     : (li.subtotal != null ? li.subtotal : BigDecimal.ZERO);
             m.put("lineTotalAmount", formatAmount(lineTotal));
+            m.put("vatRate", formatRate(li.vatRate));
+            BigDecimal untaxed = lineAmount(li);
+            BigDecimal vat = vatAmount(untaxed, li);
+            m.put("untaxedAmount", formatAmount(untaxed));
+            m.put("vatAmount", formatAmount(vat));
+            m.put("amountWithVat", formatAmount(untaxed.add(vat)));
             return m;
         }).toList();
+    }
+
+    /** The export treats the already discounted line amount as the untaxed base. */
+    private static BigDecimal lineAmount(QuotationDTO.LineItemDTO li) {
+        if (li == null) return BigDecimal.ZERO;
+        if (li.lineTotalAmount != null) return li.lineTotalAmount;
+        return li.subtotal != null ? li.subtotal : BigDecimal.ZERO;
+    }
+
+    private static BigDecimal vatAmount(BigDecimal untaxed, QuotationDTO.LineItemDTO li) {
+        if (untaxed == null || li == null) return BigDecimal.ZERO;
+        BigDecimal ratio = li.vatRateRatio;
+        if (ratio == null && li.vatRate != null) ratio = li.vatRate.movePointLeft(2);
+        return ratio == null ? BigDecimal.ZERO : untaxed.multiply(ratio);
+    }
+
+    private static String formatRate(BigDecimal v) {
+        return v == null ? "—" : NumberFormatUtil.format(v, null, true) + "%";
     }
 
     /**
@@ -369,6 +426,8 @@ public class QuotationExportService {
         public final String originalAmount;
         public final String finalDiscountRate;
         public final String totalAmount;
+        public final String vatTotal;
+        public final String taxedTotal;
 
         public QuotationTemplateData(QuotationDTO q, String statusLabel) {
             this.quotationNumber = nvl(q.quotationNumber);
@@ -389,6 +448,18 @@ public class QuotationExportService {
             this.originalAmount = formatAmount(q.originalAmount);
             this.finalDiscountRate = q.finalDiscountRate != null ? formatAmount(q.finalDiscountRate) : "100";
             this.totalAmount = formatAmount(q.totalAmount);
+            BigDecimal vat = BigDecimal.ZERO;
+            BigDecimal taxed = BigDecimal.ZERO;
+            if (q.lineItems != null) {
+                for (QuotationDTO.LineItemDTO li : q.lineItems) {
+                    BigDecimal untaxed = lineAmount(li);
+                    BigDecimal lineVat = vatAmount(untaxed, li);
+                    vat = vat.add(lineVat);
+                    taxed = taxed.add(untaxed).add(lineVat);
+                }
+            }
+            this.vatTotal = formatAmount(vat);
+            this.taxedTotal = formatAmount(taxed);
         }
 
         private static String nvl(String s) { return s != null ? s : ""; }

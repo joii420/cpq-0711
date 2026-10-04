@@ -114,6 +114,16 @@ export interface PartListResult {
   items: PartListItem[];
 }
 
+export interface TaxCategoryBindingResult {
+  dataset: string;
+  customerNo: string;
+  axisValue: string;
+  taxCategoryId: string;
+  taxCategoryName?: string | null;
+  vatRate?: string | null;
+  updatedAt?: string | null;
+}
+
 // ── 抽屉徽标（GET /dataset/{dataset}/parts/{axisValue}/overview）──────────────
 
 export interface OverviewSheet {

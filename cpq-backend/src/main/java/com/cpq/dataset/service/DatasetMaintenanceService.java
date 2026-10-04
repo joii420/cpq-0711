@@ -16,12 +16,14 @@ import com.cpq.dataset.support.DsMasterTables;
 import com.cpq.dataset.support.SqlIdent;
 import com.cpq.dataset.versioning.AxisKey;
 import com.cpq.dataset.versioning.VersionedGroupWriter;
+import com.cpq.tax.entity.TaxCategory;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import jakarta.transaction.Transactional;
 
+import java.math.BigDecimal;
 import java.util.*;
 
 /**
@@ -1165,6 +1167,65 @@ public class DatasetMaintenanceService {
         out.updatedAt = toOdt(back[0]);
         out.source = str(back[1]);
         return out;
+    }
+
+    /**
+     * Bind the active VAT classification to one customer-scoped sales product.
+     * The product key is (customer_no, material_no); a missing customer is never
+     * treated as "all customers" for this write.
+     */
+    @Transactional
+    public DsTaxCategoryBindingResult updateTaxCategory(String dataset, String axisValue,
+                                                        String customerNo, UUID requestedCategoryId,
+                                                        String operator) {
+        DatasetRegistry reg = registry(dataset);
+        if (!reg.customerScoped() || !"quote".equals(reg.datasetKey())) {
+            throw new BusinessException(400, "只有报价销售产品支持税务分类绑定");
+        }
+        if (axisValue == null || axisValue.isBlank()) throw new BusinessException(400, "缺少销售料号");
+        if (customerNo == null || customerNo.isBlank()) throw new BusinessException(400, "缺少客户号");
+
+        UUID categoryId = requestedCategoryId;
+        if (categoryId == null) {
+            TaxCategory defaultCategory = TaxCategory.find("isDefault = true AND status = 'ACTIVE'").firstResult();
+            if (defaultCategory == null) throw new BusinessException(409, "DEFAULT_TAX_CATEGORY_NOT_CONFIGURED");
+            categoryId = defaultCategory.id;
+        }
+        TaxCategory category = TaxCategory.findById(categoryId);
+        if (category == null) throw new BusinessException(404, "税务分类不存在");
+        if (!"ACTIVE".equals(category.status)) throw new BusinessException(400, "停用税务分类不能绑定产品");
+
+        int affected = em.createNativeQuery(
+                "UPDATE ds_quote_material SET tax_category_id=:categoryId, updated_at=now(), updated_by=:operator "
+                        + "WHERE customer_no=:customerNo AND material_no=:materialNo")
+            .setParameter("categoryId", categoryId)
+            .setParameter("operator", operator)
+            .setParameter("customerNo", customerNo)
+            .setParameter("materialNo", axisValue)
+            .executeUpdate();
+        if (affected == 0) throw new BusinessException(404, "销售产品不存在: " + axisValue);
+
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT m.tax_category_id, tc.name, tv.vat_rate, m.updated_at "
+                        + "FROM ds_quote_material m JOIN tax_category tc ON tc.id=m.tax_category_id "
+                        + "LEFT JOIN LATERAL (SELECT v.vat_rate FROM tax_category_vat_version v "
+                        + "WHERE v.tax_category_id=tc.id AND v.status='ACTIVE' "
+                        + "AND v.effective_from<=CURRENT_DATE "
+                        + "AND (v.effective_to IS NULL OR CURRENT_DATE<v.effective_to) "
+                        + "ORDER BY v.effective_from DESC LIMIT 1) tv ON TRUE "
+                        + "WHERE m.customer_no=:customerNo AND m.material_no=:materialNo")
+            .setParameter("customerNo", customerNo)
+            .setParameter("materialNo", axisValue)
+            .getSingleResult();
+        DsTaxCategoryBindingResult result = new DsTaxCategoryBindingResult();
+        result.dataset = reg.datasetKey();
+        result.customerNo = customerNo;
+        result.axisValue = axisValue;
+        result.taxCategoryId = (UUID) row[0];
+        result.taxCategoryName = row[1] == null ? null : row[1].toString();
+        result.vatRate = row[2] instanceof BigDecimal b ? b : (row[2] == null ? null : new BigDecimal(row[2].toString()));
+        result.updatedAt = toOdt(row[3]);
+        return result;
     }
 
     /** 该数据集的物料表 SheetDef（列表 / 单列更新的落点）。 */
