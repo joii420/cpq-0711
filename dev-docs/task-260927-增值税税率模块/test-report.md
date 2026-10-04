@@ -42,3 +42,10 @@
 ## 5. 结论
 
 实现与静态/单元/专用测试门槛已通过；尚不能把 AC-1~AC-12 全部标记为用户验收通过。下一步应使用专用可回收环境补跑导入、三方言含税策略、服务端 API 权限和真实报价 Step2/详情页回归。
+
+## 6. 2026-10-03 范围收敛后的补充实现
+
+- 已实现：现有“产品管理 → 销售产品 → 料号抽屉”中的税务分类绑定；后端按 `(customer_no, material_no)` 精确更新，并校验分类存在且启用。
+- 已实现：报价 HTML/PDF 与 Excel 导出读取报价行 VAT 快照，增加 VAT、未税金额、税额、含税金额展示；不回查当前系统税率。
+- 已确认不做：物料与元素 BOM 不增加“元素含税单价”字段或价格策略；用户如需含税公式，继续在组件/模板公式中显式插入 `[增值税]`。
+- 补充自检：`./mvnw -q -DskipTests compile`、`./mvnw -q -Dtest=VatFormulaTokenTest,PlainTableWriterTest test`、`npm run build`、`git diff --check`、三项项目 hook 均 PASS。产品绑定真实鉴权 API、导出文件内容和浏览器 E2E 仍需在可回收验收环境执行。
