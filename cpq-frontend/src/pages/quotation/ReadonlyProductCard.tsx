@@ -59,6 +59,15 @@ function vatSourceLabel(source?: string): string {
   }
 }
 
+/** [增值税] 只读取报价行冻结值；vatRate 是百分比，公式上下文使用 0..1 比率。 */
+function readonlyVatQuotationFields(lineItem: any): DecimalContext {
+  const raw = lineItem.vatRateRatio
+    ?? (lineItem.vatRate != null ? toCalculationString(toDecimal(lineItem.vatRate).div(100)) : undefined);
+  if (raw == null) return {};
+  const ratio = toCalculationString(toDecimal(raw));
+  return { vat_rate: ratio, '增值税': ratio };
+}
+
 /** 判断是否为需要追溯的关键字段（单价/费用/公式衍生字段） */
 function isTraceField(field: ComponentField): boolean {
   const key = field.name || '';
@@ -130,6 +139,7 @@ function buildFormulaCache(
   compSubtotals: DecimalContext,
   partNo?: string,
   globalVariableDefs?: Record<string, GlobalVariableDefinition>,
+  quotationFields?: DecimalContext,
   // 2026-05-31 修复（小计合计/产品小计 ¥∞）：必须按行喂 driver 展开的 basicDataValues，
   // 否则 BASIC_DATA 分母字段（如 成材率）取不到值 → ?? 0 → 工序单价=单价÷0=Infinity →
   // 子小计求和 = ∞。与渲染层 preComputedCaches 同款（按 driver 行数 + 行级 bdv）。
@@ -162,7 +172,7 @@ function buildFormulaCache(
     }
     treeFieldValuesByRow = [];
     treeResults = computeTabFormulasTree(
-      comp, treeRowInputs, compSubtotals, undefined, undefined, partNo, globalVariableDefs, crossTabRows,
+      comp, treeRowInputs, compSubtotals, quotationFields, undefined, partNo, globalVariableDefs, crossTabRows,
       { fieldValuesByRow: treeFieldValuesByRow });
   }
 
@@ -180,7 +190,7 @@ function buildFormulaCache(
     const fv: DecimalContext = {};
     const formulaCache = computeAllFormulas(
       comp, row, compSubtotals,
-      undefined, undefined, partNo, bdv,
+      quotationFields, undefined, partNo, bdv,
       undefined, globalVariableDefs, crossTabRows, prevRowValues,
       { fieldValues: fv },
     );
@@ -439,6 +449,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // Compute subtotals using buildFormulaCache（支持 prev_row_subtotal 累加公式）
   // compSubtotals 先用空 map 初始化，按 component 顺序逐步填入，供后续组件引用前组件小计。
   const subtotalLineItemId = (lineItem as any).id || (lineItem as any).tempId || '';
+  // 草稿详情页会实时重算 FORMULA。必须使用报价行冻结的 VAT 快照，不能读当前系统税率。
+  // 这也保证引用 [增值税] 的 [汇率] 等复合公式在详情页与编辑页同值。
+  const lineVatFields = readonlyVatQuotationFields(lineItem);
   const compSubtotals: DecimalContext = {};
   for (const comp of components) {
     if (!comp.fields) continue;
@@ -463,7 +476,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     // 使用 buildFormulaCache 支持 prev_row_subtotal 累加 + 行级 driver bdv
     const formulaCaches = buildFormulaCache(
       comp, comp.rows, compSubtotals,
-      lineItem.productPartNo, globalVariableDefs,
+      lineItem.productPartNo, globalVariableDefs, lineVatFields,
       compDriverExpansion,
     );
     // Plan 2-核心：逐列求和 + per-column 键 `${code|tabName}#${列名}`，组件级 = 各列之和。
@@ -504,6 +517,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
       return driverExpansions[k];
     },
     globalVariableDefs,
+    lineVatFields,
   );
 
   // 2026-05-31 修复（产品小计金额不对，¥1032.83）：原 `Object.values(compSubtotals).reduce(+)`
@@ -761,7 +775,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                 nodeId: sys?.nodeId, parentId: sys?.parentId, lvl: sys?.lvl,
                               };
                             }),
-                            compSubtotals, undefined, undefined, lineItem.productPartNo,
+                            compSubtotals, lineVatFields, undefined, lineItem.productPartNo,
                             globalVariableDefs, crossTabRows,
                           )
                         : undefined;
@@ -824,7 +838,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           ? (treeResultsActive[ri] ?? {})
                           : computeAllFormulas(
                               activeComp, rawRow, compSubtotals,
-                              undefined, undefined, lineItem.productPartNo,
+                              lineVatFields, undefined, lineItem.productPartNo,
                               rowBdv, undefined, globalVariableDefs, crossTabRows, prevRowValues,
                               { errors: errForRow },
                             );
