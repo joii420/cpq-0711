@@ -73,3 +73,5 @@ task_plan.md
 # 并发代理生成的 Python 编译产物（task-260819 v9 种子生成脚本）
 __pycache__/
 *.pyc
+
+.claude/worktrees/
