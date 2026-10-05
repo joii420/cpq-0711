@@ -49,3 +49,10 @@
 - 已实现：报价 HTML/PDF 与 Excel 导出读取报价行 VAT 快照，增加 VAT、未税金额、税额、含税金额展示；不回查当前系统税率。
 - 已确认不做：物料与元素 BOM 不增加“元素含税单价”字段或价格策略；用户如需含税公式，继续在组件/模板公式中显式插入 `[增值税]`。
 - 补充自检：`./mvnw -q -DskipTests compile`、`./mvnw -q -Dtest=VatFormulaTokenTest,PlainTableWriterTest test`、`npm run build`、`git diff --check`、三项项目 hook 均 PASS。产品绑定真实鉴权 API、导出文件内容和浏览器 E2E 仍需在可回收验收环境执行。
+
+## 7. 2026-10-04 报价详情 VAT/汇率回归
+
+- 根因：草稿详情页 `ReadonlyProductCard` 的实时公式求值入口未传入报价行 VAT 快照；公式引擎因此将引用 `[增值税]` 的字段诊断为缺少报价上下文，连带引用该字段的 `[汇率]` 公式显示异常。
+- 修复：单行公式、BOM 公式、页签小计和跨页签求值统一传入 `quotation_line_item.vatRateRatio`（13% → `0.13`）；不读取当前系统税率。
+- 真实服务复验：鉴权打开 `QT-20261004-0949`（DRAFT，报价头汇率 7.88），产品行显示 `汇率=9.18`、`税率=0.13`、`管理费=0.010645537`，公式异常标记数 `0`，产品小计 `1.717135541 USD`；报价头汇率快照仍为 7.88。
+- 本轮命令：`npm run build` PASS；报价相关 Vitest `65 files / 752 tests` PASS；真实服务 Playwright 页面复验 PASS；`git diff --check` 与三项项目 hook PASS。
