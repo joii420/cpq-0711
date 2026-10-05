@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>单位管理｜有向换算关系</title>
+<style>
+body{margin:0;background:#f5f7fb;font:14px Arial,"Microsoft YaHei",sans-serif;color:#1f2937}.wrap{max-width:1180px;margin:34px auto}.crumb{color:#667085;margin-bottom:18px}.head{display:flex;justify-content:space-between;align-items:center}.head h1{font-size:24px}.toolbar{display:flex;gap:10px;margin:20px 0}.btn{padding:8px 15px;border-radius:6px;border:1px solid #d0d5dd;background:#fff}.primary{background:#1677ff;border-color:#1677ff;color:#fff}.card{background:#fff;border:1px solid #e4e7ec;border-radius:10px;overflow:hidden}.tabs{padding:14px 18px;border-bottom:1px solid #eaecf0}.tab{display:inline-block;padding:0 18px;color:#667085}.tab.on{color:#1677ff;font-weight:600;border-bottom:2px solid #1677ff;padding-bottom:12px}.table{width:100%;border-collapse:collapse}.table th,.table td{padding:14px 18px;border-bottom:1px solid #f0f2f5;text-align:left}.table th{color:#475467;background:#fafafa}.pill{padding:3px 9px;border-radius:12px;background:#ecfdf3;color:#027a48;font-size:12px}.code{font-family:ui-monospace,monospace;color:#344054}.hint{padding:13px 18px;color:#667085;background:#f9fafb}.drawer{position:fixed;right:0;top:0;width:500px;height:100%;background:#fff;box-shadow:-8px 0 22px #10182820;padding:28px;box-sizing:border-box}.drawer h2{margin-top:0}.sub{color:#667085;line-height:1.5;margin-bottom:18px}.relation{display:grid;grid-template-columns:1fr 105px 1fr;gap:10px;align-items:center;padding:13px 0;border-bottom:1px solid #eaecf0}.label{font-weight:600}.field{width:100%;box-sizing:border-box;padding:9px;border:1px solid #d0d5dd;border-radius:6px}.actions{position:absolute;bottom:0;left:0;right:0;border-top:1px solid #eaecf0;padding:16px;text-align:right}.warning{margin-top:16px;background:#fffaeb;border:1px solid #fedf89;border-radius:6px;padding:10px;color:#b54708;line-height:1.5}.arrow{text-align:center;color:#98a2b3}
+</style>
+<div class="wrap">
+  <div class="crumb">系统管理 / 单位管理</div>
+  <div class="head"><h1>单位管理</h1><span>有向换算关系 · 仅系统管理员可维护</span></div>
+  <div class="toolbar"><button class="btn primary">新建单位</button><button class="btn">编辑</button><button class="btn primary">换算关系</button><button class="btn">停用</button><button class="btn">刷新</button></div>
+  <div class="card">
+    <div class="tabs"><span class="tab on">全部</span><span class="tab">数量单位</span><span class="tab">重量单位</span></div>
+    <table class="table"><thead><tr><th><input type="checkbox"></th><th>单位代码</th><th>单位类型</th><th>已维护目标关系</th><th>状态</th><th>排序</th></tr></thead><tbody>
+      <tr><td><input type="checkbox" checked></td><td class="code">PCS</td><td>数量</td><td>2 / 2 个目标单位</td><td><span class="pill">启用</span></td><td>10</td></tr>
+      <tr><td><input type="checkbox"></td><td class="code">EA</td><td>数量</td><td>2 / 2 个目标单位</td><td><span class="pill">启用</span></td><td>20</td></tr>
+      <tr><td><input type="checkbox"></td><td class="code">KPCS</td><td>数量</td><td>2 / 2 个目标单位</td><td><span class="pill">启用</span></td><td>30</td></tr>
+      <tr><td><input type="checkbox"></td><td class="code">t</td><td>重量</td><td>3 / 3 个目标单位</td><td><span class="pill">启用</span></td><td>60</td></tr>
+    </tbody></table>
+    <div class="hint">每个方向独立维护。示例：PCS → KPCS 与 KPCS → PCS 是两条关系；不设置全局基准单位。新增单位关系未补齐前不可启用。</div>
+  </div>
+</div>
+<aside class="drawer">
+  <h2>维护换算关系</h2>
+  <div class="sub">来源单位：<strong>PCS</strong>（数量）<br>每行含义：1 PCS = 系数 × 目标单位。仅显示同类型且启用的目标单位。</div>
+  <div class="relation"><div class="label">1 PCS</div><div class="arrow">＝</div><div><input class="field" value="1"> EA</div></div>
+  <div class="relation"><div class="label">1 PCS</div><div class="arrow">＝</div><div><input class="field" value="0.001"> KPCS</div></div>
+  <div class="warning">保存为整组操作；修改 PCS → KPCS 不会自动修改 KPCS → PCS。</div>
+  <div class="actions"><button class="btn">取消</button> <button class="btn primary">保存关系</button></div>
+</aside>
