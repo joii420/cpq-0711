@@ -11,9 +11,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 材质库导出服务（task-260902 · B-1，api.md B-1）。
@@ -27,8 +25,7 @@ import java.util.Map;
  *   <li><b>含量写 0–1 小数</b>：库里 {@code default_pct} 是 100 制（84），导入端
  *       {@code pctInRange(v, 1)} 只收 {@code (0,1]} 并在落库时 {@code ×100}。
  *       ⇒ 导出必须 {@code ÷100}（84 → 0.84），否则回导时<b>每一行</b>都被判「含量非法」。</li>
- *   <li><b>只读参考列从第 5 列起</b>（材质编号 / 含量配置编号 / 状态 / 含量类型）——
- *       导入端只读前 4 列，第 5 列往后天然被忽略；插到前面则表头位置错位 → 400。</li>
+ *   <li><b>只输出四列</b>（材质 / 组号 / 元素符号 / 含量），系统编号、状态等字段不进入可回导文件。</li>
  * </ol>
  *
  * <p><b>N+1 纪律</b>：整个导出<b>恒 1 条 SQL</b>（一条三表 JOIN 取全部行），
@@ -39,17 +36,8 @@ import java.util.Map;
 @ApplicationScoped
 public class MaterialRecipeExportService {
 
-    /** 只读参考列（第 5 列起，回导时被导入端忽略）。 */
-    static final List<String> READONLY_HEADER = List.of("材质编号", "含量配置编号", "状态", "含量类型");
-
     /** 导出 sheet 名沿用导入模板的 sheet 名；导入端读第一个工作表、不依赖 sheet 名。 */
     static final String SHEET_NAME = MaterialRecipeImportService.SHEET_NAME;
-
-    /** {@code recipe_type} → 中文标签（与前端 {@code recipeTypeTag} 同表）。查无回退原值。 */
-    private static final Map<String, String> TYPE_LABEL = Map.of(
-        "locked", "标准锁定",
-        "editable", "含量可调",
-        "partial", "部分可调");
 
     @Inject
     EntityManager em;
@@ -78,8 +66,7 @@ public class MaterialRecipeExportService {
         String st = (status == null || status.isBlank()) ? null : status.trim();
 
         StringBuilder sql = new StringBuilder(
-            "SELECT r.symbol, c.seq, e.element_code, e.default_pct, " +
-            "       r.code, c.config_no, r.status, r.recipe_type " +
+            "SELECT r.symbol, c.group_no, e.element_code, e.default_pct " +
             "  FROM material_recipe_element e " +
             "  JOIN material_recipe_config  c ON c.id = e.config_id AND c.status = 'ACTIVE' " +
             "  JOIN material_recipe         r ON r.id = c.recipe_id " +
@@ -110,9 +97,8 @@ public class MaterialRecipeExportService {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             Sheet s = wb.createSheet(SHEET_NAME);
 
-            // 表头：前 4 列直接引用导入端常量（🚫 不重抄字面量），只读列从第 5 列起
-            List<String> header = new ArrayList<>(MaterialRecipeImportService.HEADER);
-            header.addAll(READONLY_HEADER);
+            // 表头直接引用导入端常量（🚫 不重抄字面量）
+            List<String> header = MaterialRecipeImportService.HEADER;
             Row h = s.createRow(0);
             for (int i = 0; i < header.size(); i++) h.createCell(i).setCellValue(header.get(i));
 
@@ -121,13 +107,9 @@ public class MaterialRecipeExportService {
                 Object[] r = rows.get(i);
                 Row row = s.createRow(i + 1);
                 row.createCell(0).setCellValue(str(r[0]));                       // 材质 = symbol
-                row.createCell(1).setCellValue(str(r[1]));                       // 组号 = config.seq
+                row.createCell(1).setCellValue(str(r[1]));                       // 组号 = 数据库组号（仅作本文件分组标签）
                 row.createCell(2).setCellValue(str(r[2]));                       // 元素符号
                 setContent(row, 3, r[3]);                                        // 含量 = default_pct ÷ 100
-                row.createCell(4).setCellValue(str(r[4]));                       // 材质编号（只读）
-                row.createCell(5).setCellValue(str(r[5]));                       // 含量配置编号（只读）
-                row.createCell(6).setCellValue("ACTIVE".equals(str(r[6])) ? "启用" : "停用");
-                row.createCell(7).setCellValue(TYPE_LABEL.getOrDefault(str(r[7]), str(r[7])));
             }
             for (int i = 0; i < header.size(); i++) s.setColumnWidth(i, 14 * 256);
 

@@ -823,8 +823,9 @@ public class MaterialRecipeService {
 
         // 逐组发配置号（水位只查一次，之后内存递增 —— 新材质水位必为 0，这里直接从 1 起）
         int seq = 0;
+        int groupNo = 0;
         for (List<MaterialRecipeConfigService.ResolvedPct> g : groups) {
-            MaterialRecipeConfig cfg = configService.newConfigWithSeq(r, ++seq, null);
+            MaterialRecipeConfig cfg = configService.newConfig(r, ++seq, ++groupNo, null);
             List<MaterialRecipeConfigService.ResolvedPct> ordered = new ArrayList<>();
             for (MaterialRecipeConfigService.ResolvedPct e : g) {
                 ordered.add(new MaterialRecipeConfigService.ResolvedPct(

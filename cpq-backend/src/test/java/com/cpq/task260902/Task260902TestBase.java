@@ -270,8 +270,8 @@ public abstract class Task260902TestBase {
               .setParameter("code", code).setParameter("sym", symbol)
               .setParameter("type", recipeType).setParameter("st", status).executeUpdate();
             em.createNativeQuery(
-                "INSERT INTO material_recipe_config (recipe_id, config_no, seq, status, sort_order) " +
-                "SELECT id, :cfg, 1, 'ACTIVE', 0 FROM material_recipe WHERE code = :code")
+                "INSERT INTO material_recipe_config (recipe_id, config_no, seq, group_no, status, sort_order) " +
+                "SELECT id, :cfg, 1, 1, 'ACTIVE', 0 FROM material_recipe WHERE code = :code")
               .setParameter("cfg", code + "-01").setParameter("code", code).executeUpdate();
             insertElement(code, e1Code, e1Pct, 1);
             insertElement(code, e2Code, e2Pct, 2);

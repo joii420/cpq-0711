@@ -2,8 +2,10 @@ package com.cpq.configure.resource;
 
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.configure.dto.ElementDTO;
+import com.cpq.configure.dto.ElementImportReportDTO;
 import com.cpq.configure.dto.ElementUpsertRequest;
 import com.cpq.configure.service.ElementService;
+import com.cpq.configure.service.ElementBulkService;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -30,6 +32,41 @@ public class ElementResource {
 
     @Inject
     ElementService service;
+
+    @Inject
+    ElementBulkService bulkService;
+
+    @GET
+    @Path("/import/template")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public Response downloadImportTemplate() {
+        return Response.ok(bulkService.generateTemplate())
+            .header("Content-Disposition", "attachment; filename=element_template.xlsx").build();
+    }
+
+    @POST
+    @Path("/import")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ElementImportReportDTO importElements(@org.jboss.resteasy.reactive.RestForm("file")
+                                                 org.jboss.resteasy.reactive.multipart.FileUpload file) {
+        if (file == null) throw new IllegalArgumentException("file 不能为空");
+        try (java.io.InputStream in = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+            return bulkService.importElements(in.readAllBytes());
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
+        }
+    }
+
+    @GET
+    @Path("/export")
+    @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public Response exportElements() {
+        return Response.ok(bulkService.exportElements())
+            .header("Content-Disposition", "attachment; filename=elements.xlsx").build();
+    }
 
     /** GET /elements?keyword= — 列表（搜索 element_no/符号/中文 + 被引用数 + 排序）。 */
     @GET

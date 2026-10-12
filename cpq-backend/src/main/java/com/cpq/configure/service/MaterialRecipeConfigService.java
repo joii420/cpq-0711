@@ -310,17 +310,24 @@ public class MaterialRecipeConfigService {
     }
 
     /**
-     * <b>B-5 发号</b>：seq = max(该材质<b>全部</b>配置的 seq，含 INACTIVE) + 1，
+     * <b>B-5 发号</b>：group_no = max(该材质<b>全部</b>配置的 group_no，含 INACTIVE) + 1，
      * config_no = {@code <材质编号>-%02d}。一次查询 + 纯函数，编号不回收（M-2）。
      */
     public MaterialRecipeConfig allocateConfig(MaterialRecipe recipe, String remark) {
-        List<Integer> seqs = MaterialRecipeConfig.<MaterialRecipeConfig>find("recipeId", recipe.id)
-            .list().stream().map(c -> c.seq).toList();
-        int seq = MaterialRecipeNumbering.nextConfigSeq(seqs);
+        List<MaterialRecipeConfig> existing = MaterialRecipeConfig.<MaterialRecipeConfig>find("recipeId", recipe.id).list();
+        int groupNo = existing.stream().map(c -> c.groupNo > 0 ? c.groupNo : c.seq)
+            .max(Integer::compareTo).orElse(0) + 1;
+        int seq = existing.stream().map(c -> c.seq).max(Integer::compareTo).orElse(0) + 1;
+        return newConfig(recipe, seq, groupNo, remark);
+    }
+
+    /** 用已知创建顺序和数据库组号直接建配置（不再查库）。 */
+    public MaterialRecipeConfig newConfig(MaterialRecipe recipe, int seq, int groupNo, String remark) {
         MaterialRecipeConfig c = new MaterialRecipeConfig();
         c.recipeId = recipe.id;
         c.seq = seq;
-        c.configNo = MaterialRecipeNumbering.formatConfigNo(recipe.code, seq);
+        c.groupNo = groupNo;
+        c.configNo = MaterialRecipeNumbering.formatConfigNo(recipe.code, groupNo);
         c.status = MaterialRecipeConfig.ACTIVE;
         c.remark = remark;
         c.sortOrder = seq;
@@ -330,19 +337,9 @@ public class MaterialRecipeConfigService {
         return c;
     }
 
-    /** 用已知水位直接建配置（不再查库）。 */
+    /** 兼容旧调用方；新代码应显式传入 groupNo。 */
     public MaterialRecipeConfig newConfigWithSeq(MaterialRecipe recipe, int seq, String remark) {
-        MaterialRecipeConfig c = new MaterialRecipeConfig();
-        c.recipeId = recipe.id;
-        c.seq = seq;
-        c.configNo = MaterialRecipeNumbering.formatConfigNo(recipe.code, seq);
-        c.status = MaterialRecipeConfig.ACTIVE;
-        c.remark = remark;
-        c.sortOrder = seq;
-        c.createdAt = OffsetDateTime.now();
-        c.updatedAt = OffsetDateTime.now();
-        c.persist();
-        return c;
+        return newConfig(recipe, seq, seq, remark);
     }
 
     /** 灌元素行：一律 is_locked=true / min,max=NULL（M-5 起自定义含量由材质级开关裁决）。 */

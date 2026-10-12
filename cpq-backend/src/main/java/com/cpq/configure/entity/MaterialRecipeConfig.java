@@ -13,10 +13,10 @@ import java.util.UUID;
 /**
  * 材质的含量配置（task-260901 · B-4，V399 建表）。
  *
- * <p>一个材质下挂 0..N 条配置，每条配置有自己的配置编号 {@code config_no = <材质编号>-<两位序号>}。
+ * <p>一个材质下挂 0..N 条配置，每条配置有自己的配置编号 {@code config_no = <材质编号>-<两位组号>}。
  * <ul>
- *   <li><b>M-1 发号</b>：{@code seq = max(该材质全部配置的 seq，含 INACTIVE) + 1}；
- *       格式化用 Java {@code String.format("%02d", seq)}（seq≥100 自然三位）。
+ *   <li><b>M-1 发号</b>：{@code group_no = max(该材质全部配置的 group_no，含 INACTIVE) + 1}；
+ *       格式化用 Java {@code String.format("%02d", group_no)}（group_no≥100 自然三位）。
  *       🚫 不得用 PG {@code lpad(x,2,'0')} —— 它把 '100' 截成 '10'。</li>
  *   <li><b>M-2 软删</b>：删除只把 {@code status} 置 INACTIVE，物理行保留、seq 水位不释放
  *       ⇒ 配置编号永不回收。</li>
@@ -40,8 +40,12 @@ public class MaterialRecipeConfig extends PanacheEntityBase {
     @Column(name = "config_no")
     public String configNo;
 
-    /** 发号水位（含 INACTIVE），与 recipeId 组成 uq_mrc_recipe_seq */
+    /** 创建顺序（兼容历史排序/唯一键；不作为配置编号发号依据）。 */
     public int seq;
+
+    /** 配置数据库组号，含 INACTIVE，按材质不回收。 */
+    @Column(name = "group_no")
+    public int groupNo;
 
     /** ACTIVE / INACTIVE */
     public String status;
