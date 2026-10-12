@@ -50,8 +50,8 @@ public class ElementServiceTest {
         //    「config_id IS NULL 的孤儿行」，会顶掉 V400 迁移断言与 B-3 的 DROP 前置条件。
         UUID configId = UUID.randomUUID();
         em.createNativeQuery(
-            "INSERT INTO material_recipe_config (id, recipe_id, config_no, seq, status, sort_order) " +
-            "VALUES (:cid, :r, :cno, 1, 'ACTIVE', 1)")
+            "INSERT INTO material_recipe_config (id, recipe_id, config_no, seq, group_no, status, sort_order) " +
+            "VALUES (:cid, :r, :cno, 1, 1, 'ACTIVE', 1)")
             .setParameter("cid", configId)
             .setParameter("r", recipeId)
             .setParameter("cno", "TMAT-" + recipeId.toString().substring(0, 8) + "-01")

@@ -29,7 +29,8 @@ public class MaterialImportReportDTO {
     /** 落库元素明细行数 */
     public int elementRowsInserted;
 
-    /** ★新增（X-2）：本次自动建档的元素，供业务复核 */
+    /** 兼容旧客户端；材质导入不再创建元素，恒为空。 */
+    @Deprecated
     public List<CreatedElement> createdElements = new ArrayList<>();
 
     /** ★新增：新增配置明细 */

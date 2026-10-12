@@ -41,8 +41,8 @@ public final class DemoMaterialRecipeFixture {
         // task-260901：每条材质一条 <code>-01 配置（seq=1）
         for (String code : new String[]{"AgCu85", "AgCu90", "AgNi90", "AgNi95"}) {
             em.createNativeQuery(
-                "INSERT INTO material_recipe_config (recipe_id, config_no, seq, status, sort_order) " +
-                "SELECT id, :code || '-01', 1, 'ACTIVE', 1 FROM material_recipe WHERE code = :code " +
+                "INSERT INTO material_recipe_config (recipe_id, config_no, seq, group_no, status, sort_order) " +
+                "SELECT id, :code || '-01', 1, 1, 'ACTIVE', 1 FROM material_recipe WHERE code = :code " +
                 "ON CONFLICT (config_no) DO NOTHING")
                 .setParameter("code", code).executeUpdate();
         }

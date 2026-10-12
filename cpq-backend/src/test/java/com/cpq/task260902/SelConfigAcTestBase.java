@@ -248,8 +248,8 @@ public abstract class SelConfigAcTestBase {
             }
             if (!elements.isEmpty()) {
                 em.createNativeQuery(
-                                "INSERT INTO material_recipe_config (id,recipe_id,config_no,seq,status,sort_order,created_at,updated_at) "
-                                        + "SELECT gen_random_uuid(), r.id, :cfg, 1, 'ACTIVE', 1, NOW(), NOW() "
+                                "INSERT INTO material_recipe_config (id,recipe_id,config_no,seq,group_no,status,sort_order,created_at,updated_at) "
+                                        + "SELECT gen_random_uuid(), r.id, :cfg, 1, 1, 'ACTIVE', 1, NOW(), NOW() "
                                         + "FROM material_recipe r WHERE r.code=:code")
                         .setParameter("cfg", code + "-01").setParameter("code", code).executeUpdate();
                 int j = 0;
@@ -287,8 +287,8 @@ public abstract class SelConfigAcTestBase {
     protected void addConfig(String recipeCode, String configNo, int seq, List<String[]> elements) {
         QuarkusTransaction.requiringNew().run(() -> {
             em.createNativeQuery(
-                            "INSERT INTO material_recipe_config (id,recipe_id,config_no,seq,status,sort_order,created_at,updated_at) "
-                                    + "SELECT gen_random_uuid(), r.id, :cfg, :seq, 'ACTIVE', :seq, NOW(), NOW() "
+                            "INSERT INTO material_recipe_config (id,recipe_id,config_no,seq,group_no,status,sort_order,created_at,updated_at) "
+                                    + "SELECT gen_random_uuid(), r.id, :cfg, :seq, :seq, 'ACTIVE', :seq, NOW(), NOW() "
                                     + "FROM material_recipe r WHERE r.code=:code")
                     .setParameter("cfg", configNo).setParameter("seq", seq)
                     .setParameter("code", recipeCode).executeUpdate();
