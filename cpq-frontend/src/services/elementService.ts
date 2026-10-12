@@ -1,4 +1,5 @@
 import api from './api';
+import { downloadExport, exportFileName } from '../utils/exportDownload';
 
 /**
  * 元素主表（Element）服务层 — task-0709 / BL-0040
@@ -35,6 +36,13 @@ export interface ElementUpsertRequest {
   status?: 'ACTIVE' | 'INACTIVE';
 }
 
+export interface ElementImportReport {
+  totalRows: number;
+  createdCount: number;
+  updatedNameCount: number;
+  unchangedCount: number;
+}
+
 export const elementService = {
   async list(keyword?: string): Promise<ElementItem[]> {
     const res = await api.get('/elements', { params: keyword ? { keyword } : undefined });
@@ -48,5 +56,29 @@ export const elementService = {
   },
   async deleteSoft(elementNo: string): Promise<void> {
     await api.delete(`/elements/${encodeURIComponent(elementNo)}`);
+  },
+
+  /** POST /elements/import — 原子导入元素主数据；元素编号由后端发号。 */
+  async importLibrary(file: File): Promise<ElementImportReport> {
+    const fd = new FormData();
+    fd.append('file', file);
+    return (await api.post('/elements/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })) as unknown as ElementImportReport;
+  },
+
+  /** GET /elements/import/template — 下载仅含符号/中文名两列的模板。 */
+  async downloadImportTemplate(): Promise<Blob> {
+    const data: unknown = await api.get('/elements/import/template', { responseType: 'blob' });
+    return data instanceof Blob
+      ? data
+      : new Blob([data as BlobPart], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+  },
+
+  /** GET /elements/export — 导出元素编号、符号、中文名、状态。 */
+  async exportLibrary(): Promise<void> {
+    await downloadExport('/elements/export', undefined, exportFileName('元素库'));
   },
 };

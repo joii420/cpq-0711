@@ -11,7 +11,7 @@ import { downloadExport, exportFileName } from '../utils/exportDownload';
  *   BC-2b `MaterialRecipeLite.elementCodes` 语义源改为 `material_recipe_composition`
  *         ⇒ **0 配置的材质现在也有元素组成**，前端不得再假设「无配置 ⇒ 无元素」。
  *   BC-3  `ExistingPartMaterial.elements` 语义变为「该料号所用**配置**的元素」，新增 `configNo`。
- *   BC-5  导入报告新增 `createdElements[]` / `createdConfigs[]`。
+ *   BC-5  导入报告新增 `createdConfigs[]`；材质导入不再创建或修改元素主数据。
  *
  * 🚨 所有含量字段一律 `DecimalString`（字符串）传输。`default_pct` 是 `numeric(16,12)`，
  * 走 JS `number` 会丢尾数且无法区分 `12.345678901200` 与 `12.3456789012`。
@@ -223,14 +223,6 @@ export interface MaterialImportReport {
   configsSkippedAsDuplicate: number;
   /** 落库元素明细行数 */
   elementRowsInserted: number;
-  /** 本次自动建档的元素，供业务复核（X-2 / AC-6） */
-  createdElements: Array<{
-    elementNo: string;
-    elementCode: string;
-    elementName: string;
-    sourceRow: number;
-    sourceRecipe: string;
-  }>;
   /** 新增明细 */
   createdConfigs: Array<{
     recipeCode: string;
@@ -243,6 +235,31 @@ export interface MaterialImportReport {
   skipped: Array<{ sheet: string; row: number | null; reason: string; raw?: string }>;
   skippedRowCount: number;
   durationMs: number;
+}
+
+export interface MaterialImportElementIssue {
+  elementCode?: string;
+  code?: string;
+  rows?: number[];
+  row?: number;
+  reason?: string;
+  message?: string;
+}
+
+export interface MaterialImportCompositionMismatch {
+  material?: string;
+  recipeSymbol?: string;
+  existingElements?: string | string[];
+  incomingElements?: string | string[];
+  rows?: number[];
+  message?: string;
+}
+
+export interface MaterialImportValidationDetail {
+  missingElements?: MaterialImportElementIssue[];
+  inactiveElements?: MaterialImportElementIssue[];
+  compositionMismatches?: MaterialImportCompositionMismatch[];
+  rowErrors?: Array<{ row?: number; message?: string; reason?: string } | string>;
 }
 
 export const materialRecipeService = {
