@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>元素导入与材质失败态</title>
+  <style>
+    *{box-sizing:border-box}body{margin:0;background:#f5f7fa;color:#1f2329;font:14px/1.6 Arial,"Microsoft YaHei",sans-serif}.page{padding:24px}.note{margin-bottom:16px;color:#667085}.toolbar,.drawer{background:#fff;border:1px solid #e5e7eb;border-radius:10px}.toolbar{padding:14px 18px;margin-bottom:22px;display:flex;gap:10px;align-items:center}.toolbar b{margin-right:auto}.btn{padding:7px 14px;border:1px solid #d0d5dd;border-radius:6px;background:#fff}.primary{background:#1677ff;border-color:#1677ff;color:#fff}.grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.drawer{overflow:hidden}.head,.foot{padding:16px 20px;border-bottom:1px solid #eee;font-weight:600}.foot{border-top:1px solid #eee;border-bottom:0;text-align:right}.body{padding:20px}.info,.error{padding:12px 14px;border-radius:7px;margin-bottom:16px}.info{background:#eaf4ff;border:1px solid #91caff}.error{background:#fff2f0;border:1px solid #ffccc7}.drop{height:118px;border:1px dashed #91caff;background:#fafcff;border-radius:8px;display:grid;place-items:center;color:#667085}.stats{display:flex;border:1px solid #eee;border-radius:8px;margin:16px 0}.stat{flex:1;padding:12px;border-right:1px solid #eee}.stat:last-child{border:0}.stat strong{display:block;font-size:22px}.section{margin-top:14px}.tag{display:inline-block;background:#fff1f0;color:#cf1322;border:1px solid #ffa39e;border-radius:4px;padding:1px 7px;margin:3px 4px 3px 0}table{width:100%;border-collapse:collapse}th,td{border:1px solid #eee;padding:8px;text-align:left}th{background:#fafafa}
+  </style>
+</head>
+<body><main class="page">
+  <div class="note">原型基线 · 2026-10-12 · 左侧为元素导入，右侧为材质整表失败详情。</div>
+  <div class="toolbar"><b>主数据维护 / 元素</b><button class="btn">导出元素</button><button class="btn">下载导入模板</button><button class="btn primary">导入元素</button><button class="btn primary">新建元素</button></div>
+  <div class="grid">
+    <section class="drawer"><div class="head">导入元素</div><div class="body">
+      <div class="info"><b>模板格式：元素符号 | 中文名称</b><br>元素编号由系统自动生成；已有符号只覆盖中文名称，不修改编号、符号和状态。</div>
+      <div class="drop">点击或拖拽 .xlsx 文件到此处</div>
+      <div class="stats"><div class="stat">读取行数<strong>12</strong></div><div class="stat">新增元素<strong>3</strong></div><div class="stat">更新名称<strong>2</strong></div><div class="stat">未变化<strong>7</strong></div></div>
+    </div><div class="foot"><button class="btn">重置</button> <button class="btn primary">开始导入</button></div></section>
+    <section class="drawer"><div class="head">材质导入失败</div><div class="body">
+      <div class="error"><b>整份文件未导入</b><br>请先处理下列元素与组成问题后重新导入。本次没有新增或修改任何数据。</div>
+      <div class="section"><b>不存在或不可用的元素</b><div><span class="tag">Xx · 不存在 · 第 3、7 行</span><span class="tag">Pb · 已停用 · 第 10 行</span></div></div>
+      <div class="section"><b>元素组成不一致</b><table><tr><th>材质</th><th>已有组成</th><th>文件组成</th><th>组号</th></tr><tr><td>AgNi10</td><td>Ag, Ni</td><td>Ag, Cu</td><td>A</td></tr></table></div>
+    </div><div class="foot"><button class="btn">重新选择文件</button></div></section>
+  </div>
+</main></body></html>
