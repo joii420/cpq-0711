@@ -4,7 +4,7 @@
  *
  * 模板由「两 sheet」改为**单表 4 列**：材质 / 组号 / 元素符号 / 含量。
  *   • 不填材质编号 —— 按材质名匹配；不存在则自动创建并按 5 位补零自增发号
- *   • 不填元素编号 —— 按元素符号匹配元素字典；未建档则自动建档并自增元素编号
+ *   • 元素必须先在元素主数据中建档且为启用状态；材质导入不会创建、修改或停用元素
  *   • **组号仅用于在文件内把行分成若干组含量配置，不落库**；改组号不影响归属
  *   • 语义是**只增不改**：与该材质已有的 ACTIVE 配置逐值比对，内容已存在的组直接跳过
  *
@@ -20,9 +20,12 @@ import {
 import { DownloadOutlined } from '@ant-design/icons';
 import type { UploadFile } from 'antd';
 import CompactUploadDragger from '../../components/CompactUploadDragger';
+import type { ApiError } from '../../services/api';
 import {
   materialRecipeService,
   type MaterialImportReport,
+  type MaterialImportValidationDetail,
+  type MaterialImportCompositionMismatch,
 } from '../../services/materialRecipeService';
 import { apiErrorCode, apiErrorMessage } from '../../utils/apiError';
 
@@ -59,6 +62,7 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
   const [fatalError, setFatalError] = useState<string | null>(null);
   /** 整体失败的**字符串错误码**（`err.payload.code`），决定要不要给「下载新模板」按钮 */
   const [fatalCode, setFatalCode] = useState<string | null>(null);
+  const [fatalDetail, setFatalDetail] = useState<MaterialImportValidationDetail | null>(null);
 
   // 每次打开重置内部状态，避免复用上次导入的报告/文件
   useEffect(() => {
@@ -68,6 +72,7 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
       setReport(null);
       setFatalError(null);
       setFatalCode(null);
+      setFatalDetail(null);
     }
   }, [open]);
 
@@ -100,6 +105,7 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
     setReport(null);
     setFatalError(null);
     setFatalCode(null);
+    setFatalDetail(null);
     try {
       const res = await materialRecipeService.importLibrary(selectedFile);
       setReport(res);
@@ -107,10 +113,12 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
         `导入完成：新增材质 ${res.recipesCreated} · 新增含量配置 ${res.configsCreated}`,
       );
     } catch (e: unknown) {
-      // 400 = 文件整体不可用（旧模板 / 表头不符 / 空文件），后端已给出明确文案。
+      // 400 = 文件整体不可用（旧模板 / 表头不符 / 元素或组成校验失败），后端已给出明确文案。
       // 🚨 按**字符串错误码**区分：空文件给「下载新模板」是答非所问。
       setFatalError(apiErrorMessage(e, '导入失败，请检查文件'));
       setFatalCode(apiErrorCode(e));
+      const detail = (e as ApiError).detail;
+      setFatalDetail(detail && typeof detail === 'object' ? detail as MaterialImportValidationDetail : null);
       setReport(null);
     } finally {
       setImporting(false);
@@ -128,12 +136,34 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
     setReport(null);
     setFatalError(null);
     setFatalCode(null);
+    setFatalDetail(null);
   };
 
   /** 只有「模板/表头不对」才该指路到新模板；空文件不是模板问题 */
   const showTemplateHelp = fatalCode !== 'IMPORT_FILE_EMPTY';
 
   const isEmptyReport = !!report && report.totalRows === 0;
+
+  const issueLabel = (item: { elementCode?: string; code?: string; rows?: number[]; row?: number; reason?: string; message?: string }) => {
+    const code = item.elementCode ?? item.code ?? '未知元素';
+    const rows = item.rows?.length ? `（Excel 行：${item.rows.join('、')}）` : item.row == null ? '' : `（Excel 行：${item.row}）`;
+    return `${code}${rows}${item.reason || item.message ? `：${item.reason ?? item.message}` : ''}`;
+  };
+
+  const mismatchLabel = (item: MaterialImportCompositionMismatch) => {
+    const name = item.material ?? item.recipeSymbol ?? '未知材质';
+    const existing = Array.isArray(item.existingElements) ? item.existingElements.join('、') : item.existingElements ?? '—';
+    const incoming = Array.isArray(item.incomingElements) ? item.incomingElements.join('、') : item.incomingElements ?? '—';
+    const rows = item.rows?.length ? `；Excel 行：${item.rows.join('、')}` : '';
+    return `${name}：已有元素组成 [${existing}]，导入组成 [${incoming}]${rows}${item.message ? `；${item.message}` : ''}`;
+  };
+
+  const hasValidationDetail = !!fatalDetail && (
+    (fatalDetail.missingElements?.length ?? 0) > 0
+    || (fatalDetail.inactiveElements?.length ?? 0) > 0
+    || (fatalDetail.compositionMismatches?.length ?? 0) > 0
+    || (fatalDetail.rowErrors?.length ?? 0) > 0
+  );
 
   return (
     <Drawer
@@ -167,7 +197,15 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
           showIcon
           style={{ marginBottom: 16 }}
           message={fatalError}
-          description={showTemplateHelp ? (
+          description={hasValidationDetail ? (
+            <div style={{ lineHeight: 1.8 }}>
+              <Text strong>本次 Excel 已整批回滚，未写入材质、组成、配置或元素主数据。</Text>
+              {(fatalDetail?.missingElements?.length ?? 0) > 0 && <div><Text strong>不存在的元素：</Text>{fatalDetail?.missingElements?.map((item, index) => <div key={`missing-${index}`}>• {issueLabel(item)}</div>)}</div>}
+              {(fatalDetail?.inactiveElements?.length ?? 0) > 0 && <div><Text strong>已停用、不可用于新材质的元素：</Text>{fatalDetail?.inactiveElements?.map((item, index) => <div key={`inactive-${index}`}>• {issueLabel(item)}</div>)}</div>}
+              {(fatalDetail?.compositionMismatches?.length ?? 0) > 0 && <div><Text strong>材质元素组成冲突：</Text>{fatalDetail?.compositionMismatches?.map((item, index) => <div key={`composition-${index}`}>• {mismatchLabel(item)}</div>)}</div>}
+              {(fatalDetail?.rowErrors?.length ?? 0) > 0 && <div><Text strong>行校验错误：</Text>{fatalDetail?.rowErrors?.map((item, index) => <div key={`row-${index}`}>• {typeof item === 'string' ? item : `${item.row == null ? '' : `第 ${item.row} 行：`}${item.message ?? item.reason ?? '数据无效'}`}</div>)}</div>}
+            </div>
+          ) : showTemplateHelp ? (
             <div>
               新模板为<b>单个工作表、4 列</b>：材质 / 组号 / 元素符号 / 含量（不再需要材质编号与元素编号）。
               <div style={{ marginTop: 10 }}>
@@ -205,7 +243,7 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                 <Paragraph style={{ marginBottom: 0 }}>
                   • <Text strong>不填材质编号</Text> —— 按材质名匹配；材质不存在则自动创建并按 5 位补零自增发号<br />
-                  • <Text strong>不填元素编号</Text> —— 按元素符号匹配元素字典；符号未建档则自动建档并自增元素编号<br />
+                  • <Text strong>元素须预先建档且启用</Text> —— 材质导入不会自动创建、修改或启用元素；缺失/停用元素会使整份文件失败<br />
                   • <Text strong>组号</Text>仅用于在文件内把行分成若干组含量配置，<Text strong>不落库</Text>；改组号不影响归属<br />
                   • 含量填 <Text strong>0~1 小数</Text>，同一组之和 = 1，支持 12 位小数
                 </Paragraph>
@@ -233,11 +271,11 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
             type="warning"
             showIcon
             message={
-              <Text strong>
-                若导入的是「未筛选状态」导出的文件，其中已停用的材质会被新建为一条同名的启用材质。
+            <Text strong>
+                材质导入只处理材质、组成和含量配置，不会写入元素主表。
               </Text>
             }
-            description="需要原样回导时，请先在列表把「状态」筛为「启用」再导出。"
+            description="请先在主数据维护 → 元素中创建并启用文件引用的全部元素；停用元素不能用于新材质。"
           />
 
           <CompactUploadDragger
@@ -249,6 +287,8 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
               setSelectedFile(file as unknown as File);
               setReport(null);
               setFatalError(null);
+              setFatalCode(null);
+              setFatalDetail(null);
               return false; // 阻止自动上传，改由「开始导入」手动触发
             }}
             onRemove={() => { setSelectedFile(null); return true; }}
@@ -285,11 +325,6 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
             <StatTile label="新增材质" value={report.recipesCreated} />
             <StatTile label="新增含量配置" value={report.configsCreated} />
             <StatTile
-              label="新建元素"
-              value={report.createdElements?.length ?? 0}
-              tone={(report.createdElements?.length ?? 0) > 0 ? 'warn' : undefined}
-            />
-            <StatTile
               label="跳过"
               value={report.skippedRowCount}
               tone={report.skippedRowCount > 0 ? 'err' : undefined}
@@ -305,45 +340,6 @@ const MaterialImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) =>
             </div>
           ) : (
             <>
-              {/* X-2 / AC-6：本次自动新建的元素必须单独列出来给业务复核 */}
-              {report.createdElements && report.createdElements.length > 0 && (
-                <Alert
-                  type="warning"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                  message={`本次自动新建了 ${report.createdElements.length} 个元素，请业务复核`}
-                  description={
-                    <div>
-                      <Table
-                        size="small"
-                        rowKey={(r) => r.elementNo}
-                        style={{ marginTop: 8, background: '#fff' }}
-                        pagination={false}
-                        dataSource={report.createdElements}
-                        columns={[
-                          { title: '元素编号', dataIndex: 'elementNo', key: 'elementNo', width: 110 },
-                          { title: '符号', dataIndex: 'elementCode', key: 'elementCode', width: 100 },
-                          { title: '中文名', dataIndex: 'elementName', key: 'elementName' },
-                          {
-                            title: '来源',
-                            key: 'source',
-                            render: (_: unknown, r) => (
-                              <span style={{ color: 'rgba(0,0,0,.45)' }}>
-                                材质 {r.sourceRecipe}，第 {r.sourceRow} 行
-                              </span>
-                            ),
-                          },
-                        ]}
-                      />
-                      <div style={{ marginTop: 8, fontSize: 12 }}>
-                        元素主表是取价链路的根。若这个符号其实是<b>填错的列</b>
-                        （例如把元素编号填进了符号列），请到「主数据维护 → 元素」停用它，并修正 Excel 后重导。
-                      </div>
-                    </div>
-                  }
-                />
-              )}
-
               <div style={{ fontSize: 13, fontWeight: 600, margin: '20px 0 8px' }}>
                 新增明细
                 {report.configsSkippedAsDuplicate > 0 && (

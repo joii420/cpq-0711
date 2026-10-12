@@ -165,7 +165,7 @@ const MaterialRecipeManagement: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'material_library_template.xlsx';
+      a.download = '材质库导入模板.xlsx';
       document.body.appendChild(a);
       a.click();
       a.remove();
