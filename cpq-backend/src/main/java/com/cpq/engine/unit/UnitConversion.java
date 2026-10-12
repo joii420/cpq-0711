@@ -6,9 +6,12 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 单位换算预设表（硬编码）。把列原值按同行单位文本归一到 KG / PCS。
+ * Legacy compatibility helper for callers that do not yet have a target-unit context.
+ * New code must resolve a directed source → target factor from UnitService.
  * 前端镜像见 cpq-frontend/src/utils/unitConversion.ts，两端由对拍测试守一致。
  * 设计见 docs/superpowers/specs/2026-06-15-unit-conversion-design.md §3。
  */
@@ -18,29 +21,58 @@ public final class UnitConversion {
 
     /** 归一化后的单位 token → 对 C 原值的系数。 */
     private static final Map<String, BigDecimal> FACTORS = Map.ofEntries(
-        Map.entry("克", new BigDecimal("0.001")),
         Map.entry("G", new BigDecimal("0.001")),
-        Map.entry("千克", BigDecimal.ONE),
         Map.entry("KG", BigDecimal.ONE),
-        Map.entry("吨", new BigDecimal("1000")),
         Map.entry("T", new BigDecimal("1000")),
-        Map.entry("片", BigDecimal.ONE),
         Map.entry("PCS", BigDecimal.ONE),
         // KPCS / 千片：按「每千片 → 每片」的分母口径 ÷1000（2026-07-28 业务修订，原为 ×1000）。
-        // 中英别名必须同值，否则同一行写「KPCS」与写「千片」结果相差 100 万倍。
-        Map.entry("KPCS", new BigDecimal("0.001")),
-        Map.entry("千片", new BigDecimal("0.001")),
-        Map.entry("G/PCS", new BigDecimal("0.001")),
-        // KG/KPCS 与 G/PCS 数学等价：1 kg/千片 = 1000g/1000片 = 1 g/片，故同为 0.001。
-        Map.entry("KG/KPCS", new BigDecimal("0.001")),
-        Map.entry("G/KPCS", new BigDecimal("0.000001"))
+        Map.entry("KPCS", new BigDecimal("0.001"))
     );
+
+    private static final Map<String, BigDecimal> DIRECTED = Map.ofEntries(
+        Map.entry("EA\u0000PCS", new BigDecimal("1")), Map.entry("EA\u0000KPCS", new BigDecimal("0.001")),
+        Map.entry("PCS\u0000EA", new BigDecimal("1")), Map.entry("PCS\u0000KPCS", new BigDecimal("0.001")),
+        Map.entry("KPCS\u0000EA", new BigDecimal("1000")), Map.entry("KPCS\u0000PCS", new BigDecimal("1000")),
+        Map.entry("G\u0000KG", new BigDecimal("0.001")), Map.entry("G\u0000T", new BigDecimal("0.000001")),
+        Map.entry("G\u0000盎司", new BigDecimal("0.03527396194958")), Map.entry("KG\u0000G", new BigDecimal("1000")),
+        Map.entry("KG\u0000T", new BigDecimal("0.001")), Map.entry("KG\u0000盎司", new BigDecimal("35.27396194958")),
+        Map.entry("T\u0000G", new BigDecimal("1000000")), Map.entry("T\u0000KG", new BigDecimal("1000")),
+        Map.entry("T\u0000盎司", new BigDecimal("35273.96194958")), Map.entry("盎司\u0000G", new BigDecimal("28.349523125")),
+        Map.entry("盎司\u0000KG", new BigDecimal("0.028349523125")), Map.entry("盎司\u0000T", new BigDecimal("0.000028349523125"))
+    );
+
+    /** Runtime relation cache populated from unit_definition/unit_conversion_rate at startup and on writes. */
+    private static final Map<String, BigDecimal> RUNTIME_DIRECTED = new ConcurrentHashMap<>(DIRECTED);
+
+    public static void replaceSourceRelations(String sourceUnit, Map<String, BigDecimal> targets) {
+        String source = normalize(sourceUnit);
+        if (source.isEmpty()) return;
+        RUNTIME_DIRECTED.keySet().removeIf(k -> k.startsWith(source + "\u0000"));
+        if (targets != null) {
+            for (Map.Entry<String, BigDecimal> e : targets.entrySet()) {
+                String target = normalize(e.getKey());
+                if (!target.isEmpty() && e.getValue() != null && e.getValue().signum() > 0) {
+                    RUNTIME_DIRECTED.put(source + "\u0000" + target, e.getValue());
+                }
+            }
+        }
+    }
+
+    public static void removeUnit(String unitText) {
+        String unit = normalize(unitText);
+        if (unit.isEmpty()) return;
+        RUNTIME_DIRECTED.keySet().removeIf(k -> k.startsWith(unit + "\u0000") || k.endsWith("\u0000" + unit));
+    }
+
+    public static void clearRuntimeRelations() {
+        RUNTIME_DIRECTED.clear();
+    }
 
     /** 归一化：trim → 去所有内部空格 → 转大写（中文别名原样保留，已在表中）。 */
     static String normalize(String unitText) {
         if (unitText == null) return "";
         String s = unitText.trim().replaceAll("\\s+", "");
-        return s.toUpperCase();
+        return s.toUpperCase(Locale.ROOT);
     }
 
     /** 单位 → 系数；未知 / 空 → 1（原值透传）。 */
@@ -48,6 +80,31 @@ public final class UnitConversion {
         String key = normalize(unitText);
         if (key.isEmpty()) return BigDecimal.ONE;
         return FACTORS.getOrDefault(key, BigDecimal.ONE);
+    }
+
+    /** Apply an already-resolved directed factor without rounding. */
+    public static BigDecimal convert(BigDecimal raw, BigDecimal directedFactor) {
+        if (raw == null || directedFactor == null || directedFactor.signum() <= 0) return raw;
+        return raw.multiply(directedFactor);
+    }
+
+    /** Built-in seed relation mirror used by offline callers and compatibility tests. */
+    public static BigDecimal convert(BigDecimal raw, String sourceUnit, String targetUnit) {
+        if (raw == null || sourceUnit == null || targetUnit == null) return raw;
+        String source = normalize(sourceUnit), target = normalize(targetUnit);
+        if (source.isEmpty() || target.isEmpty() || source.equals(target)) return raw;
+        return convert(raw, RUNTIME_DIRECTED.get(source + "\u0000" + target));
+    }
+
+    /** Resolve through a caller-provided case-insensitive source→target map. */
+    public static BigDecimal convert(BigDecimal raw, String sourceUnit, String targetUnit,
+                                     Map<String, BigDecimal> directedFactors) {
+        if (raw == null || sourceUnit == null || targetUnit == null) return raw;
+        String source = normalize(sourceUnit), target = normalize(targetUnit);
+        if (source.isEmpty() || target.isEmpty() || source.equals(target)) return raw;
+        if (directedFactors == null) return raw;
+        BigDecimal f = directedFactors.get(source + "\u0000" + target);
+        return convert(raw, f);
     }
 
     /** 字段取值键：name 优先，回退 key（与各引擎 fieldName 口径一致）。 */
@@ -84,6 +141,7 @@ public final class UnitConversion {
      * 用于 parseEffectiveRows / backfillSubtotalsFromResolved 等 Object 行。
      */
     public static Map<String, Object> convertObjectRow(JsonNode fields, Map<String, Object> row) {
+        if (row != null && Boolean.TRUE.equals(row.get("__unitConverted"))) return row;
         Map<String, String> cols = configuredColumns(fields);
         if (cols.isEmpty() || row == null) return row;
         Map<String, Object> out = new LinkedHashMap<>(row);
@@ -92,7 +150,15 @@ public final class UnitConversion {
             BigDecimal raw = toBig(row.get(c));
             if (raw == null) continue;
             Object dv = row.get(d);
-            BigDecimal factor = factorFor(dv == null ? null : dv.toString());
+            Object targetObj = row.get("__settlementUnit");
+            if (targetObj == null) targetObj = row.get("settlementUnit");
+            if (targetObj == null) targetObj = row.get("settlement_unit");
+            // A missing customer settlement/pricing target means no conversion.
+            // Legacy source-only factors remain available through factorFor for
+            // explicit compatibility callers, never through business row paths.
+            BigDecimal factor = targetObj == null
+                    ? BigDecimal.ONE
+                    : convert(BigDecimal.ONE, dv == null ? null : dv.toString(), targetObj.toString());
             out.put(c, raw.multiply(factor));
         }
         return out;
@@ -102,6 +168,7 @@ public final class UnitConversion {
      * 返回换算后新 JsonNode 行（原 mergedRow 不变）。用于 FormulaCalculator.computeRows。
      */
     public static Map<String, JsonNode> convertNodeRow(JsonNode fields, Map<String, JsonNode> mergedRow) {
+        if (mergedRow != null && Boolean.TRUE.equals(mergedRow.get("__unitConverted"))) return mergedRow;
         Map<String, String> cols = configuredColumns(fields);
         if (cols.isEmpty() || mergedRow == null) return mergedRow;
         Map<String, JsonNode> out = new LinkedHashMap<>(mergedRow);
@@ -112,7 +179,11 @@ public final class UnitConversion {
             BigDecimal raw = toBig(cn.isNumber() ? cn.numberValue() : cn.asText());
             if (raw == null) continue;
             JsonNode dn = mergedRow.get(d);
-            BigDecimal factor = factorFor(dn == null ? null : dn.asText());
+            JsonNode target = mergedRow.get("__settlementUnit");
+            if (target == null) target = mergedRow.get("settlementUnit");
+            BigDecimal factor = target == null
+                    ? BigDecimal.ONE
+                    : convert(BigDecimal.ONE, dn == null ? null : dn.asText(), target.asText());
             out.put(c, DecimalNode.valueOf(raw.multiply(factor)));
         }
         return out;
@@ -132,7 +203,10 @@ public final class UnitConversion {
         for (Map.Entry<String, String> e : cols.entrySet()) {
             String c = e.getKey(), d = e.getValue();
             Object unitObj = currentRowRaw != null ? currentRowRaw.get(d) : null;
-            BigDecimal factor = factorFor(unitObj == null ? null : unitObj.toString());
+            Object targetObj = currentRowRaw == null ? null : currentRowRaw.get("__settlementUnit");
+            BigDecimal factor = targetObj == null
+                    ? BigDecimal.ONE
+                    : convert(BigDecimal.ONE, unitObj == null ? null : unitObj.toString(), targetObj.toString());
             if (factor.compareTo(BigDecimal.ONE) == 0) continue;
             if (fieldValues != null) {
                 BigDecimal cv = fieldValues.get(c);

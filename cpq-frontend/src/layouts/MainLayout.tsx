@@ -147,6 +147,7 @@ const allMenuItems: MenuItem[] = [
       { key: '/system/notifications', label: '通知列表', roles: ALL_ROLES },
       { key: '/system/operation-logs', label: '操作日志', roles: ['SALES_MANAGER', 'SYSTEM_ADMIN'] },
       { key: '/system/currencies', label: '币种管理', roles: ['SYSTEM_ADMIN', 'PRICING_MANAGER'] },
+      { key: '/system/units', label: '单位管理', roles: ['SYSTEM_ADMIN'] },
     ],
   },
 ];

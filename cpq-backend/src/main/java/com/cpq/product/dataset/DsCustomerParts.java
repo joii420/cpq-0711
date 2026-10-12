@@ -45,6 +45,7 @@ public class DsCustomerParts {
 
     /** 一行客户料号。字段名与 {@code productHubTypes.ts} 的 {@code CustomerPartItem} 逐字对齐。 */
     public static class Item {
+        public Long id;
         public String customerNo;
         /**
          * 由后端 {@code LEFT JOIN customer c ON c.code = t.customer_no} 得出。
@@ -65,6 +66,8 @@ public class DsCustomerParts {
         public String taxCategoryName;
         /** 当前报价日期可用 VAT 百分比，以字符串保留精度。 */
         public String vatRate;
+        public String settlementUnit;
+        public Integer version;
     }
 
     /** 总行数（服务端 {@code COUNT(*)}，与分页无关）。 */

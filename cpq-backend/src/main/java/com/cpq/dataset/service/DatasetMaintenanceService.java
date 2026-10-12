@@ -147,6 +147,7 @@ public class DatasetMaintenanceService {
         boolean hasCustomerFilter = hasCustomer && customerNo != null && !customerNo.isBlank();
         // VAT 只属于报价数据集的销售产品主记录；核价数据集没有客户/销售产品维度。
         boolean hasVat = "quote".equals(reg.datasetKey());
+        boolean hasPricingUnit = hasNonAxisColumn(reg, "pricing_unit");
         int pg = Math.max(0, page);
         int sz = Math.min(Math.max(1, size), 200);
         boolean hasKw = keyword != null && !keyword.isBlank();
@@ -213,6 +214,7 @@ public class DatasetMaintenanceService {
         Query pq = em.createNativeQuery(
             "SELECT m." + axis + ", m.material_name, m.specification, m.dimension, m.old_material_no,"
                 + " m.unit_weight, COALESCE(a.c, 0), " + lastUpdated
+                + (hasPricingUnit ? ", m.pricing_unit" : "")
                 + (hasProductionNo ? ", m.production_no" : "")
                 + (hasMaterialType ? ", m.material_type" : "")
                 + (hasCategory ? ", m.category_code, pc.name" : "")
@@ -243,6 +245,7 @@ public class DatasetMaintenanceService {
             // ⚠️ 动态列的下标必须按「实际被拼进 SELECT 的顺序」递进，
             //    不能各自写死常量 —— 再加一个动态列时写死的下标会静默错位（取到隔壁列的值）。
             int dyn = 8;
+            if (hasPricingUnit) it.putPricingUnit(str(r[dyn++]));
             if (hasProductionNo) it.putProductionNo(str(r[dyn++]));
             if (hasMaterialType) it.putMaterialType(str(r[dyn++]));
             if (hasCategory) {

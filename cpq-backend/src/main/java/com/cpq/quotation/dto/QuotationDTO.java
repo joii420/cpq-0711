@@ -207,6 +207,8 @@ public class QuotationDTO {
         public String customerPartName;
         public String customerProductNo;
         public String customerDrawingNo;
+        /** Customer product settlement target; null means unit values pass through. */
+        public String settlementUnit;
         // 产品卡片「生产料号」浮层——task-260910 B-2 起走 ds_quote_material → 两张核价表 union
         public HfPartInfo hfPartInfo;
         public String productAttributeValues;
@@ -326,6 +328,8 @@ public class QuotationDTO {
         public String specification;
         public String sizeInfo;
         public String oldMaterialNo;
+        public String basicPricingUnit;
+        public String detailPricingUnit;
     }
 
     public static class ProcessDTO {

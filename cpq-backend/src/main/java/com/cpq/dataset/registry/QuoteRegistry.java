@@ -92,7 +92,8 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
                 col("customer_part_name", "客户料号名称", "VALUE", "STRING", "varchar(256)", false, false),
                 col("customer_product_no", "客户产品编号", "SUBDIM", "STRING", "varchar(128)", true, false),
                 col("customer_drawing_no", "客户图号", "VALUE", "STRING", "varchar(128)", false, false),
-                col("material_no", "销售料号", "VALUE", "STRING", "varchar(128)", true, false)
+                col("material_no", "销售料号", "VALUE", "STRING", "varchar(128)", true, false),
+                col("settlement_unit", "结算单位", "VALUE", "STRING", "varchar(32)", false, false)
         )));
 
         // ── 03 · sheet「物料BOM」 → ds_quote_material_bom（带版本）

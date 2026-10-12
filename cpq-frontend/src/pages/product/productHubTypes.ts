@@ -177,6 +177,7 @@ export interface VersionsResult {
 // ── 客户产品列表（GET /dataset/{dataset}/customer-parts · api.md §2 缺口1）───
 
 export interface CustomerPartItem {
+  id?: number | string;
   customerNo: string;
   /**
    * 后端 LEFT JOIN `customer.code` 得出。
@@ -192,6 +193,8 @@ export interface CustomerPartItem {
   taxCategoryId?: string | null;
   taxCategoryName?: string | null;
   vatRate?: string | null;
+  settlementUnit?: string | null;
+  version?: number;
 }
 
 export interface CustomerPartListResult {

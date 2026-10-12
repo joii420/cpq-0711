@@ -2238,6 +2238,8 @@ public class CardSnapshotService {
          * （仅依赖 templateId，跨行同值）。key 缺失=未预取→回落逐行查。
          */
         final Map<UUID, List<Object[]>> driverCompsByTemplate;
+        final Map<UUID, String> settlementUnitByLine;
+        final Map<UUID, String> basicPricingUnitByLine;
         /**
          * task-260825 D-3：建单时冻结的报价卡结构（{@code quotation_view_structure.kind=QUOTE_CARD}
          * 的 {@code tabs} 数组）。按 quotationId 整单一次查（{@link #loadFrozenQuoteTabs}），取代
@@ -2247,12 +2249,15 @@ public class CardSnapshotService {
          */
         final JsonNode frozenQuoteTabs;
         CardValuesPrefetch(Map<UUID, JsonNode> t, Map<UUID, List<Object[]>> c, Map<String, JsonNode> rkf,
-                           Map<UUID, List<Object[]>> dc, JsonNode frozenQuoteTabs) {
+                           Map<UUID, List<Object[]>> dc, JsonNode frozenQuoteTabs, Map<UUID, String> settlementUnits,
+                           Map<UUID, String> basicPricingUnits) {
             this.templateSnapshotById = t;
             this.compDataByLine = c;
             this.rowKeyFieldsByComp = rkf;
             this.driverCompsByTemplate = dc;
             this.frozenQuoteTabs = frozenQuoteTabs;
+            this.settlementUnitByLine = settlementUnits;
+            this.basicPricingUnitByLine = basicPricingUnits;
         }
     }
 
@@ -2266,6 +2271,8 @@ public class CardSnapshotService {
         Map<UUID, List<Object[]>> byLine = new HashMap<>();
         Map<String, JsonNode> rkfByComp = new HashMap<>();
         Map<UUID, List<Object[]>> driverCompsByTpl = new HashMap<>();
+        Map<UUID, String> settlementUnits = new HashMap<>();
+        Map<UUID, String> basicPricingUnits = new HashMap<>();
         // task-260825 D-3：冻结报价卡结构整单一次查（quotationId 恒定，取代 buildCardValues 逐行查）。
         // loadFrozenQuoteTabs 内部已捕获异常返回 null，本处不需要再包 try。
         JsonNode frozenQuoteTabs = loadFrozenQuoteTabs(quotationId);
@@ -2281,6 +2288,23 @@ public class CardSnapshotService {
             // F1(方案 B)：从两份模板 snapshot 收集 distinct componentId，整单一次 IN 查 row_key_fields。
             prefetchRowKeyFields(tplById, rkfByComp);
             if (lineItemIds != null && !lineItemIds.isEmpty()) {
+                @SuppressWarnings("unchecked")
+                List<Object[]> unitRows = em.createNativeQuery(
+                    "SELECT li.id, cp.settlement_unit FROM quotation_line_item li "
+                  + "JOIN quotation q ON q.id=li.quotation_id JOIN customer c ON c.id=q.customer_id "
+                  + "LEFT JOIN LATERAL (SELECT x.settlement_unit FROM ds_quote_customer_part x "
+                  + "WHERE x.customer_no=c.code AND (x.customer_product_no=li.customer_part_no OR x.material_no=li.product_part_no_snapshot) "
+                  + "ORDER BY CASE WHEN x.customer_product_no=li.customer_part_no THEN 0 ELSE 1 END, x.id LIMIT 1) cp ON TRUE "
+                  + "WHERE li.id IN (:ids)")
+                    .setParameter("ids", lineItemIds).getResultList();
+                for (Object[] r : unitRows) if (r[0] != null && r[1] != null) settlementUnits.put((UUID) r[0], r[1].toString());
+                @SuppressWarnings("unchecked")
+                List<Object[]> pricingRows = em.createNativeQuery(
+                    "SELECT li.id, b.pricing_unit FROM quotation_line_item li JOIN quotation q ON q.id=li.quotation_id "
+                  + "JOIN customer c ON c.id=q.customer_id JOIN ds_quote_material m ON m.customer_no=c.code AND m.material_no=li.product_part_no_snapshot "
+                  + "LEFT JOIN ds_cost_basic_material b ON b.production_no=m.production_no WHERE li.id IN (:ids)")
+                    .setParameter("ids", lineItemIds).getResultList();
+                for (Object[] r : pricingRows) if (r[0] != null && r[1] != null) basicPricingUnits.put((UUID) r[0], r[1].toString());
                 @SuppressWarnings("unchecked")
                 List<Object[]> rows = em.createNativeQuery(
                     "SELECT line_item_id, component_id, snapshot_rows, deleted_row_keys, row_data " +
@@ -2300,7 +2324,7 @@ public class CardSnapshotService {
         } catch (Exception e) {
             LOG.warnf("[card-snapshot] precomputeCardValuesPrefetch failed quotation=%s: %s", quotationId, e.getMessage());
         }
-        return new CardValuesPrefetch(tplById, byLine, rkfByComp, driverCompsByTpl, frozenQuoteTabs);
+        return new CardValuesPrefetch(tplById, byLine, rkfByComp, driverCompsByTpl, frozenQuoteTabs, settlementUnits, basicPricingUnits);
     }
 
     /**
@@ -2571,6 +2595,10 @@ public class CardSnapshotService {
                 if (!prunedNodeIds.isEmpty()) rows = filterPrunedTreeRows(rows, prunedNodeIds);
                 baseRowsByComp.put(cid, rows);
             }
+            String liveSettlementUnit = prefetch != null && prefetch.settlementUnitByLine != null
+                ? prefetch.settlementUnitByLine.get(li.id) : resolveSettlementUnit(li);
+            String settlementUnit = frozenTargetOrCurrent(li, "__settlementUnit", liveSettlementUnit);
+            injectBusinessTarget(baseRowsByComp, "__settlementUnit", settlementUnit);
             injectExchangeRate(baseRowsByComp, li.quotationId);
 
             // 4. 组装 tabs（Task 3: 填 formulaResults；报价侧传真实墓碑）
@@ -2583,6 +2611,7 @@ public class CardSnapshotService {
                 prefetch != null ? prefetch.rowKeyFieldsByComp : null,
                 buildProductAttributesContext(li, li.quotationId, templateId),
                 rowDataByCompId);
+            if (settlementUnit != null && !settlementUnit.isBlank()) root.put("__settlementUnit", settlementUnit);
 
             return MAPPER.writeValueAsString(root);
 
@@ -2807,6 +2836,10 @@ public class CardSnapshotService {
                 baseRowsByComp = expandFlatDriverBaseRows(costingTemplateId, li, customerId, quotationId,
                     unionByComp, driverCompsPrefetch);
             }
+            String livePricingUnit = prefetch != null && prefetch.basicPricingUnitByLine != null
+                ? prefetch.basicPricingUnitByLine.get(li.id) : resolveBasicPricingUnit(li, customerId);
+            String pricingUnit = frozenTargetOrCurrent(li, "__pricingUnit", livePricingUnit);
+            injectBusinessTarget(baseRowsByComp, "__pricingUnit", pricingUnit);
             injectExchangeRate(baseRowsByComp, quotationId);
 
             // 5. 组装 tabs（Task 3: 填 formulaResults；核价侧 editRows 恒空）
@@ -2816,6 +2849,7 @@ public class CardSnapshotService {
             ObjectNode root = assembleTabsWithFormulaResults(snapshot, baseRowsByComp, null, null, null,
                 prefetch != null ? prefetch.rowKeyFieldsByComp : null,
                 buildProductAttributesContext(li, quotationId, costingTemplateId));
+            if (pricingUnit != null && !pricingUnit.isBlank()) root.put("__pricingUnit", pricingUnit);
 
             return MAPPER.writeValueAsString(root);
 
@@ -2850,6 +2884,64 @@ public class CardSnapshotService {
                 rows.set(i, objectRow);
             }
         }
+    }
+
+    /** Inject the current/frozen business target into each row without changing user fields. */
+    private void injectBusinessTarget(Map<String, ArrayNode> rowsByComponent, String key, String target) {
+        if (rowsByComponent == null || target == null || target.isBlank()) return;
+        for (ArrayNode rows : rowsByComponent.values()) {
+            if (rows == null) continue;
+            for (int i = 0; i < rows.size(); i++) {
+                JsonNode row = rows.get(i);
+                if (!(row instanceof ObjectNode original)) continue;
+                ObjectNode copy = original.deepCopy();
+                copy.put(key, target);
+                rows.set(i, copy);
+            }
+        }
+    }
+
+    /** Quote-side target: customer product settlement unit, with material fallback for old lines. */
+    private String resolveSettlementUnit(QuotationLineItem li) {
+        if (li == null || li.quotationId == null) return null;
+        Object v = em.createNativeQuery(
+                "SELECT cp.settlement_unit FROM quotation q JOIN customer c ON c.id=q.customer_id "
+              + "JOIN ds_quote_customer_part cp ON cp.customer_no=c.code "
+              + "WHERE q.id=:qid AND (cp.customer_product_no=:cpn OR cp.material_no=:mn) "
+              + "ORDER BY CASE WHEN cp.customer_product_no=:cpn THEN 0 ELSE 1 END, cp.id LIMIT 1")
+                .setParameter("qid", li.quotationId)
+                .setParameter("cpn", li.customerPartNo == null ? "" : li.customerPartNo)
+                .setParameter("mn", li.productPartNoSnapshot == null ? "" : li.productPartNoSnapshot)
+                .getResultStream().findFirst().orElse(null);
+        return v == null ? null : v.toString();
+    }
+
+    /** Costing target for the root production number; BOM children deliberately keep this target. */
+    private String resolveBasicPricingUnit(QuotationLineItem li, UUID customerId) {
+        if (li == null || customerId == null || li.productPartNoSnapshot == null) return null;
+        Object v = em.createNativeQuery(
+                "SELECT b.pricing_unit FROM ds_quote_material m JOIN customer c ON c.code=m.customer_no "
+              + "LEFT JOIN ds_cost_basic_material b ON b.production_no=m.production_no "
+              + "WHERE c.id=:cid AND m.material_no=:mn AND m.production_no IS NOT NULL LIMIT 1")
+                .setParameter("cid", customerId).setParameter("mn", li.productPartNoSnapshot)
+                .getResultStream().findFirst().orElse(null);
+        return v == null ? null : v.toString();
+    }
+
+    /** Submitted/published cards keep the target captured in their value snapshot. */
+    private String frozenTargetOrCurrent(QuotationLineItem li, String key, String current) {
+        if (li == null || li.quotationId == null) return current;
+        Quotation q = Quotation.findById(li.quotationId);
+        if (q != null && !"DRAFT".equalsIgnoreCase(q.status)) {
+            String json = key.contains("pricing") ? li.costingCardValues : li.quoteCardValues;
+            if (json != null) {
+                try {
+                    JsonNode n = MAPPER.readTree(json).get(key);
+                    if (n != null && !n.isNull() && !n.asText().isBlank()) return n.asText();
+                } catch (Exception ignored) { }
+            }
+        }
+        return current;
     }
 
     // =========================================================================
@@ -3619,6 +3711,14 @@ public class CardSnapshotService {
                 if (!priceVersion.isMissingNode() && !priceVersion.isNull()) {
                     resolvedRow.put("__priceVersion", priceVersion.asText());
                 }
+            }
+            JsonNode businessTarget = br.get("__settlementUnit");
+            if (businessTarget == null) businessTarget = br.get("__pricingUnit");
+            if (businessTarget != null && !businessTarget.isNull() && !businessTarget.asText().isBlank()) {
+                if (!(resolvedRow instanceof java.util.LinkedHashMap))
+                    resolvedRow = new java.util.LinkedHashMap<>(resolvedRow);
+                resolvedRow.put("__settlementUnit", businessTarget.asText());
+                resolvedRow.put("__unitConverted", true);
             }
             out.add(resolvedRow);
             ri++;

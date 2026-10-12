@@ -126,6 +126,11 @@ public final class DsPartsPage {
             dynamic.put("vatRate", value);
         }
 
+        /** 核价物料的独立计价单位；基础/详细数据集各自读取本表字段。 */
+        public void putPricingUnit(String value) {
+            dynamic.put("pricingUnit", value);
+        }
+
         @JsonAnyGetter
         public Map<String, Object> getDynamic() {
             return dynamic;

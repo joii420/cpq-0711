@@ -1,100 +1,64 @@
 package com.cpq.engine.unit;
 
 import org.junit.jupiter.api.Test;
-import java.math.BigDecimal;
-import java.util.*;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.TextNode;
-import static org.junit.jupiter.api.Assertions.*;
 
+import java.math.BigDecimal;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
+/** AC-2/AC-4~AC-6/AC-12 directed conversion contract. */
 class UnitConversionTest {
 
-    @Test
-    void factorFor_allPresetUnits() {
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("克")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("g")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("G")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("千克")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("KG")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("kG")));
-        assertEquals(0, new BigDecimal("1000").compareTo(UnitConversion.factorFor("吨")));
-        assertEquals(0, new BigDecimal("1000").compareTo(UnitConversion.factorFor("t")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("片")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("pcs")));
-        // KPCS / 千片：2026-07-28 业务修订为「每千片 → 每片」÷1000（原 ×1000）。中英别名必须同值。
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("KPCS")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("kpcs")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("千片")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("g/PCS")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("G/pcs")));
-        // KG/KPCS 与 G/PCS 数学等价（1 kg/千片 = 1 g/片），系数必须相等。
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("KG/KPCS")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor("kg/kpcs")));
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor(" kg / KPCS ")));
-        assertEquals(0, UnitConversion.factorFor("KG/KPCS").compareTo(UnitConversion.factorFor("G/PCS")));
-        assertEquals(0, new BigDecimal("0.000001").compareTo(UnitConversion.factorFor("g/KPCS")));
-        assertEquals(0, new BigDecimal("0.000001").compareTo(UnitConversion.factorFor("G/kpcs")));
-    }
-
-    /** 中英别名必须同系数，否则同一行换个写法结果就变（KPCS/千片 相差 100 万倍是最易踩的坑）。 */
-    @Test
-    void factorFor_aliasPairs_areConsistent() {
-        assertEquals(0, UnitConversion.factorFor("KPCS").compareTo(UnitConversion.factorFor("千片")));
-        assertEquals(0, UnitConversion.factorFor("KG").compareTo(UnitConversion.factorFor("千克")));
-        assertEquals(0, UnitConversion.factorFor("G").compareTo(UnitConversion.factorFor("克")));
-        assertEquals(0, UnitConversion.factorFor("T").compareTo(UnitConversion.factorFor("吨")));
-        assertEquals(0, UnitConversion.factorFor("PCS").compareTo(UnitConversion.factorFor("片")));
+    private static void assertDecimal(String expected, BigDecimal actual) {
+        assertEquals(0, new BigDecimal(expected).compareTo(actual));
     }
 
     @Test
-    void factorFor_unknownOrBlank_returnsOne() {
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("mm")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("")));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor(null)));
-        assertEquals(0, BigDecimal.ONE.compareTo(UnitConversion.factorFor("  ")));
+    void quantityRelations_areDirectedAndCaseInsensitive() {
+        assertDecimal("2", UnitConversion.convert(new BigDecimal("2000"), "pcs", "KPCS"));
+        assertDecimal("2000", UnitConversion.convert(new BigDecimal("2"), "kpcs", "pcs"));
+        assertDecimal("2", UnitConversion.convert(new BigDecimal("2"), "PCS", "pcs"));
+        assertDecimal("2", UnitConversion.convert(new BigDecimal("2"), "ea", "EA"));
     }
 
     @Test
-    void factorFor_normalizesWhitespaceAndCase() {
-        assertEquals(0, new BigDecimal("0.001").compareTo(UnitConversion.factorFor(" g / PCS ")));
-    }
-
-    private static final ObjectMapper M = new ObjectMapper();
-
-    private JsonNode fieldsJson() throws Exception {
-        return M.readTree("[" +
-            "{\"name\":\"重量\",\"field_type\":\"INPUT_NUMBER\",\"unit_source_field\":\"单位\"}," +
-            "{\"name\":\"单位\",\"field_type\":\"INPUT_TEXT\"}," +
-            "{\"name\":\"数量\",\"field_type\":\"INPUT_NUMBER\"}]");
+    void weightRelations_includeGramKilogramTonAndOunce() {
+        assertDecimal("1", UnitConversion.convert(new BigDecimal("1000"), "g", "kg"));
+        assertDecimal("1", UnitConversion.convert(new BigDecimal("1000"), "kg", "t"));
+        assertDecimal("28.349523125", UnitConversion.convert(new BigDecimal("1"), "盎司", "g"));
+        assertDecimal("0.03527396194958", UnitConversion.convert(new BigDecimal("1"), "g", "盎司"));
     }
 
     @Test
-    void convertObjectRow_convertsConfiguredColumnByRowUnit() throws Exception {
-        Map<String,Object> row = new HashMap<>();
-        row.put("重量", "500"); row.put("单位", "g"); row.put("数量", new java.math.BigDecimal("3"));
-        Map<String,Object> out = UnitConversion.convertObjectRow(fieldsJson(), row);
-        assertEquals(0, new BigDecimal("0.5").compareTo(new BigDecimal(out.get("重量").toString())));
-        assertEquals("g", out.get("单位"));
-        assertEquals(3, ((Number) out.get("数量")).intValue());
-        assertEquals("500", row.get("重量")); // 原 row 未被 mutate
+    void sameUnit_isImplicitIdentity() {
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "Pcs", "PCS"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "kg", "KG"));
     }
 
     @Test
-    void convertObjectRow_unknownUnit_passthrough() throws Exception {
-        Map<String,Object> row = new HashMap<>();
-        row.put("重量", "500"); row.put("单位", "mm");
-        Map<String,Object> out = UnitConversion.convertObjectRow(fieldsJson(), row);
-        assertEquals(0, new BigDecimal("500").compareTo(new BigDecimal(out.get("重量").toString())));
+    void crossCategory_unknownChineseAndCompound_passthrough() {
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "kg", "PCS"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "PCS", "kg"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "克", "kg"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "G/PCS", "kg"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "g", "G/PCS"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "mm", "kg"));
     }
 
     @Test
-    void convertNodeRow_convertsConfiguredColumn() throws Exception {
-        Map<String,JsonNode> row = new HashMap<>();
-        row.put("重量", new TextNode("2"));
-        row.put("单位", new TextNode("吨"));
-        Map<String,JsonNode> out = UnitConversion.convertNodeRow(fieldsJson(), row);
-        assertEquals(0, new BigDecimal("2000").compareTo(out.get("重量").decimalValue()));
-        assertEquals("吨", out.get("单位").asText());
+    void nullOrBlankUnits_areNonBlocking() {
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), null, "kg"));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "g", null));
+        assertDecimal("12.5", UnitConversion.convert(new BigDecimal("12.5"), "", "kg"));
+    }
+
+    @Test
+    void businessRowConversion_withoutTarget_isIdentity() throws Exception {
+        var fields = new com.fasterxml.jackson.databind.ObjectMapper().readTree(
+                "[{\"name\":\"重量\",\"unit_source_field\":\"单位\"}]" );
+        var row = new java.util.LinkedHashMap<String, Object>();
+        row.put("重量", "1000");
+        row.put("单位", "g");
+        assertDecimal("1000", (BigDecimal) UnitConversion.convertObjectRow(fields, row).get("重量"));
     }
 }

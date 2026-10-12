@@ -199,6 +199,10 @@ export interface ComponentDataItem {
   elementCodeField?: string;
   elementPriceField?: string;
   elementCurrencyField?: string;
+  /** Runtime target unit supplied by the owning customer/production line. */
+  targetUnit?: string | null;
+  /** Costing component dialect; keeps basic/detail pricing units independent. */
+  dialect?: string;
 }
 
 export interface LineItem {
@@ -216,12 +220,18 @@ export interface LineItem {
    *  → ds_cost_basic_material ∪ ds_cost_detail_material。
    *  🚫 统一契约变更：删 statusCode、加 oldMaterialNo（后端 QuotationDTO.HfPartInfo 同步）。
    *  hfPartInfo 为空 / partNo 为空 = 该销售料号未绑定生产料号。 */
+  settlementUnit?: string | null;
+  pricingUnit?: string | null;
+  basicPricingUnit?: string | null;
+  detailPricingUnit?: string | null;
   hfPartInfo?: {
     partNo?: string;
     partName?: string;
     specification?: string;
     sizeInfo?: string;
     oldMaterialNo?: string;
+    basicPricingUnit?: string | null;
+    detailPricingUnit?: string | null;
   };
   templateId: string;
   productAttributeValues: Record<string, any>;
@@ -814,7 +824,7 @@ function computeAllFormulas(
       const C = f.name || f.key || '';
       if (!C) continue;
       const unitText = currentRowForEval[usf] ?? (baseRow as any)[usf];
-      const factor = factorFor(unitText == null ? '' : String(unitText));
+      const factor = factorFor(unitText == null ? '' : String(unitText), comp.targetUnit);
       if (factor === '1') continue;
       if (fieldValues[C] != null) {
         fieldValues[C] = normalizeDecimalString(toDecimal(fieldValues[C]).times(factor));
@@ -1163,7 +1173,7 @@ function resolveRowForTree(
       const C = f.name || f.key || '';
       if (!C) continue;
       const unitText = currentRowForEval[usf] ?? (baseRow as any)[usf];
-      const factor = factorFor(unitText == null ? '' : String(unitText));
+      const factor = factorFor(unitText == null ? '' : String(unitText), comp.targetUnit);
       if (factor === '1') continue;
       if (fieldValues[C] != null) {
         fieldValues[C] = normalizeDecimalString(toDecimal(fieldValues[C]).times(factor));
@@ -1580,12 +1590,13 @@ function sumColumnsCanonical(
   fields: ComponentField[],
   rows: Array<Record<string, any>>,
   colFilter: (f: ComponentField) => boolean,
+  targetUnit?: string | null,
 ): DecimalContext {
   const targetFields = fields.filter(colFilter);
   const result: DecimalContext = {};
   if (targetFields.length === 0) return result;
 
-  const convRows = rows.map((r) => applyUnitConversion(fields as any, r));
+  const convRows = rows.map((r) => applyUnitConversion(fields as any, r, targetUnit));
   for (const f of targetFields) {
     const colName: string = f.name || (f as any).key || '';
     if (!colName) continue;
@@ -1725,7 +1736,7 @@ export function buildCrossTabRows(
   // 仅换喂 store 的副本——subtotalsFromResolvedRows 收原始 rows 自行内部换算，落库 resolvedRows 另走快照通道，
   // 三者各换各的副本，互不双重换算（与后端 CardSnapshotService crossTabRows.put 换算副本对称）。
   const putCrossTab = (cid: string, comp: ComponentDataItem, rows: Array<Record<string, any>>) => {
-    const ctRows = rows.map(r => applyUnitConversion(comp.fields as any, r));
+    const ctRows = rows.map(r => applyUnitConversion(comp.fields as any, r, comp.targetUnit));
     // task-0803（2026-08-04）：树页签的源行副本注入三个树属性，让 SUMIF 族条件能写
     // SUMIF([物料BOM.是否叶子]=1, [物料BOM.金额]) —— 只聚合源页签里是叶子的那些行。
     // 逐位镜像后端 CardSnapshotService.injectTreeAttrsForCrossTab（含「同名列被覆盖是刻意的」口径）。
@@ -1761,6 +1772,7 @@ export function buildCrossTabRows(
         const ft = f.field_type;
         return ft === 'INPUT_NUMBER' || ft === 'FORMULA' || ft === 'DATA_SOURCE';
       },
+      comp.targetUnit,
     );
     if (Object.keys(colSums).length === 0) return;
     // 写入三键（componentId / componentCode / tabName），三键共享同一只读对象引用
@@ -1826,7 +1838,7 @@ export function subtotalsFromResolvedRows(
   // sumColumnsCanonical 内部已做 is_subtotal 过滤、applyUnitConversion canonical 换算，
   // 十进制精确累加（task-0801：不再中途 4dp 舍入）。
   // 若无 is_subtotal 列，colSums 为空对象，下方循环不执行（与原有 early-return 语义一致）。
-  const colSums = sumColumnsCanonical(comp.fields ?? [], rows, (f) => !!f.is_subtotal);
+  const colSums = sumColumnsCanonical(comp.fields ?? [], rows, (f) => !!f.is_subtotal, comp.targetUnit);
   if (Object.keys(colSums).length === 0) return;
 
   const keys = componentKeys(comp);
@@ -1983,6 +1995,15 @@ function computeTabSubtotal(
   return toCalculationString(sumDecimal(Object.values(byCol)));
 }
 
+function targetUnitFor(item: LineItem, component?: ComponentDataItem): string | null | undefined {
+  if (item.settlementUnit) return item.settlementUnit;
+  if (item.pricingUnit) return item.pricingUnit;
+  if (component?.dialect?.toUpperCase() === 'COST_DETAIL') {
+    return item.detailPricingUnit ?? item.hfPartInfo?.detailPricingUnit ?? null;
+  }
+  return item.basicPricingUnit ?? item.hfPartInfo?.basicPricingUnit ?? null;
+}
+
 /**
  * PASS1：遍历 NORMAL 组件，按 componentId/componentCode/tabName 三键登记各页签小计。
  * ⚠️ 纯 PASS1 口径：computeAllFormulas 不带 crossTabRows/previousRowValues —— cross_tab_ref
@@ -2000,6 +2021,7 @@ export function getComponentSubtotals(
 ): DecimalContext {
   const componentSubtotals: DecimalContext = {};
   if (!item.componentData) return componentSubtotals;
+  const targetComponents = item.componentData.map((comp) => ({ ...comp, targetUnit: targetUnitFor(item, comp) }));
   const partNo = item.productPartNo;
   // V203/Phase B: 必须传 comp.dataDriverPath 才能区分同 componentId 不同 driver 的两个组件实例
   // V196 (2026-05-19): 加 fieldsHash 维度区分同 cid 同 driver 不同 fields_override 的两个 Tab
@@ -2010,7 +2032,7 @@ export function getComponentSubtotals(
     const k = driverExpansionKey(lineItemId, partNo, comp.componentId, customerId, comp.dataDriverPath, fieldsOverrideHash(comp.fields as any[]));
     return driverExpansions[k];
   };
-  for (const comp of item.componentData) {
+  for (const comp of targetComponents) {
     if (!comp?.fields || comp.componentType !== 'NORMAL') continue;
     // 按列求小计：既写整组件三键，又写 `key#列名` 列键 —— 使含同组件多列引用的产品小计公式
     // （如 [来料.材料成本]+[来料.材料损耗成本]）在求值与按列折扣时能区分到列
@@ -2088,6 +2110,7 @@ export function buildLineItemEvalContext(
 ): LineItemEvalContext {
   const subtotals = getComponentSubtotals(item, driverExpansions, customerId, globalVariableDefs);
   if (!item.componentData) return { subtotals, crossTabRows: {} };
+  const targetComponents = item.componentData.map((comp) => ({ ...comp, targetUnit: targetUnitFor(item, comp) }));
   const partNo = item.productPartNo;
   // lookupExpansion 与 PASS1 / 渲染层同源同维度（lineItemId+partNo+componentId+customerId+driverPath+fieldsHash）
   const lookupExpansion = (comp: ComponentDataItem) => {
@@ -2100,7 +2123,7 @@ export function buildLineItemEvalContext(
   // 抛错前已回填的部分保留 —— 与改造前 getComponentSubtotalsFull 语义逐字一致），
   // crossTabRows 退空对象（等价于改造前"根本没有 store"的旧行为），不崩折扣/保存链路。
   try {
-    const { store } = buildCrossTabRows(item.componentData, subtotals, partNo, lookupExpansion, globalVariableDefs,
+    const { store } = buildCrossTabRows(targetComponents, subtotals, partNo, lookupExpansion, globalVariableDefs,
       vatQuotationFields(item));
     return { subtotals, crossTabRows: store };
   } catch {
@@ -3098,7 +3121,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   //   并填充单元格, 但 Tab 头不再依赖展开数据决定显隐.
   const normalComponents = (item.componentData ?? [])
     .filter(c => c?.componentType === 'NORMAL');
-  const activeComponent = normalComponents[activeTab];
+  const activeComponentRaw = normalComponents[activeTab];
+  const activeComponent = activeComponentRaw
+    ? { ...activeComponentRaw, targetUnit: targetUnitFor(item, activeComponentRaw) }
+    : undefined;
 
   // Plan 1b：locateSeq 变化时切到目标 componentId 对应的 Tab（AP-54：normalComponents 下标）
   useEffect(() => {
@@ -3115,8 +3141,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // 因此必须把 normalComponents 下标映射回底层真实下标，否则编辑会写到错位的 Tab，
   // 受控 <input> 的 value 永远回退 → 表现为"文本/数字输入框无法输入字符"。
   // 用引用相等定位（filter 保留同一对象引用），activeComponent 不存在时退回 activeTab。
-  const activeComponentDataIndex = activeComponent
-    ? item.componentData.indexOf(activeComponent)
+  const activeComponentDataIndex = activeComponentRaw
+    ? item.componentData.indexOf(activeComponentRaw)
     : activeTab;
 
   // 当过滤后 activeTab 越界 → 钳到首个有效 tab,避免 Tab 列消失后头部空白
@@ -3148,7 +3174,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
   const allComponentSubtotals: DecimalContext = {};
   const lineVatFields = vatQuotationFields(item);
-  for (const comp of item.componentData) {
+  const targetComponents = item.componentData.map((comp) => ({ ...comp, targetUnit: targetUnitFor(item, comp) }));
+  for (const comp of targetComponents) {
     // partNo + driverExpansion 一起传给 computeTabSubtotal —— 让含 BASIC_DATA 字段的公式
     // 按 rowCount 迭代 driver 展开行，每行用各自的 basicDataValues。
     // 不传 driverExpansion 时会退化为按 comp.rows 迭代 + 全局 path cache（旧行为，含量取首值），
@@ -3182,7 +3209,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // cross_tab_ref (PASS2, 镜像后端 CardSnapshotService): 在 allComponentSubtotals (PASS1) 之后,
   // 按组件拓扑序构建兄弟组件已算行, 供本卡 FORMULA cross_tab_ref token 跨 Tab 取数聚合。
   const { store: crossTabRows, columnSumsByComp } = buildCrossTabRows(
-    item.componentData,
+    targetComponents,
     allComponentSubtotals,
     item.productPartNo,
     (comp) => {
@@ -4344,6 +4371,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
           rows,
           subtotal: matched?.subtotal || '0',
           dataDriverPath: sc.data_driver_path || sc.dataDriverPath || matched?.dataDriverPath,
+          dialect: sc.dialect || sc.builder_config?.dialect || sc.builderConfig?.dialect || matched?.dialect,
         } as ComponentDataItem;
       });
       // productAttributes 也一并替换为核价模板的 schema（产品属性区域显示与核价模板一致）

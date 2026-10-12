@@ -25,7 +25,9 @@ public final class SheetDef {
      * 但不能进入 Excel persistedColumns（否则历史导入模板会被要求增加隐藏列）。
      */
     public static final Map<String, String> INTERNAL_COLUMN_TYPES = Map.of(
-            "ds_quote_material.tax_category_id", "uuid"
+            "ds_quote_material.tax_category_id", "uuid",
+            // 结算单位编辑的并发控制版本；由数据库/写入器维护，不属于 Excel 业务列。
+            "ds_quote_customer_part.version", "integer"
     );
     /** 带版本表额外追加的两列（R-1）。 */
     public static final List<String> VERSION_COLUMNS = List.of("version_no", "row_fingerprint");

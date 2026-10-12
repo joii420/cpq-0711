@@ -96,6 +96,8 @@ export interface DatasetPartRow {
   dimension?: string | null;
   oldMaterialNo?: string | null;
   unitWeight?: string | null;
+  /** 核价物料表独立维护的计价单位；报价数据集不下发此键。 */
+  pricingUnit?: string | null;
   /**
    * 生产料号（api.md §3，2026-09-03 补）。
    * ⚠️ 仅 `dataset=quote` 有值；`cost-basic` / `cost-detail` 的物料表没有这一列，
