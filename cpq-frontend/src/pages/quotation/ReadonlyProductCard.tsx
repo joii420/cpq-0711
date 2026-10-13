@@ -627,6 +627,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           {lineItem.customerProductNo && (
             <span className="qt-sku-badge">客户产品编号: {lineItem.customerProductNo}</span>
           )}
+          {lineItem.settlementUnit && (
+            <span className="qt-sku-badge" title="该客户产品的结算单位">
+              结算单位: {lineItem.settlementUnit}
+            </span>
+          )}
           {lineItem.vatRate != null && (
             <span
               className="qt-vat-badge"
@@ -1126,7 +1131,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                 {/* Tab subtotal footer（对齐编辑页 QuotationStep2）
                     显示门槛：有任意 is_subtotal 列才显示 footer。
                     小计行：只对 is_subtotal 列求和（读 columnSumsByComp 单一来源）；非小计列一律留空。
-                           is_amount=true 显示 ¥ + 通用精度；否则纯数字（最多4位小数，去末尾0）。
+                           金额列与普通数值列均只显示原始计算值，不带货币单位。
                     本页签金额合计行：只汇总金额列(is_amount&&is_subtotal)，无金额列整行隐藏。
                 */}
                 {activeComp.fields.some(f => f.is_subtotal) && (
@@ -1145,11 +1150,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const isNumericCol = !!field.is_subtotal;
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? '0';
-                          // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：金额列 = ¥ + 通用精度（task-0801：改走 formatNumber DISPLAY_SCALE=6
-                          // 去尾零兜底，与编辑页 QuotationStep2 同款同口径，AP-50）
+                          // 页签内小计只展示原始计算值：不做汇率换算，也不显示货币单位。
                           const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
-                          const text = field.is_amount === true ? `¥ ${plain}` : plain;
+                          const text = plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
                               {text}
@@ -1178,7 +1181,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             if (fs[i].is_amount === true && fs[i].is_subtotal) { valueIdx = i; break; }
                           }
                           if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
-                          const totalText = `¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`;
+                          // 页签合计与小计同口径：保留原始数值，不做汇率换算、不显示货币单位。
+                          const totalText = formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0';
                           return fs.map((f, fi) => {
                             const k = f.name || f.key || fi;
                             if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;

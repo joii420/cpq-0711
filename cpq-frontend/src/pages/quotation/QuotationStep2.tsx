@@ -3278,6 +3278,11 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               客户产品编号: {highlightText(item.customerProductNo, highlightTerm)}
             </span>
           )}
+          {item.settlementUnit && (
+            <span className="qt-sku-badge" title="该客户产品的结算单位">
+              结算单位: {item.settlementUnit}
+            </span>
+          )}
           {item.vatRate != null && (
             <span
               className="qt-vat-badge"
@@ -4011,7 +4016,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                 {/* Tab subtotal footer
                     显示门槛：有任意 is_subtotal 列才显示 footer。
                     小计行：只对 is_subtotal 列求和（读 columnSumsByComp 单一来源）；非小计列一律留空。
-                           is_amount=true 显示 ¥ + 通用精度；否则纯数字（最多4位小数，去末尾0）。
+                           金额列与普通数值列均只显示原始计算值，不带货币单位。
                     本页签金额合计行：只汇总金额列(is_amount&&is_subtotal)，无金额列整行隐藏。
                 */}
                 {activeComponent.fields.some(f => f.is_subtotal) && (
@@ -4028,12 +4033,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         const isNumericCol = !!field.is_subtotal;
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? '0';
-                          // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：小计为计算值 → formatNumber 计算口径（未配 decimals 兜底 6 位去尾零，task-0801），金额列加 ¥ 前缀
+                          // 金额列与普通数值列均只显示原始计算值，不带货币单位。
                           const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
-                          const display = field.is_amount === true && cardSide === 'QUOTE' && quoteCurrency && quoteCurrency !== 'CNY' && quoteExchangeRate
-                            ? formatNumber(toDecimal(v).dividedBy(toDecimal(quoteExchangeRate)).toString(), { isComputed: true }) ?? '0' : plain;
-                          const text = field.is_amount === true ? `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${display}` : plain;
+                          // 页签内小计只展示原始计算值：不做报价汇率换算，也不显示货币单位。
+                          const text = plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
                               {text}
@@ -4068,10 +4071,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           }
                           if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
                           const total = sumTabColumns(activeComponent as any, allComponentSubtotals);
-                          const shownTotal = cardSide === 'QUOTE' && quoteCurrency && quoteCurrency !== 'CNY' && quoteExchangeRate
-                            ? formatNumber(toDecimal(total).dividedBy(toDecimal(quoteExchangeRate)).toString(), { isComputed: true }) ?? '0'
-                            : formatNumber(total, { isComputed: true }) ?? '0';
-                          const totalText = `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${shownTotal}`;
+                          // 页签合计与小计同口径：保留原始数值，不做汇率换算、不显示货币单位。
+                          const totalText = formatNumber(total, { isComputed: true }) ?? '0';
                           return fs.map((f, fi) => {
                             const k = f.name || f.key || fi;
                             if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
