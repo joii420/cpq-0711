@@ -42,3 +42,4 @@
 | 客户搜索大小写兼容 | PASS | `CustomerService` 查询统一使用 `LOWER(...) LIKE LOWER(:kw)`，覆盖名称、编码、联系人/电话 |
 | 前端回归 | PASS | `npm run build`；Vitest 112 个文件、1444 项测试 |
 | 后端回归 | PARTIAL | `./mvnw -q -DskipTests compile` 通过；全量 `mvn test` 3520 条中 273 failures、614 errors，主要为既有测试库连接回滚/历史契约失败，未作为本次改动通过依据 |
+| 前端 ESLint | BASELINE BLOCKED | 全工程 `npm run lint` 仍有项目既有 3847 errors/126 warnings（以 `any`、未使用变量等为主）；本次不将其作为门禁，类型检查、构建和 Vitest 结果有效 |
