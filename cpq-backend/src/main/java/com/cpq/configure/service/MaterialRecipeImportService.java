@@ -523,7 +523,7 @@ public class MaterialRecipeImportService {
             Comment comment = drawing.createCellComment(anchor);
             comment.setString(factory.createRichTextString(
                 "含量填 0–1 小数，最多 12 位；同一材质同一组号内相加=1。\n"
-                    + "组号只用于在本表内给同一材质分组（一个材质可有多组不同含量配比），不会存进系统。\n"
+                    + "组号只用于在本表内给同一材质分组（一个材质可有多组不同含量配比）；入库时由系统按历史水位生成新的配置组号。\n"
                     + "材质编号、配置编号与元素编号<b>不用填</b>：材质和配置由系统自动发号，元素须先在元素主数据中创建并启用。"));
             s.getRow(0).getCell(3).setCellComment(comment);
 
