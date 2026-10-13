@@ -39,4 +39,3 @@
 - 旧两 sheet 材质模板继续返回 `IMPORT_TEMPLATE_OUTDATED`。
 - 鉴权、xlsx MIME 和 20 MB 上限沿用现状。
 - 所有校验错误使用既有 `{ code, message, detail }` 包装，不返回未处理异常或数据库约束原文。
-
