@@ -3280,7 +3280,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
           )}
           {item.settlementUnit && (
             <span className="qt-sku-badge" title="该客户产品的结算单位">
-              结算单位: {item.settlementUnit}
+              [单位: {item.settlementUnit}]
             </span>
           )}
           {item.vatRate != null && (
