@@ -663,6 +663,13 @@ const QuotationWizard: React.FC = () => {
         customerPartName: li.customerPartName || '',
         customerProductNo: li.customerProductNo || '',
         customerDrawingNo: li.customerDrawingNo || '',
+        // 单位上下文由后端 DTO 随报价行返回；报价侧使用客户产品结算单位，
+        // 核价侧使用绑定生产料号的基础/详细计价单位。刷新报价单后也必须保留，
+        // 否则 UI 仍可能显示快照值，但前端重算会退回 legacy KPCS/PCS 因子。
+        settlementUnit: li.settlementUnit ?? null,
+        pricingUnit: li.pricingUnit ?? null,
+        basicPricingUnit: li.basicPricingUnit ?? li.hfPartInfo?.basicPricingUnit ?? null,
+        detailPricingUnit: li.detailPricingUnit ?? li.hfPartInfo?.detailPricingUnit ?? null,
         // 生产料号详情 —— 卡片右侧「销售料号」徽标浮层用。
         // task-260910(B-2)：后端已换源 ds_quote_material → ds_cost_basic/detail_material。
         hfPartInfo: li.hfPartInfo || undefined,
@@ -1937,6 +1944,10 @@ const QuotationWizard: React.FC = () => {
         customerPartName: li.customerPartName || '',
         customerProductNo: li.customerProductNo || '',
         customerDrawingNo: li.customerDrawingNo || '',
+        settlementUnit: li.settlementUnit ?? null,
+        pricingUnit: li.pricingUnit ?? null,
+        basicPricingUnit: li.basicPricingUnit ?? li.hfPartInfo?.basicPricingUnit ?? null,
+        detailPricingUnit: li.detailPricingUnit ?? li.hfPartInfo?.detailPricingUnit ?? null,
         hfPartInfo: li.hfPartInfo || undefined,
         templateId: li.templateId || customerTemplateId || '',
         // task-260910(F-6)：templateName 随「模板: xxx」徽标一并删除（不在 saveDraft payload 里）。

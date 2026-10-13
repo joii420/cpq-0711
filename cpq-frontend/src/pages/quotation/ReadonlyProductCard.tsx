@@ -3,7 +3,7 @@ import { Popover } from 'antd';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
 import {
   computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS,
-  computeTabFormulasTree, usesTreeTokensTab, type TreeFormulaRowInput,
+  computeTabFormulasTree, usesTreeTokensTab, targetUnitFor, type TreeFormulaRowInput,
 } from './QuotationStep2';
 import { enrichComponentData, buildComponentDataFromStructure } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
@@ -427,7 +427,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   //   模板 publish 时配置的全部 NORMAL 组件都展示, SUBTOTAL 仍单独走"产品小计".
   //   空 Tab 内部表格显示"暂无数据"占位 (走 Ant Design Table 默认 emptyText).
   //   这一改动同时修复 ReadonlyProductCard 与 QuotationStep2 Tab 数量不一致的问题.
-  const normalComponents = components
+  // 只读页也要把业务目标单位注入每个组件。若 targetUnit 缺失，
+  // unitConversion.ts 为兼容旧调用会使用 legacy KPCS→PCS=0.001，
+  // 于是行值与页签小计会出现 39.54034733 vs 0.039540347 的分叉。
+  const targetComponents = components.map(comp => ({
+    ...comp,
+    targetUnit: targetUnitFor(lineItem, comp, isCosting ? 'COSTING' : 'QUOTE'),
+  }));
+  const normalComponents = targetComponents
     .filter(c => (c as any)?.componentType === 'NORMAL');
   const activeComp = normalComponents[activeTab];
 
@@ -453,7 +460,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // 这也保证引用 [增值税] 的 [汇率] 等复合公式在详情页与编辑页同值。
   const lineVatFields = readonlyVatQuotationFields(lineItem);
   const compSubtotals: DecimalContext = {};
-  for (const comp of components) {
+  for (const comp of targetComponents) {
     if (!comp.fields) continue;
     // Plan 2-核心：多小计列 —— 取所有 is_subtotal 字段。
     const subtotalFields = comp.fields.filter((f: any) => f.is_subtotal);
@@ -502,7 +509,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // buildCrossTabRows 首行按 `c?.fields && c.componentType==='NORMAL'` 过滤会滤掉全部组件，
   // 导致 crossTabRows={} → 所有跨页签(cross_tab_ref)公式列/小计/总计求值为 0（详情页专有回归）。
   const { store: crossTabRows, columnSumsByComp } = buildCrossTabRows(
-    components,
+    targetComponents,
     compSubtotals,
     lineItem.productPartNo || undefined,
     (comp) => {
@@ -529,7 +536,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // B3: 传 compSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
   //   消除函数内 PASS1 重算双口径，保证详情页产品小计与渲染行同源。
   const productSubtotal = computeProductSubtotal(
-    { ...lineItem, componentData: components } as any,
+    { ...lineItem, componentData: targetComponents } as any,
     driverExpansions,
     customerId,
     compSubtotals,
@@ -1037,7 +1044,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               const key = field.name || '';
                               const showTrace = !!(quotationId && isTraceField(field));
                               // isDraft 已提升至组件顶层（task-0806 FR-1 复用同一份判定，见顶部声明处）。
-                              const compIndex = components.indexOf(activeComp);
+                              const compIndex = targetComponents.indexOf(activeComp);
                               const fieldPath = `lineItems[${index}].componentData[${compIndex}].rowData.${key}`;
                               const cellCtx: CellContext = {
                                 basicDataValues: rowBdv,

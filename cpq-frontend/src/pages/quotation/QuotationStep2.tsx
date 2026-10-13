@@ -1995,7 +1995,22 @@ function computeTabSubtotal(
   return toCalculationString(sumDecimal(Object.values(byCol)));
 }
 
-function targetUnitFor(item: LineItem, component?: ComponentDataItem): string | null | undefined {
+export function targetUnitFor(
+  item: LineItem,
+  component?: ComponentDataItem,
+  side?: 'QUOTE' | 'COSTING',
+): string | null | undefined {
+  // 报价与核价的目标单位是两条独立业务链：报价只读客户产品结算单位，
+  // 核价按组件方言读取基础/详细生产料号计价单位。不能因同一 LineItem 同时带有
+  // settlementUnit 而让核价页误用客户单位。
+  if (side === 'COSTING') {
+    if (component?.dialect?.toUpperCase() === 'COST_DETAIL') {
+      return item.detailPricingUnit ?? item.hfPartInfo?.detailPricingUnit ?? null;
+    }
+    return item.basicPricingUnit ?? item.hfPartInfo?.basicPricingUnit ?? null;
+  }
+  if (side === 'QUOTE') return item.settlementUnit ?? null;
+  // 未提供侧别的旧调用点属于报价计算/导出链，保留其历史优先级。
   if (item.settlementUnit) return item.settlementUnit;
   if (item.pricingUnit) return item.pricingUnit;
   if (component?.dialect?.toUpperCase() === 'COST_DETAIL') {
@@ -3123,7 +3138,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     .filter(c => c?.componentType === 'NORMAL');
   const activeComponentRaw = normalComponents[activeTab];
   const activeComponent = activeComponentRaw
-    ? { ...activeComponentRaw, targetUnit: targetUnitFor(item, activeComponentRaw) }
+    ? { ...activeComponentRaw, targetUnit: targetUnitFor(item, activeComponentRaw, cardSide) }
     : undefined;
 
   // Plan 1b：locateSeq 变化时切到目标 componentId 对应的 Tab（AP-54：normalComponents 下标）
@@ -3174,7 +3189,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
   // Key by componentId (UUID), componentCode, and tabName for maximum compatibility
   const allComponentSubtotals: DecimalContext = {};
   const lineVatFields = vatQuotationFields(item);
-  const targetComponents = item.componentData.map((comp) => ({ ...comp, targetUnit: targetUnitFor(item, comp) }));
+  const targetComponents = item.componentData.map((comp) => ({ ...comp, targetUnit: targetUnitFor(item, comp, cardSide) }));
   for (const comp of targetComponents) {
     // partNo + driverExpansion 一起传给 computeTabSubtotal —— 让含 BASIC_DATA 字段的公式
     // 按 rowCount 迭代 driver 展开行，每行用各自的 basicDataValues。
