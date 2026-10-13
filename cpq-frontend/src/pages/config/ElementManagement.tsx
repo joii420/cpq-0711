@@ -295,8 +295,12 @@ const ElementManagement: React.FC = () => {
             </Button>
           </Tooltip>
         )}
-        <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入元素</Button>
-        <Button icon={<DownloadOutlined />} loading={downloading} onClick={handleDownloadTemplate}>下载导入模板</Button>
+        {isSystemAdmin && (
+          <>
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入元素</Button>
+            <Button icon={<DownloadOutlined />} loading={downloading} onClick={handleDownloadTemplate}>下载导入模板</Button>
+          </>
+        )}
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新建元素
         </Button>
