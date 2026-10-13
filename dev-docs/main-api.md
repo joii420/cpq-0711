@@ -9171,6 +9171,27 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | id | UUID | 材质配方 id |
 
 - **响应内容**: HTTP 204 No Content（无响应体）
+
+#### 材质库导入/模板（task-261012）
+- **导入方法**: `POST`
+- **导入路径**: `/api/cpq/material-recipes/import`
+- **鉴权**: 仅 `SYSTEM_ADMIN`
+- **请求**: `multipart/form-data`，字段 `file`（xlsx）
+- **模板路径**: `GET /api/cpq/material-recipes/import/template`；登录用户可下载
+- **xlsx 表头**（位置固定且仅四列）: `材质`、`组号`、`元素符号`、`含量`；模板包含一行示例数据
+- **编号**: Excel 不填写材质编号、含量配置编号、元素编号；材质编号由系统自动发号，配置编号按材质历史组号自动发号，元素编号由元素主数据维护。
+- **组号**: 只用于本次 Excel 内对同一材质行分组；同一材质、相同元素组成但含量不同会新建配置并分配新的系统组号。
+- **原子性**: 元素符号缺失或对应元素非 `ACTIVE`、同一材质元素组成不一致、文件行级校验失败时，整份 Excel 返回 HTTP 400，响应 `detail` 聚合 `missingElements`、`inactiveElements`、`compositionMismatches`、`rowErrors`；不写入任何材质/配置/元素。
+- **元素边界**: 材质导入只读元素主数据，绝不新增、修改或停用元素。
+- **同内容幂等**: 同一材质、相同元素组成且含量配置已存在时跳过，不复活 `INACTIVE` 配置。
+
+#### 元素主数据批量导入/导出（task-261012）
+类级路径: `/api/cpq/elements`；列表读取沿用既有多角色鉴权，批量导入/导出/模板及增删改仅 `SYSTEM_ADMIN`。
+
+- `GET /api/cpq/elements/import/template`：下载两列表头 `元素符号`、`中文名称` 的模板，含一行示例；不含任何编号字段。
+- `POST /api/cpq/elements/import`：上传同样两列的 xlsx。新元素自动发元素编号并设为 `ACTIVE`；已存在元素符号只覆盖中文名称，元素编号、符号和状态不变。同一文件内同符号出现不同中文名称时 HTTP 400，响应 `detail.conflicts[]` 包含符号、Excel 行号和名称，整批不写入。
+- `GET /api/cpq/elements/export`：导出只读四列 `元素编号`、`元素符号`、`中文名称`、`状态`，不作为导入模板回传。
+
 ## 十二、产品、定价与其他
 
 > 全局基准：基址 `http://localhost:8081`；鉴权=会话 Cookie（`@RoleAllowed` 端点需登录且携带对应角色，请求头带 `Cookie`；无注解不校验）；统一响应体 `ApiResponse<T> = { code, message, data }`，个别端点直返实体 / `Response`（Excel 二进制、204 空响应等），已在各端点据实标注。
@@ -9179,7 +9200,7 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 
 
 #### 导出材质库（task-260902 新增）
-- **功能**: 按当前筛选条件导出材质库为 xlsx（**不受分页限制**），前 4 列与导入模板同构、**可直接回导**
+- **功能**: 按当前筛选条件导出材质库为 xlsx（**不受分页限制**），四列与导入模板同构、**可直接回导**
 - **方法**: GET
 - **路径**: `/api/cpq/material-recipes/export`
 - **鉴权**: 需登录 + 角色 **[SYSTEM_ADMIN]**（⚠️ 类级放开了 4 个角色，本方法用方法级 `@RoleAllowed` **收紧**；`RoleFilter` 取注解的逻辑是 `methodAnno != null ? methodAnno : classAnno`）
@@ -9192,21 +9213,17 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | status | string | 否 | `ACTIVE`/`INACTIVE`。**不传 = 不过滤（全状态）**，与页面列表口径一致。⚠️ 口径与前端 `isActive()` 对齐：**仅 `'ACTIVE'` 算启用，其余含 NULL 都算停用** |
 
 - **响应**: `Response`（**不包 `ApiResponse`**）+ xlsx MIME + `Content-Disposition: attachment; filename="material_library.xlsx"`
-- **xlsx 结构（8 列）**:
+- **xlsx 结构（4 列）**:
 
 | 列 | 表头 | 取值 |
 |---|---|---|
-| 1-4 | `材质` `组号` `元素符号` `含量` | **== `MaterialRecipeImportService.HEADER`（位置与文字都不能变）** |
-| 5-8 | `材质编号` `含量配置编号` `状态` `含量类型` | 只读参考列，回导时被忽略 |
+| 1-4 | `材质` `组号` `元素符号` `含量` | **== `MaterialRecipeImportService.HEADER`（位置与文字都不能变）**；编号、状态等系统字段不导出 |
 
 - 🚨 **含量列写 `default_pct ÷ 100` 的 0–1 小数**（库存 `84` ⇒ 文件写 `0.84`）。导入端 `pctInRange(v, 1)` 只收 `(0,1]`，照搬库值导出的文件回导时**每一行**都会被判「含量非法」
   - 除法用**无 scale** 的 `BigDecimal.divide`（除以 100 必为有限小数、逐位无损）；指定 scale 12 会把 `numeric(16,12)` 尾部两位舍掉 ⇒ 回导 `sameContent` 判不等 ⇒ 被当新配置插入
   - 写入前 `toPlainString()`，避免 `stripTrailingZeros()` 把 `100` 变成 `1E+2`
 - 🚨 **只读列只能放第 5 列起** —— 导入端 `assertHeader` 按**位置**逐列比对前 4 列，插在前面即 400 `IMPORT_HEADER_INVALID`
-- **行集合**: `material_recipe_element` JOIN `material_recipe_config`(`status='ACTIVE'`) JOIN `material_recipe`(按筛选)，按 `symbol, seq, sort_order` 排序；SQL 条数恒为常数（1 条三表 JOIN）
-- ⚠️ **已知限制（2026-09-03 主线亲验实测）**:
-  1. **不传 `status` 时导出含停用材质**，而这些行回导会被**新建为同名启用材质**（导入按 `symbol AND status='ACTIVE'` 匹配，停用的匹配不上）。用户裁决：保持「所见即所得」、不改导入逻辑，改为在材质导入抽屉加提醒。**需要原样回导时先筛「启用」**
-  2. **同名材质（`symbol` 重复、编号不同）回导不进去** —— 实测库中 `AgCu`→AgCu85/AgCu90、`AgNi`→AgNi90/AgNi95，回导报「材质名对应多条材质记录，请先在材质管理页处理」并跳过该行（**报明原因，非静默失败**）
+- **行集合**: `material_recipe_element` JOIN `material_recipe_config`(`status='ACTIVE'`) JOIN `material_recipe`(按筛选)，按 `symbol, group_no, sort_order` 排序；SQL 条数恒为常数（1 条三表 JOIN）。导出的组号只是本文件分组标签，回导时会按数据库历史组号重新发号。
 
 > 来源任务：`task-260902-主数据与用户导入导出`｜回写日期：2026-09-03
 

@@ -2,7 +2,6 @@ package com.cpq.configure.service;
 
 import com.cpq.configure.dto.MaterialImportReportDTO;
 import com.cpq.configure.dto.MaterialImportReportDTO.CreatedConfig;
-import com.cpq.configure.dto.MaterialImportReportDTO.CreatedElement;
 import com.cpq.configure.dto.MaterialImportReportDTO.SkippedRow;
 import com.cpq.configure.entity.MaterialRecipe;
 import com.cpq.configure.entity.MaterialRecipeComposition;
@@ -50,10 +49,10 @@ import java.util.UUID;
  *   <li><b>单表 4 列</b>：材质 / 组号 / 元素符号 / 含量。读第一个工作表、按表头识别，<b>不依赖 sheet 名</b>；
  *       命中旧两 sheet 结构 → 400 {@code IMPORT_TEMPLATE_OUTDATED}；表头不符 → 400 {@code IMPORT_HEADER_INVALID}；
  *       表头对但零数据行 → 200 + 全 0 报告（AC-23）。</li>
- *   <li><b>两种编号全自动</b>：材质编号按五位补零自增（B-6）、元素符号查无则自动建档并自增元素编号（B-7）。</li>
+ *   <li><b>两种编号全自动</b>：材质编号按五位补零自增（B-6）；元素必须先在元素主表维护，材质导入绝不写元素表。</li>
  *   <li><b>只增不改</b>：按材质名匹配材质（M-6 防重名），按<b>内容</b>与 ACTIVE 配置逐值比对（M-4）；
  *       不存在才新增配置。🚫 不再有「整体重灌覆盖」，也<b>不复活 INACTIVE 配置</b>（M-3）。</li>
- *   <li><b>组号只在 Excel 内分组</b>，不落库（用户澄清）。</li>
+ *   <li><b>组号只在 Excel 内分组</b>，不原样落库；真正新增配置使用数据库历史最大组号+1。</li>
  * </ol>
  *
  * <p><b>N+1 纪律</b>：全流程只有常数条 SQL —— 材质按名 IN 一次、元素组成 IN 一次、
@@ -130,6 +129,9 @@ public class MaterialRecipeImportService {
 
             // ③ 逐行解析 + 行级校验
             LinkedHashMap<String, MatEntry> materials = parseRows(sheet, sheetName, report);
+            if (report.totalRows == 0) {
+                throw MaterialRecipeApiException.badRequest("IMPORT_FILE_EMPTY", "文件没有可导入的数据行");
+            }
 
             // ④ 校验（B-10 五级）+ ⑤⑥ 落库（B-11）
             persist(materials, sheetName, report);
@@ -218,21 +220,27 @@ public class MaterialRecipeImportService {
         Map<UUID, List<MaterialRecipeConfig>> allConfigsByRecipe = loadAllConfigs(existingIds);
         Map<UUID, List<MaterialRecipeConfig>> activeConfigsByRecipe = new LinkedHashMap<>();
         Map<UUID, Integer> maxSeqByRecipe = new LinkedHashMap<>();
+        Map<UUID, Integer> maxGroupNoByRecipe = new LinkedHashMap<>();
         List<UUID> activeConfigIds = new ArrayList<>();
         for (Map.Entry<UUID, List<MaterialRecipeConfig>> en : allConfigsByRecipe.entrySet()) {
             int max = 0;
+            int maxGroup = 0;
             List<MaterialRecipeConfig> actives = new ArrayList<>();
             for (MaterialRecipeConfig c : en.getValue()) {
                 if (c.seq > max) max = c.seq;
+                int group = c.groupNo > 0 ? c.groupNo : c.seq;
+                if (group > maxGroup) maxGroup = group;
                 if (c.isActive()) { actives.add(c); activeConfigIds.add(c.id); }
             }
             maxSeqByRecipe.put(en.getKey(), max);
+            maxGroupNoByRecipe.put(en.getKey(), maxGroup);
             activeConfigsByRecipe.put(en.getKey(), actives);
         }
         Map<UUID, List<MaterialRecipeElement>> elementsByConfig =
             configService.loadElementsByConfig(activeConfigIds);
 
         // ── B-10 校验：逐材质决定「整材质跳过 / 部分组跳过」──
+        List<Map<String, Object>> compositionMismatches = new ArrayList<>();
         List<PassedMaterial> passed = new ArrayList<>();
         for (MatEntry m : materials.values()) {
             // 第③级：材质名长度（AC-24，DB 是 varchar(32)，超长必须应用层拦）
@@ -254,6 +262,12 @@ public class MaterialRecipeImportService {
             List<Grp> validGroups = new ArrayList<>();
             for (Grp g : m.groupsSortedByLabel()) {
                 if (g.contents.isEmpty()) continue;
+                if (!g.duplicateSymbols.isEmpty()) {
+                    report.skipped.add(new SkippedRow(sheetName, g.firstRow,
+                        "同一组内元素符号重复：" + String.join(",", g.duplicateSymbols),
+                        m.name + " 组" + g.label));
+                    continue;
+                }
                 BigDecimal sum = g.sum();
                 if (!MaterialRecipeRules.sumIsOneRatio(sum)) {
                     report.skipped.add(new SkippedRow(sheetName, g.firstRow,
@@ -272,11 +286,12 @@ public class MaterialRecipeImportService {
                 List<Grp> kept = new ArrayList<>();
                 for (Grp g : validGroups) {
                     if (!MaterialRecipeRules.elementSetsEqual(g.contents.keySet(), compCodes)) {
-                        // 不相等的<b>那一组</b>跳过，材质本身与其元素组成不受影响（AC-10）
-                        report.skipped.add(new SkippedRow(sheetName, g.firstRow,
-                            "元素组合与该材质的元素组成不一致",
-                            m.name + " 组" + g.label + " "
-                                + MaterialRecipeRules.formatSet(g.contents.keySet(), ",")));
+                        compositionMismatches.add(Map.of(
+                            "material", m.name,
+                            "row", g.firstRow,
+                            "group", g.label,
+                            "existingElements", MaterialRecipeRules.formatSet(new LinkedHashSet<>(compCodes), ","),
+                            "incomingElements", MaterialRecipeRules.formatSet(g.contents.keySet(), ",")));
                         continue;
                     }
                     kept.add(g);
@@ -293,21 +308,41 @@ public class MaterialRecipeImportService {
                 if (mismatch != null) {
                     Grp gi = validGroups.get(mismatch[0]);
                     Grp gj = validGroups.get(mismatch[1]);
-                    report.skipped.add(new SkippedRow(sheetName, m.firstRow,
-                        "同一材质内各组元素组成不一致（组" + gi.label + "="
-                            + MaterialRecipeRules.formatSet(gi.contents.keySet(), ",")
-                            + " 组" + gj.label + "="
-                            + MaterialRecipeRules.formatSet(gj.contents.keySet(), ",") + "）",
-                        m.name));
+                    compositionMismatches.add(Map.of(
+                        "material", m.name,
+                        "row", m.firstRow,
+                        "group", gi.label + "," + gj.label,
+                        "existingElements", MaterialRecipeRules.formatSet(gi.contents.keySet(), ","),
+                        "incomingElements", MaterialRecipeRules.formatSet(gj.contents.keySet(), ",")));
                     continue;
                 }
                 passed.add(new PassedMaterial(m, null, validGroups, null));
             }
         }
+        // ── B-2：元素引用预校验（只读，绝不自动建档）──
+        List<Map<String, Object>> elementIssues = new ArrayList<>();
+        Map<String, ElementRef> elementIndex = loadAndValidateElementMaster(materials.values(), elementIssues);
+        if (!compositionMismatches.isEmpty() || !elementIssues.isEmpty() || !report.skipped.isEmpty()) {
+            Map<String, Object> detail = new LinkedHashMap<>();
+            if (!elementIssues.isEmpty()) {
+                detail.put("missingElements", elementIssues.stream().flatMap(x -> ((List<String>) x.get("missingElements")).stream()).distinct().toList());
+                detail.put("inactiveElements", elementIssues.stream().flatMap(x -> ((List<String>) x.get("inactiveElements")).stream()).distinct().toList());
+            } else {
+                detail.put("missingElements", List.of());
+                detail.put("inactiveElements", List.of());
+            }
+            detail.put("compositionMismatches", compositionMismatches);
+            detail.put("rowErrors", report.skipped);
+            String message = !compositionMismatches.isEmpty()
+                ? "导入失败：材质元素组成与既有组成不一致"
+                : (!elementIssues.isEmpty() ? "导入失败：请先创建并启用所引用的元素" : "导入失败：文件存在校验错误");
+            throw validationFailure(message, Map.of(
+                "missingElements", detail.get("missingElements"),
+                "inactiveElements", detail.get("inactiveElements"),
+                "compositionMismatches", compositionMismatches,
+                "rowErrors", report.skipped));
+        }
         if (passed.isEmpty()) return;
-
-        // ── B-7：元素主表同步（自动建档 + 编号自增），一次性批处理 ──
-        Map<String, ElementRef> elementIndex = syncElementMaster(passed, report);
 
         // ── B-11：落库（只增不改）──
         String nextCode = null;                              // 材质编号水位：只查一次，之后内存递增
@@ -363,6 +398,7 @@ public class MaterialRecipeImportService {
             }
             // 水位取自上面一次性预载的内存快照，🚫 不在循环里查库（N+1）
             int seq = recipeIsNew ? 0 : maxSeqByRecipe.getOrDefault(recipe.id, 0);
+            int groupNo = recipeIsNew ? 0 : maxGroupNoByRecipe.getOrDefault(recipe.id, 0);
 
             Map<String, Integer> orderByCode = new HashMap<>();
             for (int i = 0; i < compositionCodes.size(); i++) orderByCode.put(compositionCodes.get(i), i + 1);
@@ -380,7 +416,7 @@ public class MaterialRecipeImportService {
                     report.configsSkippedAsDuplicate++;
                     continue;
                 }
-                MaterialRecipeConfig cfg = configService.newConfigWithSeq(recipe, ++seq, null);
+                MaterialRecipeConfig cfg = configService.newConfig(recipe, ++seq, ++groupNo, null);
                 List<ResolvedPct> rows = new ArrayList<>(incoming.size());
                 for (Map.Entry<String, BigDecimal> e : incoming.entrySet()) {
                     ElementRef ref = elementIndex.get(e.getKey());
@@ -415,28 +451,20 @@ public class MaterialRecipeImportService {
     }
 
     /**
-     * <b>B-7</b>：元素符号 → element 主表匹配；查无则<b>自动建档</b>（D7），
-     * {@code element_no = max(纯数字 element_no) + 1}。
+     * 一次批量读取材质文件引用的全部元素。缺失或停用时聚合问题，调用方在任何写入前整份拒绝。
      *
-     * <p>⚠️ 主表存在脏行 {@code element_no='白银'}，编号水位<b>必须按 {@code ^[0-9]+$} 过滤</b>，
-     * 否则 {@code ::bigint} 直接抛异常。
-     * <p>新建的元素进 {@code report.createdElements}（X-2：自动建档必须可复核——
-     * 全库唯一匹配不上的符号 {@code 10004} 恰恰是把元素编号填进了符号列的脏数据）。
-     *
-     * @return 符号 → ElementRef（含新建的）
+     * @return 符号 → ElementRef（仅现有元素；本方法只读）
      */
     @SuppressWarnings("unchecked")
-    private Map<String, ElementRef> syncElementMaster(List<PassedMaterial> passed,
-                                                      MaterialImportReportDTO report) {
+    private Map<String, ElementRef> loadAndValidateElementMaster(Iterable<MatEntry> materialEntries,
+                                                                  List<Map<String, Object>> issues) {
         // 收集本批用到的全部符号（保首现序，便于新建顺序稳定）
         LinkedHashMap<String, int[]> firstSeen = new LinkedHashMap<>();   // symbol → [excelRow]
-        LinkedHashMap<String, String> firstRecipe = new LinkedHashMap<>();
-        for (PassedMaterial pm : passed) {
-            for (Grp g : pm.groups) {
+        for (MatEntry entry : materialEntries) {
+            for (Grp g : entry.groupsSortedByLabel()) {
                 for (Map.Entry<String, Integer> e : g.firstRowBySymbol.entrySet()) {
                     if (!firstSeen.containsKey(e.getKey())) {
                         firstSeen.put(e.getKey(), new int[]{e.getValue()});
-                        firstRecipe.put(e.getKey(), pm.entry.name);
                     }
                 }
             }
@@ -446,45 +474,27 @@ public class MaterialRecipeImportService {
 
         // 1) 现有符号（一次查询）
         List<Object[]> rows = em.createNativeQuery(
-                "SELECT element_no, element_code, element_name FROM element WHERE element_code IN (:codes)")
+                "SELECT element_no, element_code, element_name, status FROM element WHERE element_code IN (:codes)")
             .setParameter("codes", firstSeen.keySet())
             .getResultList();
         for (Object[] r : rows) {
             index.put((String) r[1], new ElementRef((String) r[0], (String) r[1], (String) r[2]));
         }
 
-        // 2) 缺的自动建档：编号水位一次查询 + 内存递增
+        // 2) 缺失/停用元素聚合后整份拒绝；材质导入不得写 element。
         List<String> missing = firstSeen.keySet().stream().filter(c -> !index.containsKey(c)).toList();
-        if (missing.isEmpty()) return index;
-
-        List<String> nos = em.createNativeQuery(
-            "SELECT element_no FROM element WHERE element_no ~ '^[0-9]+$'").getResultList();
-        String nextNo = MaterialRecipeNumbering.nextElementNo(nos);
-
-        StringBuilder sb = new StringBuilder(
-            "INSERT INTO element (element_no, element_code, element_name) VALUES ");
-        List<String[]> toInsert = new ArrayList<>(missing.size());
-        for (String code : missing) {
-            String name = DICT.getOrDefault(code, code);
-            toInsert.add(new String[]{nextNo, code, name});
-            index.put(code, new ElementRef(nextNo, code, name));
-            report.createdElements.add(new CreatedElement(
-                nextNo, code, name, firstSeen.get(code)[0], firstRecipe.get(code)));
-            nextNo = MaterialRecipeNumbering.nextElementNo(List.of(nextNo));
+        List<String> inactive = new ArrayList<>();
+        for (Object[] r : rows) {
+            if (!"ACTIVE".equalsIgnoreCase(r[3] == null ? "" : String.valueOf(r[3]))) inactive.add(String.valueOf(r[1]));
         }
-        for (int i = 0; i < toInsert.size(); i++) {
-            if (i > 0) sb.append(", ");
-            sb.append("(:o").append(i).append(", :c").append(i).append(", :n").append(i).append(")");
+        if (!missing.isEmpty() || !inactive.isEmpty()) {
+            issues.add(Map.of("missingElements", missing, "inactiveElements", inactive));
         }
-        sb.append(" ON CONFLICT (element_no) DO NOTHING");
-        Query q = em.createNativeQuery(sb.toString());
-        for (int i = 0; i < toInsert.size(); i++) {
-            q.setParameter("o" + i, toInsert.get(i)[0]);
-            q.setParameter("c" + i, toInsert.get(i)[1]);
-            q.setParameter("n" + i, toInsert.get(i)[2]);
-        }
-        q.executeUpdate();
         return index;
+    }
+
+    private MaterialRecipeApiException validationFailure(String message, Map<String, Object> detail) {
+        return new MaterialRecipeApiException(400, "MATERIAL_IMPORT_VALIDATION_FAILED", message, detail);
     }
 
     /** 'Ag 90% / Ni 10%'（100 制，去尾随零仅用于这条摘要文案）。 */
@@ -498,14 +508,13 @@ public class MaterialRecipeImportService {
 
     // ──────────────────────────────── 干净模板 ────────────────────────────────
 
-    /** 生成<b>单 sheet 4 列</b>空模板（材质 / 组号 / 元素符号 / 含量）+ 2 行示例 + 含量批注（B-13 / AC-12）。 */
+    /** 生成<b>单 sheet 4 列</b>空模板（材质 / 组号 / 元素符号 / 含量）+ 1 行示例 + 含量批注。 */
     public byte[] generateTemplate() {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             Sheet s = wb.createSheet(SHEET_NAME);
             Row h = s.createRow(0);
             for (int i = 0; i < HEADER.size(); i++) h.createCell(i).setCellValue(HEADER.get(i));
-            exampleRow(s, 1, "AgCu10", "1", "Ag", 0.9);
-            exampleRow(s, 2, "AgCu10", "1", "Cu", 0.1);
+            exampleRow(s, 1, "纯银", "1", "Ag", 1.0);
 
             CreationHelper factory = wb.getCreationHelper();
             Drawing<?> drawing = s.createDrawingPatriarch();
@@ -514,8 +523,8 @@ public class MaterialRecipeImportService {
             Comment comment = drawing.createCellComment(anchor);
             comment.setString(factory.createRichTextString(
                 "含量填 0–1 小数，最多 12 位；同一材质同一组号内相加=1。\n"
-                    + "组号只用于在本表内给同一材质分组（一个材质可有多组不同含量配比），不会存进系统。\n"
-                    + "材质编号与元素编号<b>不用填</b>：材质按材质名自动匹配/自动新建，元素按符号自动匹配/自动建档。"));
+                    + "组号只用于在本表内给同一材质分组（一个材质可有多组不同含量配比）；入库时由系统按历史水位生成新的配置组号。\n"
+                    + "材质编号、配置编号与元素编号<b>不用填</b>：材质和配置由系统自动发号，元素须先在元素主数据中创建并启用。"));
             s.getRow(0).getCell(3).setCellComment(comment);
 
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
@@ -622,6 +631,7 @@ public class MaterialRecipeImportService {
         final int firstRow;
         final LinkedHashMap<String, BigDecimal> contents = new LinkedHashMap<>();
         final LinkedHashMap<String, Integer> firstRowBySymbol = new LinkedHashMap<>();
+        final LinkedHashSet<String> duplicateSymbols = new LinkedHashSet<>();
 
         Grp(String label, int firstRow) {
             this.label = label;
@@ -629,7 +639,8 @@ public class MaterialRecipeImportService {
         }
 
         void put(String symbol, BigDecimal content, int excelRow) {
-            contents.put(symbol, content);
+            if (contents.containsKey(symbol)) duplicateSymbols.add(symbol);
+            else contents.put(symbol, content);
             firstRowBySymbol.putIfAbsent(symbol, excelRow);
         }
 

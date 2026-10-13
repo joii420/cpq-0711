@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Tag, Button, Space, Input, Select, Dropdown, Tooltip, message } from 'antd';
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined,
-  LinkOutlined, ImportOutlined, TableOutlined, DownOutlined, ReloadOutlined,
+  LinkOutlined, ImportOutlined, TableOutlined, DownOutlined, ReloadOutlined, DownloadOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
@@ -14,9 +14,13 @@ import {
 import { NO_SORT, clientSortProps, nextClientSort, type ClientSortState } from '../master-data/clientSorters';
 import { elementService, type ElementItem } from '../../services/elementService';
 import ElementEditDrawer from './ElementEditDrawer';
+import ElementImportDrawer from './ElementImportDrawer';
 import PriceSourceManagerDrawer from '../element-price/PriceSourceManagerDrawer';
 import PriceImportDrawer from '../element-price/PriceImportDrawer';
 import ElementPriceTableDrawer from '../element-price/ElementPriceTableDrawer';
+import { useAuthStore } from '../../stores/authStore';
+import { EXPORT_EMPTY_TOOLTIP } from '../../utils/exportDownload';
+import { apiErrorMessage } from '../../utils/apiError';
 
 /** 时间格式化 YYYY-MM-DD HH:mm；空值回退 '—' */
 const fmtTime = (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—');
@@ -53,6 +57,10 @@ const ElementManagement: React.FC = () => {
   const [sourceManagerOpen, setSourceManagerOpen] = useState(false);
   const [priceImportOpen, setPriceImportOpen] = useState(false);
   const [priceTableOpen, setPriceTableOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const isSystemAdmin = useAuthStore((s) => s.user?.role === 'SYSTEM_ADMIN');
 
   // 排序由后端定(启用优先→最后修改时间倒序)，未点击表头时不做本地 sort（= 三态里的「取消」态）。
   const refresh = async (kw?: string) => {
@@ -212,6 +220,36 @@ const ElementManagement: React.FC = () => {
     else if (key === 'table') setPriceTableOpen(true);
   };
 
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      await elementService.exportLibrary();
+    } catch (error: unknown) {
+      message.error(apiErrorMessage(error, '导出失败，请稍后重试'));
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    setDownloading(true);
+    try {
+      const blob = await elementService.downloadImportTemplate();
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = '元素导入模板.xlsx';
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (error: unknown) {
+      message.error(apiErrorMessage(error, '模板下载失败，请稍后重试'));
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   // 工具栏：左＝查询（搜索 → 状态过滤），右＝动作（元素价格▾ → 刷新 → 新建）。
   // ⚠️ SelectableTable 内部已是 space-between 的 flex 容器，这里**不能**再包一层 div，否则右组会被挤到左边。
   const toolbar = (
@@ -250,6 +288,19 @@ const ElementManagement: React.FC = () => {
         <Button icon={<ReloadOutlined />} onClick={() => refresh(keyword.trim() || undefined)}>
           刷新
         </Button>
+        {isSystemAdmin && (
+          <Tooltip title={list.length === 0 ? EXPORT_EMPTY_TOOLTIP : ''}>
+            <Button icon={<DownloadOutlined />} loading={exporting} disabled={list.length === 0} onClick={handleExport}>
+              导出元素
+            </Button>
+          </Tooltip>
+        )}
+        {isSystemAdmin && (
+          <>
+            <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)}>导入元素</Button>
+            <Button icon={<DownloadOutlined />} loading={downloading} onClick={handleDownloadTemplate}>下载导入模板</Button>
+          </>
+        )}
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
           新建元素
         </Button>
@@ -280,6 +331,11 @@ const ElementManagement: React.FC = () => {
         editing={editing}
         onClose={() => setDrawerOpen(false)}
         onSaved={() => { setDrawerOpen(false); refresh(); }}
+      />
+      <ElementImportDrawer
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        onImported={() => refresh(keyword.trim() || undefined)}
       />
       <PriceSourceManagerDrawer
         open={sourceManagerOpen}

@@ -50,6 +50,7 @@ public class MaterialRecipeListSearchTest {
         MaterialRecipeConfig cfg = new MaterialRecipeConfig();
         cfg.recipeId = recipeId;
         cfg.seq = 1;
+        cfg.groupNo = 1;
         cfg.configNo = "LT-" + recipeId.toString().substring(0, 8) + "-01";
         cfg.status = "ACTIVE";
         cfg.sortOrder = 1;
