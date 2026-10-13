@@ -27,16 +27,29 @@ const StatTile: React.FC<{ label: string; value: React.ReactNode; tone?: 'warn' 
 const detailMessages = (detail: unknown): string[] => {
   if (!detail || typeof detail !== 'object') return [];
   const source = detail as Record<string, unknown>;
+  const conflicts = Array.isArray(source.conflicts) ? source.conflicts : [];
   const errors = source.rowErrors ?? source.errors;
-  if (!Array.isArray(errors)) return [];
-  return errors.map((item) => {
+  const conflictMessages = conflicts.map((item) => {
+    if (!item || typeof item !== 'object') return String(item);
+    const conflict = item as Record<string, unknown>;
+    const symbol = conflict.symbol == null ? '未知元素符号' : String(conflict.symbol);
+    const rows = Array.isArray(conflict.rows) && conflict.rows.length > 0
+      ? `，Excel 行：${conflict.rows.map(String).join('、')}`
+      : '';
+    const names = Array.isArray(conflict.names) && conflict.names.length > 0
+      ? `，中文名称：${conflict.names.map(String).join('、')}`
+      : '';
+    return `元素符号 ${symbol} 存在名称冲突${rows}${names}`;
+  });
+  const rowMessages = Array.isArray(errors) ? errors.map((item) => {
     if (typeof item === 'string') return item;
     if (!item || typeof item !== 'object') return String(item);
     const row = item as Record<string, unknown>;
     const rowNo = row.row ?? row.rowNumber;
     const reason = row.reason ?? row.message ?? JSON.stringify(item);
     return rowNo == null ? String(reason) : `第 ${String(rowNo)} 行：${String(reason)}`;
-  });
+  }) : [];
+  return [...conflictMessages, ...rowMessages];
 };
 
 const ElementImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
