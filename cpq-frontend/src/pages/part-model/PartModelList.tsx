@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   Card, Table, Tag, Button, Space, message, Drawer, Form, Input, InputNumber,
-  Steps, Radio, Select, Switch, Popconfirm, Progress, Tooltip,
+  Steps, Radio, Switch, Popconfirm, Progress,
 } from 'antd';
 import { partModelService } from '../../services/partModelService';
 import { configuratorTemplateService } from '../../services/configuratorService';
 import type { PartModel } from '../../types/part-model';
 import type { ConfiguratorTemplate } from '../../types/configurator';
 import ConfiguratorPreview from '../../components/ConfiguratorPreview';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 /**
  * v0.4 §6 3D 模型管理 — 列表 + 4 步上传向导
@@ -35,7 +36,6 @@ const PartModelList: React.FC = () => {
   const [features, setFeatures] = useState<any[]>([]);
 
   // 关联模板
-  const [templates, setTemplates] = useState<ConfiguratorTemplate[]>([]);
   const [selectedTplId, setSelectedTplId] = useState<string | undefined>();
 
   const load = async () => {
@@ -60,12 +60,16 @@ const PartModelList: React.FC = () => {
     form.setFieldsValue({ version: 1, isCurrent: true });
     setDrawerOpen(true);
 
-    // 预加载可关联的模板
-    try {
-      const res: any = await configuratorTemplateService.list({ page: 0, size: 50 });
-      setTemplates(res.data?.content || []);
-    } catch { /* ignore */ }
   };
+
+  const fetchConfiguratorTemplates = async ({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
+    configuratorTemplateService.list({ page, size, keyword: keyword || undefined });
+
+  const mapConfiguratorTemplate = (template: ConfiguratorTemplate) => ({
+    value: template.id,
+    label: `${template.code} · ${template.name}${template.baseModelId ? ' (已绑定，将覆盖)' : ''}`,
+    item: template,
+  });
 
   const next = async () => {
     if (step === 0) { setStep(1); return; }
@@ -360,12 +364,14 @@ const PartModelList: React.FC = () => {
             )}
             <Form layout="vertical">
               <Form.Item label="（可选）立即关联到选配模板">
-                <Select placeholder="选择模板（可跳过）" allowClear
-                        value={selectedTplId} onChange={setSelectedTplId}
-                        options={templates.map(t => ({
-                          value: t.id,
-                          label: `${t.code} · ${t.name}${t.baseModelId ? ' (已绑定，将覆盖)' : ''}`,
-                        }))} />
+                <RemoteInfiniteSelect<ConfiguratorTemplate>
+                  placeholder="选择模板（可跳过）"
+                  allowClear
+                  value={selectedTplId}
+                  onChange={setSelectedTplId}
+                  fetchPage={fetchConfiguratorTemplates}
+                  mapOption={mapConfiguratorTemplate}
+                />
               </Form.Item>
               <div style={{ padding: 10, background: '#fff7e6', border: '1px solid #ffd591', borderRadius: 4, fontSize: 11.5, color: '#876800' }}>
                 ⓘ 关联后写入 <code>product_config_template.base_model_id + version + snapshot_at</code>。

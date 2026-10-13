@@ -7,7 +7,7 @@
 //    右侧 SQL 面板的文本、粒度条的文案、体检结论、AC-16 拖拽期置灰的冲突标记全部原样取自后端响应
 //    （GET /field-tree 带 selectedConfig 时返回 groups[].conflict），前端只读展示、不自行判定。
 //    详见 sqlViewBuilderService.ts 顶部注释（含与 api.md §2.1a 的对齐记录）。
-import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Alert, Button, Checkbox, Drawer, Dropdown, Input, Segmented, Select, Space, message, Modal, Tooltip } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -17,6 +17,7 @@ import {
   type BuilderDataset, type FieldTreeSource,
 } from '../../services/sqlViewBuilderService';
 import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 // ── 常量 ────────────────────────────────────────────────────────────────
 
@@ -449,8 +450,6 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
   // AC-50：真实预览默认展开、常驻，切页签类型也不收起
   const [previewOpen] = useState(true);
   const [previewCustomerCode, setPreviewCustomerCode] = useState<string | null>(null);
-  const [customerOptions, setCustomerOptions] = useState<{ value: string; label: string }[]>([]);
-  const [customerSearching, setCustomerSearching] = useState(false);
   const [previewPartNo, setPreviewPartNo] = useState('');
   const [previewResult, setPreviewResult] = useState<PreviewResponse | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -1028,19 +1027,11 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sel.length]);
 
-  async function searchCustomers(keyword: string) {
-    setCustomerSearching(true);
-    try {
-      const res: any = await customerService.list({ page: 0, size: 20, keyword: keyword || '' });
-      const content = res?.data?.content ?? res?.data ?? [];
-      setCustomerOptions((content as any[]).map((c) => ({ value: c.code, label: `${c.name}（${c.code}）` })));
-    } catch {
-      // 客户搜索失败不阻断配置流程，静默即可（预览本身会在点「重新执行」时报错）
-    } finally {
-      setCustomerSearching(false);
-    }
-  }
-  useEffect(() => { searchCustomers(''); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+  const fetchPreviewCustomers = useCallback(
+    ({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
+      customerService.list({ page, size, keyword: keyword || undefined }),
+    [],
+  );
 
   // ── 保存 ──────────────────────────────────────────────────────────────
   // D-42：PUT / 请求体是「config 本身 + 平级 confirmedImpact」，不是 { builderConfig, confirmedImpact }
@@ -1471,11 +1462,12 @@ const SqlViewBuilderTab = forwardRef<SqlViewBuilderTabHandle, SqlViewBuilderTabP
       <div className="svb-preview">
         <div className="svb-pv-h">
           <span>客户</span>
-          <Select
-            size="small" style={{ width: 220 }} showSearch filterOption={false}
+          <RemoteInfiniteSelect<any>
+            size="small" style={{ width: 220 }}
             placeholder="选择预览客户" value={previewCustomerCode ?? undefined}
-            loading={customerSearching} onSearch={searchCustomers} onChange={(v) => setPreviewCustomerCode(v)}
-            options={customerOptions} notFoundContent={customerSearching ? '搜索中…' : '无匹配客户'}
+            onChange={(v) => setPreviewCustomerCode(v)}
+            fetchPage={fetchPreviewCustomers}
+            mapOption={(c: any) => ({ value: c.code, label: `${c.name}（${c.code}）` })}
           />
           <span>料号</span>
           <Input size="small" style={{ width: 160 }} value={previewPartNo} onChange={(e) => setPreviewPartNo(e.target.value)} placeholder="料号（可空）" />

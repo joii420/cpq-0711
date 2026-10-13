@@ -31,3 +31,14 @@
 - `ds_quote_customer_part.version` 为服务端乐观锁内部列；客户料号 Excel 只声明可选“结算单位”，不声明“版本”。导入新行自动从 1 开始，覆盖已有行由 SQL 自动递增。
 - 用户回归单 `QT-20261012-0950`：快照与客户料号数据均已保存结算单位 `g`，此前仅因产品卡片头部漏渲染而不可见；费用页签 `1 + 0.1` 被错误按 `7.88` 汇率除算为 `0.139593909`，现已恢复为原始小计/合计数值且不显示货币单位。产品卡底部“产品小计”仍沿用既有报价币种展示规则。
 - 本次截图中的第二个问题根因：编辑卡片已有显式 `targetUnit`，但 `ReadonlyProductCard` 的 PASS1/`buildCrossTabRows` 仍直接使用未注入目标单位的组件；单位换算兼容分支遂将 `KPCS` 按历史 `0.001` 处理。现将报价结算单位、核价基础/详细计价单位显式注入只读与编辑链路，并在报价行回读/导入时保留这些字段。该修复不是改 `unit_source_field` 规则；`unit_source_field` 仍是同组件单位字段名。
+
+## 2026-10-13 动态下拉补充复验
+
+| 检查 | 结果 | 证据 |
+|---|---|---|
+| 动态选择器统一组件 | PASS | 新增 `RemoteInfiniteSelect`，后端关键词查询、页码请求、滚动加载、请求竞态丢弃、已选项回显 |
+| 模板管理客户模糊搜索 | PASS | Chrome 实测 `GET /api/cpq/customers?page=0&size=50&keyword=Cust`，返回匹配项 |
+| 模板管理客户滚动分页 | PASS | Chrome 实测下拉滚动触发 `GET /api/cpq/customers?page=1&size=50` |
+| 客户搜索大小写兼容 | PASS | `CustomerService` 查询统一使用 `LOWER(...) LIKE LOWER(:kw)`，覆盖名称、编码、联系人/电话 |
+| 前端回归 | PASS | `npm run build`；Vitest 112 个文件、1444 项测试 |
+| 后端回归 | PARTIAL | `./mvnw -q -DskipTests compile` 通过；全量 `mvn test` 3520 条中 273 failures、614 errors，主要为既有测试库连接回滚/历史契约失败，未作为本次改动通过依据 |

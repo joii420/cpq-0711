@@ -31,6 +31,7 @@ import { listCustomerParts, listUnits, updateCustomerPartSettlementUnit } from '
 import type { CustomerPartItem } from './productHubTypes';
 import { renderTextCell } from './productHubCells';
 import ZeroTotalFooter from './ZeroTotalFooter';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import { useAuthStore } from '../../stores/authStore';
 import {
   SEARCH_WIDTH,
@@ -79,7 +80,6 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   // 初值 true：避免「上下文未就绪」期间先短暂闪出一个空态表格（见下方 fetchList 的 ready 门槛）
   const [loading, setLoading] = useState(true);
-  const [unitOptions, setUnitOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [editing, setEditing] = useState<CustomerPartItem | null>(null);
   const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -121,13 +121,6 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
   }, [keyword, customerNo, page, size, ready, available]);
 
   useEffect(() => { void fetchList(); }, [fetchList]);
-
-  useEffect(() => {
-    if (!canEdit) return;
-    void listUnits({ enabled: true, size: 100 }).then((r) => {
-      setUnitOptions((r.items ?? []).map((u) => ({ label: u.code, value: u.code })));
-    }).catch(() => message.error('结算单位加载失败'));
-  }, [canEdit]);
 
   // 状态 C：候选不可用时 `fetchList` 直接短路、永远不会走到 `setLoading(false)`——
   // 这里补一次，避免表格停在永久 loading（AP-31 缺陷族的典型形态）。
@@ -269,7 +262,14 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
       >
         <Form form={form} layout="vertical">
           <Form.Item label="客户产品编号"><Input value={editing?.customerProductNo} disabled /></Form.Item>
-          <Form.Item name="settlementUnit" label="结算单位"><Select allowClear placeholder="未维护时不进行换算" options={unitOptions} /></Form.Item>
+          <Form.Item name="settlementUnit" label="结算单位">
+            <RemoteInfiniteSelect<any>
+              allowClear
+              placeholder="未维护时不进行换算"
+              fetchPage={({ page, size, keyword }) => listUnits({ page, size, enabled: true, ...(keyword ? { keyword } : {}) })}
+              mapOption={(u: any) => ({ value: u.code, label: u.code })}
+            />
+          </Form.Item>
         </Form>
       </Drawer>
     </div>

@@ -6,7 +6,7 @@
  *
  * EXCEL_FORMULA and FIXED_VALUE view columns are shown as "自动" — no mapping needed.
  */
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Card, Form, Input, Select, Button, Space, message, Typography, Divider, Spin, Tag,
 } from 'antd';
@@ -15,6 +15,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { importMappingService } from '../../services/importMappingService';
 import { excelTemplateService } from '../../services/excelTemplateService';
 import { templateService } from '../../services/templateService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 const { Title, Text } = Typography;
 
@@ -68,8 +69,7 @@ const MappingEditor: React.FC = () => {
   const [excelTemplate, setExcelTemplate] = useState<any>(null);
   const [excelColumns, setExcelColumns] = useState<string[]>([]);
 
-  // Only templates that have excelViewConfig configured
-  const [cpqTemplates, setCpqTemplates] = useState<any[]>([]);
+  const [selectedTemplateOption, setSelectedTemplateOption] = useState<any>();
   const [viewColumns, setViewColumns] = useState<ViewColumn[]>([]);
   const [cpqTemplateLoading, setCpqTemplateLoading] = useState(false);
 
@@ -77,23 +77,19 @@ const MappingEditor: React.FC = () => {
   const [columnMappings, setColumnMappings] = useState<ColumnMapping[]>([]);
 
   useEffect(() => {
-    loadCpqTemplates();
     if (excelTemplateIdFromUrl) loadExcelTemplate(excelTemplateIdFromUrl);
     if (!isNew) loadExistingMapping();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const loadCpqTemplates = async () => {
-    try {
-      const res = await templateService.list({ size: 200 });
-      const all: any[] = res.data?.content || res.data || [];
-      // Only show published templates (or drafts) that have excelViewConfig
-      // We show all and let the user pick; we'll filter on select to only those with excelViewConfig
-      setCpqTemplates(all.filter((t: any) => t.status === 'PUBLISHED' || t.status === 'DRAFT'));
-    } catch {
-      // silently fail
-    }
-  };
+  const fetchCpqTemplates = useCallback(({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
+    templateService.list({ page, size, keyword: keyword || undefined }), []);
+
+  const mapCpqTemplate = useCallback((template: any) => ({
+    value: template.id,
+    label: template.name,
+    item: template,
+  }), []);
 
   const loadExcelTemplate = async (tid: string) => {
     try {
@@ -115,7 +111,11 @@ const MappingEditor: React.FC = () => {
       const record = res.data || res;
       form.setFieldsValue({ name: record.name, cpqTemplateId: record.cpqTemplateId });
       if (record.excelTemplateId) await loadExcelTemplate(record.excelTemplateId);
-      if (record.cpqTemplateId) await loadCpqTemplateViewConfig(record.cpqTemplateId);
+      if (record.cpqTemplateId) {
+        const templateRes = await templateService.getById(record.cpqTemplateId);
+        setSelectedTemplateOption(mapCpqTemplate(templateRes.data || templateRes));
+        await loadCpqTemplateViewConfig(record.cpqTemplateId);
+      }
       // Restore saved column_mappings
       if (record.columnMappings) {
         setColumnMappings(parseJson(record.columnMappings, []));
@@ -140,6 +140,7 @@ const MappingEditor: React.FC = () => {
         // If the endpoint doesn't exist yet, try to read from the template itself
         const res = await templateService.getById(templateId);
         const tpl = res.data || res;
+        setSelectedTemplateOption(mapCpqTemplate(tpl));
         const cfg = parseJson(tpl.excelViewConfig || tpl.excel_view_config, { columns: [] });
         viewCols = cfg.columns || [];
       }
@@ -233,23 +234,17 @@ const MappingEditor: React.FC = () => {
           </Form.Item>
         )}
         <Form.Item name="cpqTemplateId" label="CPQ产品模板" rules={[{ required: true, message: '请选择CPQ模板' }]}>
-          <Select
+          <RemoteInfiniteSelect<any>
             placeholder="选择CPQ产品模板（需已配置Excel视图）"
+            initialOptions={selectedTemplateOption ? [selectedTemplateOption] : []}
+            fetchPage={fetchCpqTemplates}
+            mapOption={mapCpqTemplate}
             onChange={handleCpqTemplateChange}
-            showSearch
-            filterOption={(input, option) =>
-              String(option?.children || option?.label || '').toLowerCase().includes(input.toLowerCase())
-            }
-          >
-            {cpqTemplates.map((t: any) => (
-              <Select.Option key={t.id} value={t.id}>
-                {t.name}
-                {t.excelViewConfig ? (
-                  <Tag color="green" style={{ marginLeft: 8, fontSize: 10 }}>已配置视图</Tag>
-                ) : null}
-              </Select.Option>
-            ))}
-          </Select>
+            onSelect={(_value, option) => {
+              const item = (option as any)?.item;
+              if (item) setSelectedTemplateOption(mapCpqTemplate(item));
+            }}
+          />
         </Form.Item>
       </Form>
 

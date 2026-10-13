@@ -14,7 +14,8 @@ import static com.cpq.units.UnitDtos.*;
 public class UnitResource {
     @Inject UnitService service;
     @GET public ApiResponse<UnitList> list(@QueryParam("category") String category, @QueryParam("enabled") Boolean enabled,
-                                           @QueryParam("page") @DefaultValue("0") int page, @QueryParam("size") @DefaultValue("50") int size) { return ApiResponse.success(service.list(category,enabled,page,size)); }
+                                           @QueryParam("page") @DefaultValue("0") int page, @QueryParam("size") @DefaultValue("50") int size,
+                                           @QueryParam("keyword") String keyword) { return ApiResponse.success(service.list(category,enabled,keyword,page,size)); }
     @POST @RoleAllowed({"SYSTEM_ADMIN"}) public ApiResponse<Unit> create(UnitUpsert req) { return ApiResponse.success(service.create(req)); }
     @PATCH @Path("/{id}") @RoleAllowed({"SYSTEM_ADMIN"}) public ApiResponse<Unit> update(@PathParam("id") long id, UnitUpdate req) { return ApiResponse.success(service.update(id,req)); }
     @POST @Path("/{id}/disable") @RoleAllowed({"SYSTEM_ADMIN"}) public ApiResponse<Unit> disable(@PathParam("id") long id, VersionRequest req) { service.disable(id,req == null ? null : req.version); return ApiResponse.success(service.get(id)); }

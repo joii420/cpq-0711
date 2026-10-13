@@ -186,7 +186,7 @@ export interface UnitConversionsResult {
   targets: UnitTargetRelation[];
 }
 
-export async function listUnits(params: { category?: string; enabled?: boolean; page?: number; size?: number } = {}): Promise<UnitListResult> {
+export async function listUnits(params: { category?: string; enabled?: boolean; page?: number; size?: number; keyword?: string } = {}): Promise<UnitListResult> {
   const res = await api.get('/units', { params });
   return unwrap<UnitListResult>(res);
 }

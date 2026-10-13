@@ -12,6 +12,7 @@ import dayjs from 'dayjs';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import QuotationStep2, {
   computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS,
   computeTabFormulasTree, usesTreeTokensTab, buildLineItemEvalContext,
@@ -247,8 +248,6 @@ const QuotationWizard: React.FC = () => {
   const [priceRevisionsOpen, setPriceRevisionsOpen] = useState(false);
 
   // Step 1 data
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [customerSearch, setCustomerSearch] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [contacts, setContacts] = useState<any[]>([]);
   // 来自"基础数据导入"流程：URL 含 ?autoPopulate=1 → Step1 客户字段不可更换。
@@ -885,9 +884,6 @@ const QuotationWizard: React.FC = () => {
     try {
       const res = await customerService.getById(custId);
       setSelectedCustomer(res.data);
-      // 同时把当前客户灌进 customers 列表——否则 Select 的 options 找不到这个 UUID 对应的
-      // label，下拉框只能显示一串 UUID（已加载的报价单刷新后必现）。
-      setCustomers(prev => (prev.some(c => c.id === res.data?.id) ? prev : [...prev, res.data]));
     } catch {
       // ignore
     }
@@ -916,26 +912,6 @@ const QuotationWizard: React.FC = () => {
       setContacts([]);
     }
   };
-
-  const searchCustomers = async (value: string) => {
-    setCustomerSearch(value);
-    try {
-      const params: any = { page: 0, size: 20 };
-      if (value && value.trim().length > 0) {
-        params.keyword = value.trim();
-      }
-      const res = await customerService.list(params);
-      const data = res.data;
-      setCustomers(Array.isArray(data) ? data : (data?.content || []));
-    } catch {
-      setCustomers([]);
-    }
-  };
-
-  // Load initial customer list on mount
-  useEffect(() => {
-    searchCustomers('');
-  }, []);
 
   const handleCustomerSelect = (custId: string) => {
     const prevCustomerId = form.getFieldValue('customerId');
@@ -2057,13 +2033,19 @@ const QuotationWizard: React.FC = () => {
         <Col span={16}>
           <Card title="报价单基本信息" size="small">
             <Form.Item name="customerId" label="客户" rules={[{ required: true, message: '请选择客户' }]}>
-              <Select
-                showSearch
+              <RemoteInfiniteSelect<any>
                 placeholder="搜索并选择客户"
-                filterOption={false}
-                onSearch={searchCustomers}
                 onChange={handleCustomerSelect}
-                options={customers.map(c => ({ label: `${c.name} (${c.code || ''})`, value: c.id }))}
+                fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+                mapOption={(c: any) => ({
+                  value: c.id,
+                  label: `${c.name} (${c.code || ''})`,
+                  item: c,
+                })}
+                onSelect={(_value, option) => setSelectedCustomer((option as any)?.item ?? null)}
+                initialOptions={selectedCustomer
+                  ? [{ value: selectedCustomer.id, label: `${selectedCustomer.name} (${selectedCustomer.code || ''})`, item: selectedCustomer }]
+                  : []}
                 // 2026-05-18: 报价单一旦生成 (quotationId 非空), 客户绑定不可改 — 与 lineItems / 模板锁定一致, 避免客户错位.
                 // 基础数据导入流程同样不允许换客户 (导入抽屉已选定).
                 disabled={isImportFlow || !!quotationId}

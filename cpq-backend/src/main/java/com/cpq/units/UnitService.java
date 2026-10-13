@@ -32,19 +32,28 @@ public class UnitService {
 
     @SuppressWarnings("unchecked")
     public UnitList list(String category, Boolean enabled, int page, int size) {
+        return list(category, enabled, null, page, size);
+    }
+
+    @SuppressWarnings("unchecked")
+    public UnitList list(String category, Boolean enabled, String keyword, int page, int size) {
         StringBuilder sql = new StringBuilder("SELECT u.id,u.code,u.category,u.enabled,u.sort_order,u.version,u.created_at,u.updated_at,(SELECT count(*) FROM unit_conversion_rate r WHERE r.source_unit_id=u.id) FROM unit_definition u WHERE 1=1 ");
         if (category != null && !category.isBlank()) sql.append("AND u.category=:category ");
         if (enabled != null) sql.append("AND u.enabled=:enabled ");
+        if (keyword != null && !keyword.isBlank()) sql.append("AND lower(u.code) LIKE :keyword ");
         sql.append("ORDER BY u.sort_order,u.id");
         Query q = em.createNativeQuery(sql.toString());
         if (category != null && !category.isBlank()) q.setParameter("category", category.trim().toUpperCase(Locale.ROOT));
         if (enabled != null) q.setParameter("enabled", enabled);
+        if (keyword != null && !keyword.isBlank()) q.setParameter("keyword", "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%");
         String totalSql = "SELECT count(*) FROM unit_definition u WHERE 1=1 " +
                 (category != null && !category.isBlank() ? "AND u.category=:category " : "") +
-                (enabled != null ? "AND u.enabled=:enabled" : "");
+                (enabled != null ? "AND u.enabled=:enabled " : "") +
+                (keyword != null && !keyword.isBlank() ? "AND lower(u.code) LIKE :keyword" : "");
         Query totalQuery = em.createNativeQuery(totalSql);
         if (category != null && !category.isBlank()) totalQuery.setParameter("category", category.trim().toUpperCase(Locale.ROOT));
         if (enabled != null) totalQuery.setParameter("enabled", enabled);
+        if (keyword != null && !keyword.isBlank()) totalQuery.setParameter("keyword", "%" + keyword.trim().toLowerCase(Locale.ROOT) + "%");
         long total = ((Number) totalQuery.getSingleResult()).longValue();
         int safePage = Math.max(page, 0), safeSize = size <= 0 ? 50 : Math.min(size, 500);
         q.setFirstResult(safePage * safeSize); q.setMaxResults(safeSize);

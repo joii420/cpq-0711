@@ -22,13 +22,13 @@ import {
 import type { TemplateData, VersionHistoryItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
+import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import GvBindingPanel from './GvBindingPanel';
 import './styles.css';
 
 const { Text } = Typography;
 const { TextArea } = Input;
-
-interface CustomerLite { id: string; name: string }
 
 interface TemplateConfigPanelProps {
   template: TemplateData;
@@ -41,7 +41,6 @@ interface TemplateConfigPanelProps {
   versionHistory: VersionHistoryItem[];
   onVersionClick: (id: string) => void;
   currentId: string;
-  customers?: CustomerLite[];
 }
 
 const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
@@ -55,13 +54,22 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
   versionHistory,
   onVersionClick,
   currentId,
-  customers = [],
 }) => {
   const isDraft = template.status === 'DRAFT';
   const isPublished = template.status === 'PUBLISHED';
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [majorVersion, setMajorVersion] = useState<number | undefined>(undefined);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
+
+  const fetchCustomers = React.useCallback(
+    ({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
+      customerService.list({ page, size, keyword: keyword || undefined }),
+    [],
+  );
+  const mapCustomerOption = React.useCallback(
+    (customer: { id: string; name: string }) => ({ value: customer.id, label: customer.name }),
+    [],
+  );
 
   useEffect(() => {
     productCategoryService.list('ACTIVE')
@@ -99,13 +107,15 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
             <Input disabled={!isDraft} />
           </Form.Item>
           <Form.Item name="customerId" label="适用客户">
-            <Select
-              options={customers.map(c => ({ value: c.id, label: c.name }))}
+            <RemoteInfiniteSelect
               placeholder="留空表示对所有客户通用"
               allowClear
-              showSearch
-              optionFilterProp="label"
+              fetchPage={fetchCustomers}
+              mapOption={mapCustomerOption}
               disabled={!isDraft}
+              initialOptions={template.customerId && template.customerName
+                ? [{ value: String(template.customerId), label: template.customerName }]
+                : []}
             />
           </Form.Item>
           <Form.Item name="description" label="描述">

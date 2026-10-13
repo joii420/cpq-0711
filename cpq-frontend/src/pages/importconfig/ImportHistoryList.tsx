@@ -7,6 +7,7 @@ import { DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { importService } from '../../services/importService';
 import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -23,7 +24,6 @@ const ImportHistoryList: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(0);
-  const [customers, setCustomers] = useState<any[]>([]);
   const [customerFilter, setCustomerFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs | null, dayjs.Dayjs | null] | null>(null);
@@ -51,16 +51,6 @@ const ImportHistoryList: React.FC = () => {
     }
   };
 
-  const fetchCustomers = async () => {
-    try {
-      const res = await customerService.list({ size: 200 });
-      setCustomers(res.data?.content || []);
-    } catch {
-      // silently fail
-    }
-  };
-
-  useEffect(() => { fetchCustomers(); }, []);
   useEffect(() => { fetchData(); }, [page, customerFilter, statusFilter, dateRange]);
 
   const openDetail = async (record: any) => {
@@ -136,20 +126,14 @@ const ImportHistoryList: React.FC = () => {
       title="导入历史"
     >
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Select
+        <RemoteInfiniteSelect<any>
           placeholder="筛选客户"
           allowClear
           style={{ width: 180 }}
           onChange={v => { setCustomerFilter(v || ''); setPage(0); }}
-          showSearch
-          filterOption={(input, option) =>
-            String(option?.children || '').toLowerCase().includes(input.toLowerCase())
-          }
-        >
-          {customers.map((c: any) => (
-            <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
-          ))}
-        </Select>
+          fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+          mapOption={(c: any) => ({ value: c.id, label: c.name })}
+        />
         <Select
           placeholder="筛选状态"
           allowClear

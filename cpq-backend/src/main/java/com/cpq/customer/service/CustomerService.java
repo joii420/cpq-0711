@@ -54,7 +54,9 @@ public class CustomerService {
             params.put("status", status);
         }
         if (keyword != null && !keyword.isBlank()) {
-            query.append(" AND (name LIKE :kw OR code LIKE :kw OR id IN (SELECT cc.customerId FROM CustomerContact cc WHERE cc.name LIKE :kw OR cc.phone LIKE :kw))");
+            query.append(" AND (LOWER(name) LIKE LOWER(:kw) OR LOWER(code) LIKE LOWER(:kw)"
+                    + " OR id IN (SELECT cc.customerId FROM CustomerContact cc"
+                    + " WHERE LOWER(cc.name) LIKE LOWER(:kw) OR LOWER(cc.phone) LIKE LOWER(:kw)))");
             params.put("kw", "%" + keyword + "%");
         }
 

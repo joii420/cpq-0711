@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom';
 import { templateService } from '../../services/templateService';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 
 interface CustomerLite { id: string; name: string }
@@ -70,18 +71,26 @@ const TemplateList: React.FC = () => {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [form] = Form.useForm();
   const [categories, setCategories] = useState<ProductCategory[]>([]);
-  const [customers, setCustomers] = useState<CustomerLite[]>([]);
   const [customerFilter, setCustomerFilter] = useState<string | undefined>();
   const [scopeFilter, setScopeFilter] = useState<'ALL' | 'GENERAL' | 'SPECIFIC'>('ALL');
   const [kindFilter, setKindFilter] = useState<string | undefined>();
 
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }));
-  const customerOptions = customers.map(c => ({ value: c.id, label: c.name }));
   const categoryNameMap = React.useMemo(() => {
     const m: Record<string, string> = {};
     categories.forEach(c => { m[c.id] = c.name; });
     return m;
   }, [categories]);
+
+  const fetchCustomers = React.useCallback(
+    ({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
+      customerService.list({ page, size, keyword: keyword || undefined }),
+    [],
+  );
+  const mapCustomerOption = React.useCallback(
+    (customer: CustomerLite) => ({ value: customer.id, label: customer.name }),
+    [],
+  );
 
   const loadTemplates = async () => {
     setLoading(true);
@@ -110,12 +119,6 @@ const TemplateList: React.FC = () => {
     productCategoryService.list('ACTIVE')
       .then(res => setCategories(res.data || []))
       .catch(() => setCategories([]));
-    customerService.list({ size: 500 })
-      .then((res: any) => {
-        const list = res.data?.content ?? res.data ?? [];
-        setCustomers(list.map((c: any) => ({ id: c.id, name: c.name })));
-      })
-      .catch(() => setCustomers([]));
   }, []);
 
   useEffect(() => {
@@ -284,13 +287,12 @@ const TemplateList: React.FC = () => {
         </Col>
         {scopeFilter === 'SPECIFIC' && (
           <Col span={5}>
-            <Select
+            <RemoteInfiniteSelect<CustomerLite>
               placeholder="选择客户"
-              options={customerOptions}
               allowClear
-              showSearch
-              optionFilterProp="label"
               style={{ width: '100%' }}
+              fetchPage={fetchCustomers}
+              mapOption={mapCustomerOption}
               onChange={setCustomerFilter}
               value={customerFilter}
             />
@@ -371,12 +373,11 @@ const TemplateList: React.FC = () => {
                     ? '核价模板：留空表示对所有客户可用（推荐）；选择特定客户则只对该客户生效'
                     : '报价模板：留空 = 通用模板；选择客户 = 该客户专属模板。匹配时客户专属优先，无则回退通用'}
                 >
-                  <Select
-                    options={customerOptions}
+                  <RemoteInfiniteSelect<CustomerLite>
                     placeholder={isCosting ? '默认所有客户可用，可选择特定客户' : '不选则为通用模板，选择则为客户专属'}
                     allowClear
-                    showSearch
-                    optionFilterProp="label"
+                    fetchPage={fetchCustomers}
+                    mapOption={mapCustomerOption}
                   />
                 </Form.Item>
               );

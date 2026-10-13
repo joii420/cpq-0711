@@ -8,6 +8,7 @@ import { useNavigate } from 'react-router-dom';
 import { customerService } from '../../services/customerService';
 import { templateService } from '../../services/templateService';
 import { quotationService } from '../../services/quotationService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 const { Text } = Typography;
 
@@ -21,8 +22,6 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ open, onClose }) =>
   const [currentStep, setCurrentStep] = useState(0);
 
   // Step 0: Select customer
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [customersLoading, setCustomersLoading] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
 
   // Step 1: Select CPQ template
@@ -55,17 +54,6 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ open, onClose }) =>
     reset();
     onClose();
   };
-
-  // Load customers when modal opens
-  useEffect(() => {
-    if (open) {
-      setCustomersLoading(true);
-      customerService.list({ size: 200 })
-        .then(res => setCustomers(res.data?.content || []))
-        .catch(() => { /* silently fail */ })
-        .finally(() => setCustomersLoading(false));
-    }
-  }, [open]);
 
   // Step 0 → Step 1: load published templates with excel_view_config for this customer
   const handleStep0Next = async () => {
@@ -176,17 +164,13 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ open, onClose }) =>
         return (
           <div>
             <div style={{ marginBottom: 8 }}>选择要为哪个客户导入报价数据：</div>
-            <Select
+            <RemoteInfiniteSelect<any>
               style={{ width: '100%' }}
               placeholder="请选择客户"
-              loading={customersLoading}
               value={selectedCustomerId || undefined}
               onChange={v => { setSelectedCustomerId(v); setSelectedTemplateId(''); }}
-              showSearch
-              filterOption={(input, opt) =>
-                String(opt?.label || '').toLowerCase().includes(input.toLowerCase())
-              }
-              options={customers.map((c: any) => ({ label: c.name, value: c.id }))}
+              fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+              mapOption={(c: any) => ({ value: c.id, label: c.name })}
             />
           </div>
         );
