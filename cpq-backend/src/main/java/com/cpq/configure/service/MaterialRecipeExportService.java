@@ -83,7 +83,7 @@ public class MaterialRecipeExportService {
                 ? " AND r.status = 'ACTIVE' "
                 : " AND (r.status IS NULL OR r.status <> 'ACTIVE') ");
         }
-        sql.append(" ORDER BY r.symbol, c.seq, e.sort_order");
+        sql.append(" ORDER BY r.symbol, c.group_no, e.sort_order");
 
         var q = em.createNativeQuery(sql.toString());
         if (hasKw) q.setParameter("kw", "%" + keyword.trim() + "%");
