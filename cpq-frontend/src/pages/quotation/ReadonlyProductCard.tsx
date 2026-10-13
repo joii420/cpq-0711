@@ -629,7 +629,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           )}
           {lineItem.settlementUnit && (
             <span className="qt-sku-badge" title="该客户产品的结算单位">
-              [单位: {lineItem.settlementUnit}]
+              单位: {lineItem.settlementUnit}
             </span>
           )}
           {lineItem.vatRate != null && (
