@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import jakarta.transaction.Transactional;
 
 /**
  * 「客户产品」列表查询服务。
@@ -55,6 +56,7 @@ public class DatasetCustomerPartService {
             new DsCustomerParts.Column("customerProductNo", "客户产品编号", "STRING"),
             new DsCustomerParts.Column("customerDrawingNo", "客户图号",     "STRING"),
             new DsCustomerParts.Column("materialNo",        "销售料号",     "STRING"),
+            new DsCustomerParts.Column("settlementUnit",    "结算单位",     "STRING"),
             new DsCustomerParts.Column("taxCategoryName",   "税务分类",     "STRING"),
             new DsCustomerParts.Column("vatRate",           "增值税",       "DECIMAL")
     );
@@ -159,9 +161,9 @@ public class DatasetCustomerPartService {
 
         // ── 分页数据（第 2 条 SQL；LEFT JOIN 一次带出客户名，禁逐行查） ──────
         Query dataQuery = em.createNativeQuery(
-                "SELECT t.customer_no, c.name, t.customer_part_name, "
+                "SELECT t.id, t.customer_no, c.name, t.customer_part_name, "
               + "       t.customer_product_no, t.customer_drawing_no, t.material_no, "
-              + "       m.tax_category_id, tc.name, tv.vat_rate "
+              + "       m.tax_category_id, tc.name, tv.vat_rate, t.settlement_unit, t.version "
               + from + where + orderBy);
         params.forEach(dataQuery::setParameter);
         dataQuery.setFirstResult(safePage * safeSize);
@@ -172,18 +174,48 @@ public class DatasetCustomerPartService {
         // ✅ N+1 自检：本循环是纯内存装配，无 repository 调用、无懒加载 getter、无 SQL。
         for (Object[] r : rows) {
             DsCustomerParts.Item it = new DsCustomerParts.Item();
-            it.customerNo        = str(r[0]);
-            it.customerName      = str(r[1]); // JOIN 不到 → null → 前端 —
-            it.customerPartName  = str(r[2]);
-            it.customerProductNo = str(r[3]);
-            it.customerDrawingNo = str(r[4]);
-            it.materialNo        = str(r[5]);
-            it.taxCategoryId     = str(r[6]);
-            it.taxCategoryName   = str(r[7]);
-            it.vatRate           = plainDecimal(r[8]);
+            it.id                = ((Number) r[0]).longValue();
+            it.customerNo        = str(r[1]);
+            it.customerName      = str(r[2]); // JOIN 不到 → null → 前端 —
+            it.customerPartName  = str(r[3]);
+            it.customerProductNo = str(r[4]);
+            it.customerDrawingNo = str(r[5]);
+            it.materialNo        = str(r[6]);
+            it.taxCategoryId     = str(r[7]);
+            it.taxCategoryName   = str(r[8]);
+            it.vatRate           = plainDecimal(r[9]);
+            it.settlementUnit    = str(r[10]);
+            it.version           = ((Number) r[11]).intValue();
             items.add(it);
         }
         return new DsCustomerParts(total, COLUMNS, items);
+    }
+
+    @Transactional
+    public DsCustomerParts.Item updateSettlementUnit(String dataset, long id, String requestedUnit, Integer version) {
+        requireTable(dataset);
+        if (version == null) throw new BusinessException(400, "version 不能为空");
+        String standardUnit = null;
+        if (requestedUnit != null && !requestedUnit.isBlank()) {
+            Object code = em.createNativeQuery("SELECT code FROM unit_definition WHERE enabled AND lower(btrim(code))=lower(btrim(:code))")
+                    .setParameter("code", requestedUnit).getResultStream().findFirst().orElse(null);
+            if (code == null) throw new BusinessException(400, "结算单位不存在或已停用: " + requestedUnit.trim());
+            standardUnit = code.toString();
+        }
+        int changed = em.createNativeQuery("UPDATE ds_quote_customer_part SET settlement_unit=:unit, version=version+1, updated_at=now(), updated_by='api' WHERE id=:id AND version=:version")
+                .setParameter("unit", standardUnit).setParameter("id", id).setParameter("version", version).executeUpdate();
+        if (changed == 0) {
+            boolean exists = ((Number) em.createNativeQuery("SELECT count(*) FROM ds_quote_customer_part WHERE id=:id")
+                    .setParameter("id", id).getSingleResult()).longValue() > 0;
+            throw new BusinessException(exists ? 409 : 404, exists ? "数据已被其他用户更新，请刷新后重试" : "客户产品不存在");
+        }
+        Object[] r = (Object[]) em.createNativeQuery("SELECT id,customer_no,customer_part_name,customer_product_no,customer_drawing_no,material_no,settlement_unit,version FROM ds_quote_customer_part WHERE id=:id")
+                .setParameter("id", id).getSingleResult();
+        DsCustomerParts.Item it = new DsCustomerParts.Item();
+        it.id=((Number)r[0]).longValue(); it.customerNo=str(r[1]); it.customerPartName=str(r[2]);
+        it.customerProductNo=str(r[3]); it.customerDrawingNo=str(r[4]); it.materialNo=str(r[5]);
+        it.settlementUnit=str(r[6]); it.version=((Number)r[7]).intValue();
+        return it;
     }
 
     /**

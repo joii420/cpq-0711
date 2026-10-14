@@ -1,14 +1,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // ProductCustomerPartTab —— 产品管理「客户产品」页签（task-260903 · F-2）
 //   数据源：`GET /dataset/quote/customer-parts`（ds_quote_customer_part + LEFT JOIN customer）
-//   服务端分页 + 服务端搜索；**纯只读，点行无任何反应**（AC-3）。
+//   服务端分页 + 服务端搜索；仅 SYSTEM_ADMIN 可编辑结算单位。
 //
 // 📋 本页属 `docs/列表操作规范.md §12` 例外白名单（纯查看，无批量动作）
 //    ⇒ 用裸 <Table> 不用 SelectableTable；工具栏须**自套** TOOLBAR_ROW_STYLE
 //      （裸 Table 没有 SelectableTable 的 toolbar 容器）。
 //
-// 🚫 工具栏只有「搜索 + 刷新」：无新增 / 编辑 / 删除 / 导入 —— 本页**仍是纯只读**，
-//    写入通道只有 task-260902 的导入，不产生第二条写入路径（需求文档 ② 明确不做）。
+// 🚫 无新增 / 删除；结算单位通过受保护的单字段 PATCH 维护，导入仍兼容旧模板。
 //
 // 🔄 task-260907-产品管理客户过滤 · F-3（本次改动）：
 //    客户过滤下拉**已摘除**，改由壳页 `ProductHubPage` 统一加载候选 + 持有客户上下文，
@@ -25,13 +24,15 @@
 //    「该客户暂无客户产品数据」，而不是通用的「暂无数据」。
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Table, Input, Button, Space, Empty, message } from 'antd';
-import { ReloadOutlined } from '@ant-design/icons';
+import { Table, Input, Button, Space, Empty, message, Drawer, Form, Select } from 'antd';
+import { ReloadOutlined, EditOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
-import { listCustomerParts } from './productHubApi';
+import { listCustomerParts, listUnits, updateCustomerPartSettlementUnit } from './productHubApi';
 import type { CustomerPartItem } from './productHubTypes';
 import { renderTextCell } from './productHubCells';
 import ZeroTotalFooter from './ZeroTotalFooter';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import { useAuthStore } from '../../stores/authStore';
 import {
   SEARCH_WIDTH,
   SEARCH_DEBOUNCE_MS,
@@ -79,6 +80,12 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   // 初值 true：避免「上下文未就绪」期间先短暂闪出一个空态表格（见下方 fetchList 的 ready 门槛）
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState<CustomerPartItem | null>(null);
+  const [selectedRowKey, setSelectedRowKey] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [form] = Form.useForm();
+  const userRole = useAuthStore((s) => s.user?.role);
+  const canEdit = userRole === 'SYSTEM_ADMIN';
 
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (debounceTimer.current) clearTimeout(debounceTimer.current); }, []);
@@ -86,6 +93,7 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
   // 切客户时回到第 1 页（fronttask F-1 第 8 条）——否则会停在「上一个客户的第 3 页」，
   // 而新客户可能只有 1 页，表现为假空态。首次挂载也会命中一次，无害（page 本来就是 1）。
   useEffect(() => { setPage(1); }, [customerNo]);
+  useEffect(() => { setSelectedRowKey(null); }, [customerNo, page, keyword]);
 
   const fetchList = useCallback(async () => {
     if (!ready || !available) return; // AC-10②/状态 C：上下文未就绪或没有可查的客户时不发请求
@@ -140,6 +148,21 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
     setPage(1);
   };
 
+  const openEdit = (row: CustomerPartItem) => {
+    setEditing(row);
+    form.setFieldsValue({ settlementUnit: row.settlementUnit ?? undefined });
+  };
+  const saveEdit = async () => {
+    if (!editing?.id) return;
+    const values = await form.validateFields();
+    setSaving(true);
+    try {
+      await updateCustomerPartSettlementUnit(editing.id, values.settlementUnit ?? null, editing.version);
+      message.success('结算单位已保存'); setEditing(null); void fetchList();
+    } catch (e) { message.error((e as Error)?.message ?? '保存失败'); }
+    finally { setSaving(false); }
+  };
+
   // 列顺序即 AC-2，不得调整
   const columns: ColumnsType<CustomerPartItem> = [
     { title: '客户编号', dataIndex: 'customerNo', key: 'customerNo', width: 130, ellipsis: true, render: renderTextCell },
@@ -151,9 +174,11 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
     { title: '客户图号', dataIndex: 'customerDrawingNo', key: 'customerDrawingNo', width: 140, ellipsis: true, render: renderTextCell },
     { title: '销售料号', dataIndex: 'materialNo', key: 'materialNo', width: 160, ellipsis: true, render: renderTextCell },
     { title: '税务分类', dataIndex: 'taxCategoryName', key: 'taxCategoryName', width: 140, ellipsis: true, render: renderTextCell },
+    { title: '结算单位', dataIndex: 'settlementUnit', key: 'settlementUnit', width: 100, render: renderTextCell },
     { title: '增值税', dataIndex: 'vatRate', key: 'vatRate', width: 100, align: 'right', ellipsis: true,
       render: (value: string | null | undefined) => value == null || value === '' ? '—' : `${value}%` },
   ];
+  if (canEdit) columns.push({ title: '操作', key: 'actions', width: 90, render: (_: unknown, row: CustomerPartItem) => <Button type="link" icon={<EditOutlined />} onClick={() => openEdit(row)}>编辑</Button> } as any);
 
   // 三种空态必须可区分（原型 05）：
   //   状态 C（候选加载失败）> F-7 状态 A（该客户确实没数据）> 通用空态（搜索命中 0 行等）。
@@ -197,15 +222,24 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
         </Space>
         <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); }}>刷新</Button>
+          {canEdit && <Button icon={<EditOutlined />} disabled={!selectedRowKey} onClick={() => {
+            const row = items.find((r) => String(r.id ?? `${r.customerNo}|${r.customerProductNo}|${r.materialNo}`) === selectedRowKey);
+            if (row) openEdit(row);
+          }}>编辑</Button>}
         </Space>
       </div>
 
       <Table<CustomerPartItem>
-        rowKey={(r) => `${r.customerNo}|${r.customerProductNo}|${r.materialNo}`}
+        rowKey={(r) => String(r.id ?? `${r.customerNo}|${r.customerProductNo}|${r.materialNo}`)}
         size="small"
         loading={loading}
         columns={columns}
         dataSource={items}
+        rowSelection={canEdit ? {
+          type: 'radio',
+          selectedRowKeys: selectedRowKey ? [selectedRowKey] : [],
+          onChange: (keys) => setSelectedRowKey(keys.length ? String(keys[0]) : null),
+        } : undefined}
         tableLayout="fixed"
         // 🚫 刻意不传 onRow —— 行不可点击、无 cursor:pointer、点任意单元格不弹抽屉（AC-3）
         locale={{ emptyText: emptyNode }}
@@ -220,6 +254,24 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
 
       {/* AC-13：antd 6 在 total=0 时整个不渲染分页器，此处补「共 0 条」（见 ZeroTotalFooter 注释） */}
       <ZeroTotalFooter total={total} loading={loading} />
+      <Drawer
+        title="编辑结算单位"
+        open={!!editing}
+        onClose={() => setEditing(null)}
+        extra={<Button type="primary" loading={saving} onClick={() => void saveEdit()}>保存</Button>}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item label="客户产品编号"><Input value={editing?.customerProductNo} disabled /></Form.Item>
+          <Form.Item name="settlementUnit" label="结算单位">
+            <RemoteInfiniteSelect<any>
+              allowClear
+              placeholder="未维护时不进行换算"
+              fetchPage={({ page, size, keyword }) => listUnits({ page, size, enabled: true, ...(keyword ? { keyword } : {}) })}
+              mapOption={(u: any) => ({ value: u.code, label: u.code })}
+            />
+          </Form.Item>
+        </Form>
+      </Drawer>
     </div>
   );
 };

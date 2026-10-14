@@ -6,6 +6,7 @@ import {
 import { UploadOutlined } from '@ant-design/icons';
 import { excelTemplateService } from '../../services/excelTemplateService';
 import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 interface ExcelTemplateDrawerProps {
   open: boolean;
@@ -28,22 +29,6 @@ const ExcelTemplateDrawer: React.FC<ExcelTemplateDrawerProps> = ({
   const [selectedPartNoColumn, setSelectedPartNoColumn] = useState<string>('');
   const [parsing, setParsing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [customerLoading, setCustomerLoading] = useState(false);
-
-  const searchCustomers = async (value: string) => {
-    if (!value) return;
-    setCustomerLoading(true);
-    try {
-      const res = await customerService.list({ keyword: value, size: 20 });
-      setCustomers(res.data?.content || []);
-    } catch {
-      // silently fail
-    } finally {
-      setCustomerLoading(false);
-    }
-  };
-
   const handleStep1 = async () => {
     try {
       const values = await form.validateFields();
@@ -152,18 +137,14 @@ const ExcelTemplateDrawer: React.FC<ExcelTemplateDrawerProps> = ({
             <Input />
           </Form.Item>
           <Form.Item name="customerId" label="所属客户" rules={[{ required: true, message: '请选择客户' }]}>
-            <Select
-              showSearch
+            <RemoteInfiniteSelect<any>
               placeholder="输入关键词搜索客户"
-              filterOption={false}
-              onSearch={searchCustomers}
-              loading={customerLoading}
-              notFoundContent={customerLoading ? '搜索中...' : '请输入关键词搜索'}
-            >
-              {customers.map((c: any) => (
-                <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
-              ))}
-            </Select>
+              fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+              mapOption={(c: any) => ({ value: c.id, label: c.name })}
+              initialOptions={editingRecord?.customerId && editingRecord?.customerName
+                ? [{ value: editingRecord.customerId, label: editingRecord.customerName }]
+                : []}
+            />
           </Form.Item>
           <Form.Item name="description" label="描述">
             <Input.TextArea rows={2} />

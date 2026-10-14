@@ -27,11 +27,29 @@ import SelectableTable, { runBatch, type ToolbarAction } from '../../components/
 import QuotationDatasetImportDrawer from './QuotationDatasetImportDrawer';
 import { QUOTE_IMPORT_ROLES, QUOTE_IMPORT_NO_PERMISSION_TIP } from './quoteDatasetImportConfig';
 import { formatNumber } from '../../utils/formatNumber';
+import { toDecimal } from '../../utils/precision';
 // task-260914 · F-4（C-4）：创建日期按**浏览器本地时区**换算。dayjs 是项目既有依赖
 // （package.json:24 `^1.11.20`，master-data / config 等多处在用），🚫 不另造日期工具。
 import dayjs from 'dayjs';
 
 const { Search } = Input;
+
+/**
+ * 列表金额与报价卡片统一使用报价币种展示。
+ * 后端 quotation.totalAmount 保存 CNY 基准金额；报价币种为外币时按建单时冻结汇率换回报价币种。
+ */
+function formatQuotationListAmount(
+  value: string | number | null | undefined,
+  currency?: string | null,
+  exchangeRate?: string | number | null,
+): string {
+  if (value == null) return '—';
+  const quoteCurrency = currency || 'CNY';
+  const rate = quoteCurrency !== 'CNY' && exchangeRate != null && !toDecimal(String(exchangeRate)).isZero()
+    ? toDecimal(String(exchangeRate))
+    : toDecimal('1');
+  return formatNumber(toDecimal(String(value)).dividedBy(rate).toString(), { isComputed: true }) ?? '0';
+}
 
 const statusMap: Record<string, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
@@ -219,10 +237,14 @@ const QuotationList: React.FC = () => {
     },
     {
       title: '总金额', dataIndex: 'totalAmount', key: 'totalAmount', width: 130,
-      // task-0801（AC-5）：原 toLocaleString() 默认最多 3 位小数，与详情页 2/4 位不一致，
-      // 是"列表与详情对不上"里属于精度的那部分——只改精度、不改列/不改名，改走 formatNumber
-      // （DISPLAY_SCALE=6 兜底），保留 ¥ 前缀与 '-' 空值兜底。
-      render: (v: string | null | undefined) => v != null ? `¥${formatNumber(v, { isComputed: true }) ?? '0'}` : '-',
+      // 金额不再拼接货币符号；与报价卡片保持同一报价币种金额口径。
+      render: (_v: string | null | undefined, record: any) => formatQuotationListAmount(
+        record.totalAmount, record.currency, record.exchangeRate,
+      ),
+    },
+    {
+      title: '货币', dataIndex: 'currency', key: 'currency', width: 80,
+      render: (v: string | null | undefined) => v || 'CNY',
     },
     // task-260914 · F-4（AC-8 / AC-11 / C-4）：创建日期列插在「总金额」之后、「到期日」之前。
     // 🕐 **按浏览器本地时区换算**后再格式化成 YYYY-MM-DD（D-9：不带时分秒）。

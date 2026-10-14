@@ -3744,7 +3744,7 @@ public class QuotationService {
             if (!hfPartNos.isEmpty()) ors.add("v.material_no IN (:mats)");
             if (!customerPartNos.isEmpty()) ors.add("v.customer_product_no IN (:cpns)");
             var q0 = em.createNativeQuery(
-                    "SELECT v.material_no, v.customer_part_name, v.customer_product_no, v.customer_drawing_no " +
+                    "SELECT v.material_no, v.customer_part_name, v.customer_product_no, v.customer_drawing_no, v.settlement_unit " +
                     "FROM ds_quote_customer_part v " +
                     "WHERE v.customer_no = :cc AND (" + String.join(" OR ", ors) + ") " +
                     // 回退路径的确定性排序：同 (customer_no, material_no) 多行时恒取 customer_product_no 最小的那条
@@ -3845,6 +3845,7 @@ public class QuotationService {
                 dto.customerPartName = mapping[1] != null ? mapping[1].toString() : null;
                 dto.customerProductNo = mapping[2] != null ? mapping[2].toString() : null;
                 dto.customerDrawingNo = mapping[3] != null ? mapping[3].toString() : null;
+                dto.settlementUnit = mapping[4] != null ? mapping[4].toString() : null;
             }
             // 注入 productType (用于前端 ProductCard 条件渲染 COMPOSITE 专属 Tab)
             if (hfpn != null) {
@@ -3861,6 +3862,8 @@ public class QuotationService {
                 info.specification = pi.specification;
                 info.sizeInfo = pi.sizeInfo;
                 info.oldMaterialNo = pi.oldMaterialNo;
+                info.basicPricingUnit = pi.basicPricingUnit;
+                info.detailPricingUnit = pi.detailPricingUnit;
                 dto.hfPartInfo = info;
             }
 

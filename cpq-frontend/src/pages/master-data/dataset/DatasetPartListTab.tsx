@@ -136,6 +136,13 @@ const DatasetPartListTab: React.FC<Props> = ({ dataset }) => {
           width: 150,
           render: (v) => v || <Text type="secondary">—</Text>,
         },
+        ...(dataset === 'cost-basic' || dataset === 'cost-detail' ? [{
+          title: '计价单位',
+          dataIndex: 'pricingUnit',
+          key: 'pricingUnit',
+          width: 110,
+          render: (v: string | null) => v || <Text type="secondary">未维护</Text>,
+        } as any] : []),
         {
           title: '已配置',
           key: 'configured', // 无 dataIndex —— 排序按 columnKey 映射为 configuredCount

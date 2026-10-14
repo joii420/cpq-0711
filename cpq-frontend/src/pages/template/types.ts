@@ -34,6 +34,8 @@ export interface TemplateData {
   categoryId?: string;
   /** 后端 DTO 返回的分类名(便于显示) */
   categoryName?: string;
+  customerId?: string;
+  customerName?: string;
   description?: string;
   usageNote?: string;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';

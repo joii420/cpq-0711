@@ -118,6 +118,11 @@ public class PlainTableWriter {
                 setClauses.add(c.name + " = EXCLUDED." + c.name);
             }
         }
+        // 系统内部并发版本不进入 Excel，但导入覆盖已有客户料号时仍要推进版本，
+        // 使页面 PATCH 携带的旧版本能够正确检测到并发变更。
+        if (internalCols.contains("version") && "ds_quote_customer_part".equals(table)) {
+            setClauses.add("version = " + table + ".version + 1");
+        }
         setClauses.add("source = EXCLUDED.source");
         setClauses.add("updated_at = now()");
         setClauses.add("updated_by = EXCLUDED.updated_by");
@@ -139,7 +144,7 @@ public class PlainTableWriter {
                 for (int c = 0; c < allCols.size(); c++) {
                     if (c > 0) sql.append(", ");
                     if (isGeneratedColumn(sheet, allCols.get(c))) {
-                        sql.append("(SELECT id FROM tax_category WHERE is_default = TRUE AND status = 'ACTIVE' LIMIT 1)");
+                        sql.append(generatedExpression(sheet, allCols.get(c)));
                     } else {
                         sql.append(":p").append(i).append('_').append(c);
                     }
@@ -186,6 +191,14 @@ public class PlainTableWriter {
 
     /** Columns whose values are emitted as SQL expressions rather than bind parameters. */
     static boolean isGeneratedColumn(SheetDef sheet, String column) {
-        return "tax_category_id".equals(column) && "ds_quote_material".equals(sheet.tableName);
+        return ("tax_category_id".equals(column) && "ds_quote_material".equals(sheet.tableName))
+                || ("version".equals(column) && "ds_quote_customer_part".equals(sheet.tableName));
+    }
+
+    static String generatedExpression(SheetDef sheet, String column) {
+        if ("version".equals(column) && "ds_quote_customer_part".equals(sheet.tableName)) {
+            return "1";
+        }
+        return "(SELECT id FROM tax_category WHERE is_default = TRUE AND status = 'ACTIVE' LIMIT 1)";
     }
 }

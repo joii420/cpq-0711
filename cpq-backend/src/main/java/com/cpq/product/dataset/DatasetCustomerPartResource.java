@@ -9,6 +9,8 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.PATCH;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.core.MediaType;
 
 /**
@@ -37,6 +39,8 @@ import jakarta.ws.rs.core.MediaType;
 @Produces(MediaType.APPLICATION_JSON)
 @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
 public class DatasetCustomerPartResource {
+
+    public static class SettlementUnitRequest { public String settlementUnit; public Integer version; }
 
     @Inject
     DatasetCustomerPartService service;
@@ -88,5 +92,18 @@ public class DatasetCustomerPartResource {
     public ApiResponse<DsCustomerOptions> listCustomerPartCustomers(
             @PathParam("dataset") String dataset) {
         return ApiResponse.success(service.listCustomers(dataset));
+    }
+
+    @PATCH
+    @Path("/{dataset}/customer-parts/{id}/settlement-unit")
+    @Consumes(MediaType.APPLICATION_JSON)
+    @RoleAllowed({"SYSTEM_ADMIN"})
+    public ApiResponse<DsCustomerParts.Item> updateSettlementUnit(
+            @PathParam("dataset") String dataset,
+            @PathParam("id") long id,
+            SettlementUnitRequest request) {
+        return ApiResponse.success(service.updateSettlementUnit(dataset, id,
+                request == null ? null : request.settlementUnit,
+                request == null ? null : request.version));
     }
 }

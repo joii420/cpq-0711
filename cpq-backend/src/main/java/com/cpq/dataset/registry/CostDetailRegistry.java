@@ -37,6 +37,7 @@ public class CostDetailRegistry extends AbstractDatasetRegistry {
                 col("dimension", "尺寸", "VALUE", "STRING", "varchar(128)", false, false),
                 col("old_material_no", "旧料号", "VALUE", "STRING", "varchar(128)", false, false),
                 col("unit_weight", "单重", "VALUE", "DECIMAL", "numeric(26,12)", false, false),
+                col("pricing_unit", "计价单位", "VALUE", "STRING", "varchar(32)", false, false),
                 // D-30（AC-64）：硬枚举 零件/外购件，域外值 Phase 1 整份拒收；空值仍放行。
                 // 三套物料表都有这一列 ⇒ 三套都校验（与 D-27 的「产品分类只加报价侧」不是同一批）。
                 col("material_type", "类型", "VALUE", "STRING", "varchar(128)", false, false)

@@ -37,6 +37,10 @@ interface CustomerPartCandidate {
   customerProductNo?: string;
   customerPartName?: string;
   customerDrawingNo?: string;
+  settlementUnit?: string | null;
+  pricingUnit?: string | null;
+  basicPricingUnit?: string | null;
+  detailPricingUnit?: string | null;
   baseCurrency?: string;
   /** 生产料号详情。task-260910(B-4/F-5)：换源到
    *  ds_quote_material.production_no → ds_cost_basic_material ∪ ds_cost_detail_material，
@@ -47,6 +51,8 @@ interface CustomerPartCandidate {
     specification?: string;
     sizeInfo?: string;
     oldMaterialNo?: string;
+    basicPricingUnit?: string | null;
+    detailPricingUnit?: string | null;
   };
   quoteCurrency?: string;
   customerSpecific: boolean;
@@ -216,6 +222,10 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     customerPartName: part.customerPartName || '',
     customerProductNo: part.customerProductNo || '',
     customerDrawingNo: part.customerDrawingNo || '',
+    settlementUnit: part.settlementUnit ?? null,
+    pricingUnit: part.pricingUnit ?? null,
+    basicPricingUnit: part.basicPricingUnit ?? part.hfPartInfo?.basicPricingUnit ?? null,
+    detailPricingUnit: part.detailPricingUnit ?? part.hfPartInfo?.detailPricingUnit ?? null,
     // 生产料号管理 视角详情（卡片右侧 popover 用）—— 候选 API 已 LEFT JOIN internal_material 返回
     hfPartInfo: part.hfPartInfo,
     templateId: tmpl.id,

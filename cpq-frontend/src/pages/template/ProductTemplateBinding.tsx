@@ -11,7 +11,6 @@ import {
   Space,
   Modal,
   Steps,
-  Select,
   Switch,
   message,
   Spin,
@@ -21,7 +20,6 @@ import {
   Row,
   Col,
   Checkbox,
-  Badge,
   Divider,
 } from 'antd';
 import {
@@ -34,6 +32,7 @@ import { productService } from '../../services/productService';
 import { templateService } from '../../services/templateService';
 import { bindingService } from '../../services/bindingService';
 import { processService } from '../../services/processService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 const { Sider, Content } = Layout;
 const { Search } = Input;
@@ -187,15 +186,29 @@ const ProductTemplateBinding: React.FC = () => {
     setSelectedTemplateId(undefined);
     setModalOpen(true);
 
-    // Load published templates
-    try {
-      const res = await templateService.list({ status: 'PUBLISHED', size: 100 });
-      const tdata = res.data;
-      setPublishedTemplates(Array.isArray(tdata) ? tdata : (tdata?.content || []));
-    } catch {
-      message.error('加载模板失败');
-    }
   };
+
+  const fetchPublishedTemplates = useCallback(({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
+    templateService.list({
+      page,
+      size,
+      status: 'PUBLISHED',
+      keyword: keyword || undefined,
+    }), []);
+
+  const mapPublishedTemplate = useCallback((template: any) => ({
+    value: template.id,
+    label: `${template.name}  (${template.version || '-'})  [${template.category || '-'}]`,
+    item: template,
+  }), []);
+
+  const mergePublishedTemplates = useCallback((items: any[]) => {
+    setPublishedTemplates((previous) => {
+      const byId = new Map(previous.map((item) => [item.id, item]));
+      items.forEach((item) => byId.set(item.id, item));
+      return Array.from(byId.values());
+    });
+  }, []);
 
   const handleCreateBinding = async () => {
     if (!selectedProduct || !selectedTemplateId) {
@@ -390,19 +403,18 @@ const ProductTemplateBinding: React.FC = () => {
       <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
         已选择 {modalProcessIds.size} 个工序，请从已发布模板中选择：
       </Text>
-      <Select
+      <RemoteInfiniteSelect<any>
         placeholder="搜索并选择模板"
-        showSearch
         style={{ width: '100%' }}
         value={selectedTemplateId}
         onChange={setSelectedTemplateId}
-        filterOption={(input, option) =>
-          (option?.label as string ?? '').toLowerCase().includes(input.toLowerCase())
-        }
-        options={publishedTemplates.map((t) => ({
-          value: t.id,
-          label: `${t.name}  (${t.version || '-'})  [${t.category || '-'}]`,
-        }))}
+        fetchPage={fetchPublishedTemplates}
+        mapOption={mapPublishedTemplate}
+        onPage={mergePublishedTemplates}
+        onSelect={(_value, option) => {
+          const item = (option as any)?.item;
+          if (item) mergePublishedTemplates([item]);
+        }}
       />
       {selectedTemplateId && (
         <Card size="small" style={{ marginTop: 16 }}>

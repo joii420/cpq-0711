@@ -6,6 +6,7 @@ import {
 import { customerLeadService } from '../../services/customerLeadService';
 import { customerService } from '../../services/customerService';
 import StatCard from '../../components/StatCard';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import type { CustomerLead, LeadStatus, LeadReviewAction } from '../../types/customer-lead';
 
 const CustomerLeadList: React.FC = () => {
@@ -22,22 +23,6 @@ const CustomerLeadList: React.FC = () => {
   const [currentLead, setCurrentLead] = useState<CustomerLead | null>(null);
   const [boundCustomerId, setBoundCustomerId] = useState('');
   const [reviewNote, setReviewNote] = useState('');
-  const [customerOptions, setCustomerOptions] = useState<{ label: string; value: string }[]>([]);
-  const [customerSearchLoading, setCustomerSearchLoading] = useState(false);
-
-  const searchCustomers = async (kw: string) => {
-    setCustomerSearchLoading(true);
-    try {
-      const res: any = await customerService.list({ page: 0, size: 30, keyword: kw });
-      const rows = res.data?.content || res.data || [];
-      setCustomerOptions(rows.map((c: any) => ({
-        label: `${c.name} · ${c.code || ''} · ${c.level || c.tier || 'STANDARD'}`,
-        value: c.id,
-      })));
-    } catch { setCustomerOptions([]); }
-    finally { setCustomerSearchLoading(false); }
-  };
-
   const load = async () => {
     setLoading(true);
     try {
@@ -67,8 +52,6 @@ const CustomerLeadList: React.FC = () => {
     setBoundCustomerId('');
     setReviewNote('');
     setReviewOpen(true);
-    // 预加载客户列表（按 lead.phone 搜索同号）
-    if (action === 'BIND_EXISTING') searchCustomers(lead.contactPhone || '');
   };
 
   const confirmReview = async () => {
@@ -167,13 +150,14 @@ const CustomerLeadList: React.FC = () => {
         {reviewAction === 'BIND_EXISTING' && (
           <div>
             <div style={{ marginBottom: 8, fontWeight: 500 }}>搜索并绑定到现有客户</div>
-            <Select showSearch placeholder="按名称 / 编号 / 电话搜索"
+            <RemoteInfiniteSelect<any> placeholder="按名称 / 编号 / 电话搜索"
                     value={boundCustomerId || undefined}
                     onChange={setBoundCustomerId}
-                    onSearch={searchCustomers}
-                    loading={customerSearchLoading}
-                    filterOption={false}
-                    options={customerOptions}
+                    fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+                    mapOption={(c: any) => ({
+                      label: `${c.name} · ${c.code || ''} · ${c.level || c.tier || 'STANDARD'}`,
+                      value: c.id,
+                    })}
                     style={{ width: '100%' }} />
             <div style={{ marginTop: 4, fontSize: 11, color: '#999' }}>
               ⓘ 自动按线索的电话 {currentLead?.contactPhone} 预填 — 可重新搜索其他客户

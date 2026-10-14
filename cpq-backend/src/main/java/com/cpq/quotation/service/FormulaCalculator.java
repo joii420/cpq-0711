@@ -1451,6 +1451,12 @@ public class FormulaCalculator {
         // cross_tab_ref（Task 1.3）：兄弟组件已算行 + 本行原始合并值（含文本，供匹配键 b 取值）
         ctx.crossTabRows = crossTabRows != null ? crossTabRows : Map.of();
         ctx.currentRowRaw = buildCurrentRowRaw(fields, mergedRow, basicDataValues);
+        // CardSnapshotService injects the frozen/live business target on the base row.
+        JsonNode targetUnit = baseRow.get("__settlementUnit");
+        if (targetUnit == null) targetUnit = baseRow.get("__pricingUnit");
+        if (targetUnit != null && !targetUnit.isNull() && !targetUnit.asText().isBlank()) {
+            ctx.currentRowRaw.put("__settlementUnit", targetUnit.asText());
+        }
 
         // 单位换算（修正时机，物化点3）：必须在 collectFieldValues + fillInputDefaultSourceByFieldName 之后做——
         // driver / data-source(default_source $view) 列的值此刻才解析进 fieldValues / currentRowRaw，

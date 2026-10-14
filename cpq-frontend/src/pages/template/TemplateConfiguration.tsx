@@ -19,7 +19,6 @@ import {
 } from '@dnd-kit/core';
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
-import { customerService } from '../../services/customerService';
 import type { ProductAttribute, TemplateData, VersionHistoryItem, TemplateComponentItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
 import ComponentPalette from './ComponentPalette';
@@ -56,7 +55,6 @@ const TemplateConfiguration: React.FC = () => {
   const [loading, setLoading] = useState(true);
   // presetRowsMap: tcId -> rows
   const [presetRowsMap, setPresetRowsMap] = useState<Record<string, any[]>>({});
-  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([]);
   // repair-0803 F5：公式循环引用链路抽屉（发布检出 errorType=FORMULA_CYCLE 时打开，scope=TAB）。
   const [cycleDrawerOpen, setCycleDrawerOpen] = useState(false);
   const [formulaCycles, setFormulaCycles] = useState<FormulaCycle[]>([]);
@@ -132,21 +130,10 @@ const TemplateConfiguration: React.FC = () => {
     }
   }, []);
 
-  const loadCustomers = useCallback(async () => {
-    try {
-      const res = await customerService.list({ size: 500 });
-      const list = res.data?.content ?? res.data ?? [];
-      setCustomers(list.map((c: any) => ({ id: c.id, name: c.name })));
-    } catch {
-      // ignore
-    }
-  }, []);
-
   useEffect(() => {
     loadTemplate();
     loadComponents();
-    loadCustomers();
-  }, [loadTemplate, loadComponents, loadCustomers]);
+  }, [loadTemplate, loadComponents]);
 
   // ---- Auto-save (30s) ----
   const doSave = useCallback(async () => {
@@ -564,7 +551,6 @@ const TemplateConfiguration: React.FC = () => {
           versionHistory={versionHistory}
           onVersionClick={(vid) => navigate(`/templates/${vid}`)}
           currentId={id || ''}
-          customers={customers}
         />
       </div>
     </div>

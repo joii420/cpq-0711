@@ -3,7 +3,7 @@ import { Popover } from 'antd';
 import type { ComponentDataItem, ComponentField } from './QuotationStep2';
 import {
   computeAllFormulas, computeProductSubtotal, buildSnapshotExpansions, buildCrossTabRows, EMPTY_LINEITEMS,
-  computeTabFormulasTree, usesTreeTokensTab, type TreeFormulaRowInput,
+  computeTabFormulasTree, usesTreeTokensTab, targetUnitFor, type TreeFormulaRowInput,
 } from './QuotationStep2';
 import { enrichComponentData, buildComponentDataFromStructure } from './enrichComponentData';
 import { useDriverExpansions, driverExpansionKey, fieldsOverrideHash, bnfDriverLookupKey } from './useDriverExpansions';
@@ -427,7 +427,14 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   //   模板 publish 时配置的全部 NORMAL 组件都展示, SUBTOTAL 仍单独走"产品小计".
   //   空 Tab 内部表格显示"暂无数据"占位 (走 Ant Design Table 默认 emptyText).
   //   这一改动同时修复 ReadonlyProductCard 与 QuotationStep2 Tab 数量不一致的问题.
-  const normalComponents = components
+  // 只读页也要把业务目标单位注入每个组件。若 targetUnit 缺失，
+  // unitConversion.ts 为兼容旧调用会使用 legacy KPCS→PCS=0.001，
+  // 于是行值与页签小计会出现 39.54034733 vs 0.039540347 的分叉。
+  const targetComponents = components.map(comp => ({
+    ...comp,
+    targetUnit: targetUnitFor(lineItem, comp, isCosting ? 'COSTING' : 'QUOTE'),
+  }));
+  const normalComponents = targetComponents
     .filter(c => (c as any)?.componentType === 'NORMAL');
   const activeComp = normalComponents[activeTab];
 
@@ -453,7 +460,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // 这也保证引用 [增值税] 的 [汇率] 等复合公式在详情页与编辑页同值。
   const lineVatFields = readonlyVatQuotationFields(lineItem);
   const compSubtotals: DecimalContext = {};
-  for (const comp of components) {
+  for (const comp of targetComponents) {
     if (!comp.fields) continue;
     // Plan 2-核心：多小计列 —— 取所有 is_subtotal 字段。
     const subtotalFields = comp.fields.filter((f: any) => f.is_subtotal);
@@ -502,7 +509,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // buildCrossTabRows 首行按 `c?.fields && c.componentType==='NORMAL'` 过滤会滤掉全部组件，
   // 导致 crossTabRows={} → 所有跨页签(cross_tab_ref)公式列/小计/总计求值为 0（详情页专有回归）。
   const { store: crossTabRows, columnSumsByComp } = buildCrossTabRows(
-    components,
+    targetComponents,
     compSubtotals,
     lineItem.productPartNo || undefined,
     (comp) => {
@@ -529,7 +536,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   // B3: 传 compSubtotals（buildCrossTabRows 回填后，含 cross_tab 列+二阶列正确小计），
   //   消除函数内 PASS1 重算双口径，保证详情页产品小计与渲染行同源。
   const productSubtotal = computeProductSubtotal(
-    { ...lineItem, componentData: components } as any,
+    { ...lineItem, componentData: targetComponents } as any,
     driverExpansions,
     customerId,
     compSubtotals,
@@ -626,6 +633,11 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           )}
           {lineItem.customerProductNo && (
             <span className="qt-sku-badge">客户产品编号: {lineItem.customerProductNo}</span>
+          )}
+          {lineItem.settlementUnit && (
+            <span className="qt-sku-badge" title="该客户产品的结算单位">
+              单位: {lineItem.settlementUnit}
+            </span>
           )}
           {lineItem.vatRate != null && (
             <span
@@ -1032,7 +1044,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                               const key = field.name || '';
                               const showTrace = !!(quotationId && isTraceField(field));
                               // isDraft 已提升至组件顶层（task-0806 FR-1 复用同一份判定，见顶部声明处）。
-                              const compIndex = components.indexOf(activeComp);
+                              const compIndex = targetComponents.indexOf(activeComp);
                               const fieldPath = `lineItems[${index}].componentData[${compIndex}].rowData.${key}`;
                               const cellCtx: CellContext = {
                                 basicDataValues: rowBdv,
@@ -1126,7 +1138,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                 {/* Tab subtotal footer（对齐编辑页 QuotationStep2）
                     显示门槛：有任意 is_subtotal 列才显示 footer。
                     小计行：只对 is_subtotal 列求和（读 columnSumsByComp 单一来源）；非小计列一律留空。
-                           is_amount=true 显示 ¥ + 通用精度；否则纯数字（最多4位小数，去末尾0）。
+                           金额列与普通数值列均只显示原始计算值，不带货币单位。
                     本页签金额合计行：只汇总金额列(is_amount&&is_subtotal)，无金额列整行隐藏。
                 */}
                 {activeComp.fields.some(f => f.is_subtotal) && (
@@ -1145,11 +1157,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         const isNumericCol = !!field.is_subtotal;
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? '0';
-                          // ¥ 仅当 is_amount===true；其他数值列（含管理费/利润等 is_subtotal 但非金额列）纯数字
-                          // C2：金额列 = ¥ + 通用精度（task-0801：改走 formatNumber DISPLAY_SCALE=6
-                          // 去尾零兜底，与编辑页 QuotationStep2 同款同口径，AP-50）
+                          // 页签内小计只展示原始计算值：不做汇率换算，也不显示货币单位。
                           const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
-                          const text = field.is_amount === true ? `¥ ${plain}` : plain;
+                          const text = plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
                               {text}
@@ -1178,7 +1188,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                             if (fs[i].is_amount === true && fs[i].is_subtotal) { valueIdx = i; break; }
                           }
                           if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
-                          const totalText = `¥ ${formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0'}`;
+                          // 页签合计与小计同口径：保留原始数值，不做汇率换算、不显示货币单位。
+                          const totalText = formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0';
                           return fs.map((f, fi) => {
                             const k = f.name || f.key || fi;
                             if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;

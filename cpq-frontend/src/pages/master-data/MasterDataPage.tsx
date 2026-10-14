@@ -16,15 +16,10 @@ import type { MasterDataOverviewDTO, TableSummaryDTO } from '../../services/mast
 import { masterDataService } from '../../services/masterDataService';
 import TableOverviewCard from './TableOverviewCard';
 import TableDataDrawer from './TableDataDrawer';
+import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 const { Title, Text } = Typography;
-const { Option } = Select;
-
-interface CustomerOption {
-  id: string;
-  name: string;
-}
-
 const GROUP_CONFIG: {
   key: TableSummaryDTO['group'];
   label: string;
@@ -37,7 +32,6 @@ const GROUP_CONFIG: {
 
 const MasterDataPage: React.FC = () => {
   const [customerId, setCustomerId] = useState<string | null>(null);
-  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [overview, setOverview] = useState<MasterDataOverviewDTO | null>(null);
   const [loading, setLoading] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
@@ -45,22 +39,6 @@ const MasterDataPage: React.FC = () => {
   // 一级抽屉
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedSummary, setSelectedSummary] = useState<TableSummaryDTO | null>(null);
-
-  // 加载客户列表（用于选择器）
-  useEffect(() => {
-    masterDataService.listCustomers().then((res) => {
-      const data = res.data;
-      // 兼容后端分页格式 { content: [...] } 或直接 [...]
-      const list: CustomerOption[] = Array.isArray(data)
-        ? data
-        : Array.isArray((data as any)?.content)
-          ? (data as any).content
-          : [];
-      setCustomers(list.map((c: any) => ({ id: c.id, name: c.name || c.fullName || c.customerName })));
-    }).catch(() => {
-      // 客户列表加载失败不影响主功能，静默处理
-    });
-  }, []);
 
   const loadOverview = useCallback(async (cid: string | null) => {
     setLoading(true);
@@ -157,24 +135,15 @@ const MasterDataPage: React.FC = () => {
         </Space>
         <Space>
           <Text>客户范围：</Text>
-          <Select
+          <RemoteInfiniteSelect<any>
             value={customerId}
             onChange={(val) => setCustomerId(val)}
             style={{ width: 220 }}
-            showSearch
             allowClear
             placeholder="全部客户"
-            filterOption={(input, option) =>
-              String(option?.children ?? '').toLowerCase().includes(input.toLowerCase())
-            }
-          >
-            <Option value={null}>全部客户</Option>
-            {customers.map((c) => (
-              <Option key={c.id} value={c.id}>
-                {c.name}
-              </Option>
-            ))}
-          </Select>
+            fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+            mapOption={(c: any) => ({ value: c.id, label: c.name })}
+          />
         </Space>
       </div>
 

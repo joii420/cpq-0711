@@ -1,38 +1,40 @@
 import { describe, it, expect } from 'vitest';
 import { factorFor, applyUnitConversion } from './unitConversion';
 
-describe('factorFor', () => {
-  // 与后端 UnitConversionTest 同一组输入（跨端对拍护栏）
-  const cases: [string, string][] = [
-    ['克', '0.001'], ['g', '0.001'], ['G', '0.001'],
-    ['千克', '1'], ['KG', '1'], ['kG', '1'],
-    ['吨', '1000'], ['t', '1000'],
-    ['片', '1'], ['pcs', '1'],
-    // KPCS / 千片：2026-07-28 业务修订为「每千片 → 每片」÷1000（原 ×1000）。中英别名必须同值。
-    ['KPCS', '0.001'], ['kpcs', '0.001'], ['千片', '0.001'],
-    ['g/PCS', '0.001'], ['G/pcs', '0.001'],
-    [' g / PCS ', '0.001'],
-    // KG/KPCS 与 G/PCS 数学等价（1 kg/千片 = 1 g/片）。
-    ['KG/KPCS', '0.001'], ['kg/kpcs', '0.001'], [' kg / KPCS ', '0.001'],
-    ['g/KPCS', '0.000001'], ['G/kpcs', '0.000001'], [' g / KPCS ', '0.000001'],
-    ['mm', '1'], ['', '1'], ['  ', '1'],
-  ];
-  it.each(cases)('factorFor(%s) = %s', (unit, expected) => {
-    expect(factorFor(unit)).toBe(expected);
-  });
-  it('null/undefined → 1', () => {
-    expect(factorFor(undefined)).toBe('1');
-    expect(factorFor(null as any)).toBe('1');
+describe('directed unit factors', () => {
+  it.each([
+    ['EA', 'PCS', '1'], ['EA', 'KPCS', '0.001'],
+    ['PCS', 'EA', '1'], ['pcs', 'kpcs', '0.001'],
+    ['KPCS', 'PCS', '1000'],
+    ['g', 'kg', '0.001'], ['kg', 'g', '1000'],
+    ['kg', 't', '0.001'], ['t', 'kg', '1000'],
+    ['g', '盎司', '0.03527396194958'], ['盎司', 'g', '28.349523125'],
+  ])('factorFor(%s → %s) = %s', (source, target, expected) => {
+    expect(factorFor(source, target)).toBe(expected);
   });
 
-  // 中英别名必须同系数，否则同一行换个写法结果就变（KPCS/千片 相差 100 万倍是最易踩的坑）
-  it.each([['KPCS', '千片'], ['KG', '千克'], ['G', '克'], ['T', '吨'], ['PCS', '片']])(
-    '别名一致：%s === %s', (en, zh) => {
-      expect(factorFor(en)).toBe(factorFor(zh));
+  it.each(['克', '千克', '吨', '片', '千片', 'G/PCS', 'KG/KPCS', 'mm'])
+    ('unknown/compound value %s is identity passthrough', (source) => {
+      expect(factorFor(source, 'kg')).toBe('1');
     });
 
-  it('KG/KPCS 与 G/PCS 数学等价', () => {
-    expect(factorFor('KG/KPCS')).toBe(factorFor('G/PCS'));
+  it('same code is implicit identity and matching ignores case', () => {
+    expect(factorFor('Pcs', 'PCS')).toBe('1');
+    expect(factorFor('KG', 'kg')).toBe('1');
+  });
+
+  it('cross-category conversion is identity', () => {
+    expect(factorFor('kg', 'PCS')).toBe('1');
+    expect(factorFor('PCS', 'kg')).toBe('1');
+  });
+
+  it('explicit relationship context keeps opposite directions independent', () => {
+    const relations = [
+      { source: 'PCS', target: 'KPCS', factor: '0.002' },
+      { source: 'KPCS', target: 'PCS', factor: '1000' },
+    ];
+    expect(factorFor('pcs', 'kpcs', { relations })).toBe('0.002');
+    expect(factorFor('kpcs', 'pcs', { relations })).toBe('1000');
   });
 });
 
@@ -42,21 +44,26 @@ describe('applyUnitConversion', () => {
     { name: '单位', field_type: 'INPUT_TEXT' },
     { name: '数量', field_type: 'INPUT_NUMBER' },
   ];
-  it('换配置列、保留 D 与未配列、不 mutate 原行', () => {
-    const row = { 重量: '500', 单位: 'g', 数量: '3' };
-    const out = applyUnitConversion(fields as any, row);
-    expect(out.重量).toBe('0.5');
+
+  it('uses settlement target and preserves unit_source_field behavior', () => {
+    const row = { 重量: '1000', 单位: 'g', 数量: '3' };
+    const out = applyUnitConversion(fields as any, row, 'kg');
+    expect(out.重量).toBe('1');
     expect(out.单位).toBe('g');
     expect(out.数量).toBe('3');
-    expect(row.重量).toBe('500');   // 原行未被 mutate
-    expect(out).not.toBe(row);       // 返回新对象
+    expect(row.重量).toBe('1000');
+    expect(out).not.toBe(row);
   });
-  it('未知单位透传', () => {
-    const out = applyUnitConversion(fields as any, { 重量: '500', 单位: 'mm' });
-    expect(out.重量).toBe('500');
+
+  it('unknown, compound, cross-category and missing target values pass through', () => {
+    expect(applyUnitConversion(fields as any, { 重量: '500', 单位: 'mm' }, 'kg').重量).toBe('500');
+    expect(applyUnitConversion(fields as any, { 重量: '500', 单位: 'G/PCS' }, 'kg').重量).toBe('500');
+    expect(applyUnitConversion(fields as any, { 重量: '12.5', 单位: 'kg' }, 'PCS').重量).toBe('12.5');
+    expect(applyUnitConversion(fields as any, { 重量: '1000', 单位: 'g' }, null as any).重量).toBe('1000');
   });
-  it('无配置列时原样返回', () => {
+
+  it('no configured columns returns the original row', () => {
     const row = { a: '1' };
-    expect(applyUnitConversion([{ name: 'a', field_type: 'INPUT_NUMBER' }] as any, row)).toBe(row);
+    expect(applyUnitConversion([{ name: 'a', field_type: 'INPUT_NUMBER' }] as any, row, 'kg')).toBe(row);
   });
 });

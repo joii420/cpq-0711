@@ -45,6 +45,9 @@ public class ProductionPartInfoService {
         public String specification;
         public String sizeInfo;
         public String oldMaterialNo;
+        /** Independent costing targets; never coalesce basic and detail values. */
+        public String basicPricingUnit;
+        public String detailPricingUnit;
     }
 
     /**
@@ -85,12 +88,12 @@ public class ProductionPartInfoService {
         // ② 一条 UNION ALL 批量：核价两表按 production_no 取明细，prio=1(basic) 优先于 prio=2(detail)
         List<String> productionNos = new ArrayList<>(new LinkedHashSet<>(productionNoByMaterialNo.values()));
         List<Object[]> costRows = em.createNativeQuery(
-                        "SELECT production_no, material_name, specification, dimension, old_material_no, 1 AS prio " +
+                        "SELECT production_no, material_name, specification, dimension, old_material_no, pricing_unit, 1 AS prio " +
                         "  FROM ds_cost_basic_material WHERE production_no IN (:pns) " +
                         "UNION ALL " +
-                        "SELECT production_no, material_name, specification, dimension, old_material_no, 2 AS prio " +
+                        "SELECT production_no, material_name, specification, dimension, old_material_no, pricing_unit, 2 AS prio " +
                         "  FROM ds_cost_detail_material WHERE production_no IN (:pns) " +
-                        "ORDER BY 1, 6")
+                        "ORDER BY 1, 7")
                 .setParameter("pns", productionNos)
                 .getResultList();
 
@@ -107,6 +110,8 @@ public class ProductionPartInfoService {
             if (info.specification == null) info.specification = str(r[2]);
             if (info.sizeInfo == null)      info.sizeInfo      = str(r[3]);
             if (info.oldMaterialNo == null) info.oldMaterialNo = str(r[4]);
+            if (((Number) r[6]).intValue() == 1) info.basicPricingUnit = str(r[5]);
+            else info.detailPricingUnit = str(r[5]);
         }
 
         // 纯内存分发（无查库）
@@ -119,6 +124,8 @@ public class ProductionPartInfoService {
                 info.specification = merged.specification;
                 info.sizeInfo = merged.sizeInfo;
                 info.oldMaterialNo = merged.oldMaterialNo;
+                info.basicPricingUnit = merged.basicPricingUnit;
+                info.detailPricingUnit = merged.detailPricingUnit;
             }
             result.put(e.getKey(), info);
         }

@@ -36,6 +36,7 @@ import type {
   CustomerOptionsResult,
   CustomerCandidatesResult,
   TaxCategoryBindingResult,
+  CustomerPartItem,
 } from './productHubTypes';
 
 /**
@@ -154,6 +155,58 @@ export async function listCustomerParts(
 ): Promise<CustomerPartListResult> {
   const res = await api.get(`${basePath}/customer-parts`, { params });
   return unwrap<CustomerPartListResult>(res);
+}
+
+export async function updateCustomerPartSettlementUnit(
+  id: string | number,
+  settlementUnit: string | null,
+  version?: number,
+  basePath: string = QUOTE_BASE_PATH,
+): Promise<CustomerPartItem> {
+  const res = await api.patch(`${basePath}/customer-parts/${encodeURIComponent(String(id))}/settlement-unit`, {
+    settlementUnit,
+    ...(version == null ? {} : { version }),
+  });
+  return unwrap<CustomerPartItem>(res);
+}
+
+export interface UnitItem {
+  id: number;
+  code: string;
+  category: 'QUANTITY' | 'WEIGHT';
+  conversionCount: number;
+  enabled: boolean;
+  sortOrder: number;
+  version: number;
+}
+export interface UnitListResult { total: number; items: UnitItem[] }
+export interface UnitTargetRelation { targetUnitId: number; targetUnitCode: string; factor: number | string | null }
+export interface UnitConversionsResult {
+  sourceUnit: Pick<UnitItem, 'id' | 'code' | 'category' | 'version'>;
+  targets: UnitTargetRelation[];
+}
+
+export async function listUnits(params: { category?: string; enabled?: boolean; page?: number; size?: number; keyword?: string } = {}): Promise<UnitListResult> {
+  const res = await api.get('/units', { params });
+  return unwrap<UnitListResult>(res);
+}
+export async function createUnit(payload: { code: string; category: UnitItem['category']; enabled?: boolean; sortOrder?: number }): Promise<UnitItem> {
+  const res = await api.post('/units', payload); return unwrap<UnitItem>(res);
+}
+export async function updateUnit(id: number, payload: { code: string; sortOrder: number; version: number }): Promise<UnitItem> {
+  const res = await api.patch(`/units/${id}`, payload); return unwrap<UnitItem>(res);
+}
+export async function disableUnit(id: number, version: number): Promise<UnitItem> {
+  const res = await api.post(`/units/${id}/disable`, { version }); return unwrap<UnitItem>(res);
+}
+export async function enableUnit(id: number, version: number): Promise<UnitItem> {
+  const res = await api.post(`/units/${id}/enable`, { version }); return unwrap<UnitItem>(res);
+}
+export async function getUnitConversions(id: number): Promise<UnitConversionsResult> {
+  const res = await api.get(`/units/${id}/conversions`); return unwrap<UnitConversionsResult>(res);
+}
+export async function saveUnitConversions(id: number, payload: { sourceVersion: number; targets: UnitTargetRelation[] }): Promise<UnitConversionsResult> {
+  const res = await api.put(`/units/${id}/conversions`, payload); return unwrap<UnitConversionsResult>(res);
 }
 
 /**

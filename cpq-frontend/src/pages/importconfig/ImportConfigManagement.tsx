@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { excelTemplateService } from '../../services/excelTemplateService';
 import { importMappingService } from '../../services/importMappingService';
 import { customerService } from '../../services/customerService';
+import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import ExcelTemplateDrawer from './ExcelTemplateDrawer';
 
 const { Title, Text } = Typography;
@@ -19,7 +20,6 @@ const ImportConfigManagement: React.FC = () => {
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
   const [customerFilter, setCustomerFilter] = useState<string>('');
-  const [customers, setCustomers] = useState<any[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<any>(null);
 
@@ -27,15 +27,6 @@ const ImportConfigManagement: React.FC = () => {
   const [mappings, setMappings] = useState<any[]>([]);
   const [mappingsLoading, setMappingsLoading] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null);
-
-  const fetchCustomers = async () => {
-    try {
-      const res = await customerService.list({ size: 200 });
-      setCustomers(res.data?.content || []);
-    } catch {
-      // silently fail
-    }
-  };
 
   const fetchTemplates = async () => {
     setTemplatesLoading(true);
@@ -63,10 +54,6 @@ const ImportConfigManagement: React.FC = () => {
       setMappingsLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchCustomers();
-  }, []);
 
   useEffect(() => {
     fetchTemplates();
@@ -172,20 +159,14 @@ const ImportConfigManagement: React.FC = () => {
           </Button>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <Select
+          <RemoteInfiniteSelect<any>
             placeholder="筛选客户"
             allowClear
             style={{ width: '100%' }}
             onChange={v => setCustomerFilter(v || '')}
-            showSearch
-            filterOption={(input, option) =>
-              String(option?.children || '').toLowerCase().includes(input.toLowerCase())
-            }
-          >
-            {customers.map((c: any) => (
-              <Select.Option key={c.id} value={c.id}>{c.name}</Select.Option>
-            ))}
-          </Select>
+            fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
+            mapOption={(c: any) => ({ value: c.id, label: c.name })}
+          />
         </div>
         <Table
           rowKey="id"
