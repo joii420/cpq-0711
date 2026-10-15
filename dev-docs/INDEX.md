@@ -26,7 +26,7 @@
 ### 新立项（2026-10-13）
 | 任务 | 状态 | 入口文档 |
 |---|---|---|
-| `task-261013-模板多客户适用/` | 🟢 开发中，Gate A 已通过（2026-10-13）；路径 A · 标准档 | `需求文档.md`、`a0-技术勘察.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md`；原型 3 份 |
+| `task-261013-模板多客户适用/` | ✅ **已交付，用户验收通过（2026-10-14）**；合 master `8b02576a`；路径 A · 标准档 | `需求文档.md`、`a0-技术勘察.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md`、`test-report.md`；原型 3 份 |
 
 > **快照时间：2026-08-09**（`master` = `b3cf4872`）。数据由本节末命令重跑，**过期请先刷新再采信**。
 
@@ -124,7 +124,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
-| `feat/task-261013-template-customer-many` / `...-backend` / `...-frontend` / `...-tests` | `.claude/worktrees/task-261013-template-customer-many*` | 0 笔（2026-10-13 建立） | 🟢 **开发中 · Gate A 已通过**；后端/前端/测试三路并行，任务 `task-261013-模板多客户适用` |
+| `feat/task-261013-template-customer-many` / `...-backend` / `...-frontend` / `...-tests` | `.claude/worktrees/task-261013-template-customer-many*` | 0 笔（已合入 master `d1c48339`） | ✅ **已交付 · 用户验收通过（2026-10-14）**；分支/worktree 按规则保留，待用户后续回收 |
 | `feat/task-260923-search-enter-production` | 已合入 master `ffd01987` | 分支实体保留 | ✅ **已结案（闸门 B 2026-09-26 用户验收通过）**（`task-260825/task-260923-单内搜索回车触发与生产料号`）；前端实现 + S-1/S-2/S-3 证据已齐 |
 | `feat/task-260922-partno-production-search` | `.claude/worktrees/task-260922-partno-production-search` | **已全部并入**（合并提交 `30f2641b`，分支 tip `2be72b06`） | ✅ **已交付（闸门 B 2026-09-22 用户验收通过）**；worktree 已移除（先 unlink `node_modules` 软链，再 `--force` 连带删除 25 个与本任务证据逐字节相同的重复截图，用户批准）；**分支实体待用户执行 `git branch -d feat/task-260922-partno-production-search`** |
 | `feat/task-260920-review-list-lazy-compute` | ~~`.claude/worktrees/task-260920-review-list-lazy-compute`~~（**2026-09-22 已移除**） | **已全部并入**（合并提交 `462488f9`，分支 tip `14f8bb9c`） | ✅ **已交付（闸门 B 2026-09-22 用户验收通过）** —— `task-260729/task-260920-审核列表秒开与按需试算` 已合并、worktree 已移除；**分支实体待用户执行 `git branch -d feat/task-260920-review-list-lazy-compute`** |
