@@ -20,6 +20,22 @@ public class TemplateDTO {
     public String version;
     public String category;
     public UUID customerId;
+    public List<UUID> customerIds = new ArrayList<>();
+    public List<String> customerNames = new ArrayList<>();
+    public List<CustomerSummary> customers = new ArrayList<>();
+    public static class CustomerSummary {
+        public UUID id;
+        public String code;
+        public String name;
+
+        public CustomerSummary() {}
+
+        public CustomerSummary(UUID id, String code, String name) {
+            this.id = id;
+            this.code = code;
+            this.name = name;
+        }
+    }
     public String customerName;
     public UUID categoryId;
     public String categoryName;
@@ -64,10 +80,7 @@ public class TemplateDTO {
         dto.category = template.category;
         dto.customerId = template.customerId;
         dto.categoryId = template.categoryId;
-        if (template.customerId != null) {
-            com.cpq.customer.entity.Customer c = com.cpq.customer.entity.Customer.findById(template.customerId);
-            if (c != null) dto.customerName = c.name;
-        }
+        // Customer associations and names are batch-enriched by TemplateService.
         if (template.categoryId != null) {
             com.cpq.basicdata.entity.ProductCategory pc =
                     com.cpq.basicdata.entity.ProductCategory.findById(template.categoryId);

@@ -253,11 +253,17 @@ public class PriceAdjustComparisonColumnService {
                 quoteTemplate.templateSeriesId);
             return new CostingResolution(null, CostingSource.NONE);
         }
-        Template costing = Template.find(
-                "categoryId = ?1 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
-                        + "AND (customerId = ?2 OR customerId IS NULL) "
-                        + "ORDER BY CASE WHEN customerId = ?2 THEN 0 ELSE 1 END, publishedAt DESC NULLS LAST",
-                quoteTemplate.categoryId, quoteTemplate.customerId).firstResult();
+        List<Template> specific = quoteTemplate.customerId == null ? List.of() : Template.list(
+                "(customerId = ?1 OR id IN (SELECT tc.id.templateId FROM TemplateCustomer tc WHERE tc.id.customerId = ?1)) "
+                        + "AND categoryId = ?2 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
+                        + "ORDER BY publishedAt DESC NULLS LAST",
+                quoteTemplate.customerId, quoteTemplate.categoryId);
+        List<Template> general = Template.list(
+                "customerId IS NULL AND id NOT IN (SELECT tc.id.templateId FROM TemplateCustomer tc) "
+                        + "AND categoryId = ?1 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
+                        + "ORDER BY publishedAt DESC NULLS LAST",
+                quoteTemplate.categoryId);
+        Template costing = !specific.isEmpty() ? specific.get(0) : (general.isEmpty() ? null : general.get(0));
         if (costing == null) {
             LOG.infof("[comparison-meta] series=%s 无活单、兜底规则亦无匹配核价模板，核价侧目录为空",
                 quoteTemplate.templateSeriesId);

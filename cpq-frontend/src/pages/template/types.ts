@@ -24,6 +24,12 @@ export interface TemplateComponentItem {
   fieldsOverride?: string | null;
 }
 
+export interface TemplateCustomerSummary {
+  id: string;
+  code?: string | null;
+  name: string;
+}
+
 export interface TemplateData {
   id: string;
   name: string;
@@ -36,6 +42,9 @@ export interface TemplateData {
   categoryName?: string;
   customerId?: string;
   customerName?: string;
+  customerIds?: string[];
+  customerNames?: string[];
+  customers?: TemplateCustomerSummary[];
   description?: string;
   usageNote?: string;
   status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';

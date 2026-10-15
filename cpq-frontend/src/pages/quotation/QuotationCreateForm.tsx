@@ -24,6 +24,7 @@ interface CostingCardTemplate {
   templateKind?: string;
   customerId?: string | null;
   customerName?: string | null;
+  customerIds?: string[];
 }
 
 // 2026-05-14: 后端新增 MIXED 状态表示同时命中客户专属 + 通用模板
@@ -36,6 +37,8 @@ interface MatchedTemplate {
   /** customerId 决定每条 template 的来源:= 当前客户 → 客户专属;null/undefined → 通用 */
   customerId?: string | null;
   customerName?: string;
+  customerIds?: string[];
+  customers?: Array<{ id: string; code?: string | null; name: string }>;
 }
 interface MatchResult {
   matchType: MatchType;
@@ -72,6 +75,15 @@ interface Props {
    */
   lockedCategoryId?: string;
 }
+
+const templateCustomerIds = (template: { customerIds?: string[]; customerId?: string | null }): string[] => (
+  Array.isArray(template.customerIds)
+    ? template.customerIds.filter(Boolean)
+    : (template.customerId ? [template.customerId] : [])
+);
+
+const isTemplateSpecificFor = (template: { customerIds?: string[]; customerId?: string | null }, customerId: string): boolean =>
+  templateCustomerIds(template).includes(customerId);
 
 const QuotationCreateForm: React.FC<Props> = ({
   customerId,
@@ -212,11 +224,11 @@ const QuotationCreateForm: React.FC<Props> = ({
       .then((res: any) => {
         const raw: CostingCardTemplate[] = res.data || [];
         const filtered = raw.filter(
-          (t) => !t.customerId || t.customerId === customerId
+          (t) => templateCustomerIds(t).length === 0 || isTemplateSpecificFor(t, customerId)
         );
         filtered.sort((a, b) => {
-          const aSpec = a.customerId === customerId ? 0 : 1;
-          const bSpec = b.customerId === customerId ? 0 : 1;
+          const aSpec = isTemplateSpecificFor(a, customerId) ? 0 : 1;
+          const bSpec = isTemplateSpecificFor(b, customerId) ? 0 : 1;
           return aSpec - bSpec;
         });
         setCostingTemplates(filtered);
@@ -322,7 +334,7 @@ const QuotationCreateForm: React.FC<Props> = ({
     }
     // 2026-05-14: 新增 MIXED 分支 — 客户专属 + 通用同时存在
     if (matchResult.matchType === 'MIXED') {
-      const specificCount = matchResult.templates.filter((t) => t.customerId === customerId).length;
+      const specificCount = matchResult.templates.filter((t) => isTemplateSpecificFor(t, customerId)).length;
       const generalCount = matchResult.templates.length - specificCount;
       return (
         <Alert
@@ -446,7 +458,7 @@ const QuotationCreateForm: React.FC<Props> = ({
             value={value.customerTemplateId}
             onChange={(v) => onChange({ ...value, customerTemplateId: v })}
             options={matchResult.templates.map((t) => {
-              const isSpecific = !!t.customerId && t.customerId === customerId;
+              const isSpecific = isTemplateSpecificFor(t, customerId);
               const searchText = `${t.name}${t.version ? ' ' + t.version : ''}`;
               return {
                 value: t.id,
@@ -482,7 +494,7 @@ const QuotationCreateForm: React.FC<Props> = ({
               {(() => {
                 const cur = costingTemplates.find((t) => t.id === value.costingTemplateId);
                 if (!cur) return null;
-                return cur.customerId === customerId
+                return isTemplateSpecificFor(cur, customerId)
                   ? <Tag color="purple">客户专属</Tag>
                   : <Tag color="cyan">通用兜底</Tag>;
               })()}
@@ -513,7 +525,7 @@ const QuotationCreateForm: React.FC<Props> = ({
               options={costingTemplates.map((t) => ({
                 value: t.id,
                 label: `${t.name}${t.version ? ' ' + t.version : ''}${
-                  t.customerId === customerId ? ' (客户专属)' : !t.customerId ? ' (通用)' : ''
+                  isTemplateSpecificFor(t, customerId) ? ' (客户专属)' : templateCustomerIds(t).length === 0 ? ' (通用)' : ''
                 }`,
               }))}
               placeholder="请选择核价模板"

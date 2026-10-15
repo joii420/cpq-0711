@@ -78,6 +78,13 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
   }, []);
 
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }));
+  const customerInitialOptions = (template.customers?.length
+    ? template.customers
+    : (template.customerIds || (template.customerId ? [template.customerId] : [])).map((id, index) => ({
+      id,
+      name: template.customerNames?.[index] || (template.customerId === id ? template.customerName : undefined) || id,
+    })))
+    .map(customer => ({ value: String(customer.id), label: customer.name }));
 
   return (
     <>
@@ -106,16 +113,15 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
           <Form.Item name="name" label="模板名称">
             <Input disabled={!isDraft} />
           </Form.Item>
-          <Form.Item name="customerId" label="适用客户">
+          <Form.Item name="customerIds" label="适用客户">
             <RemoteInfiniteSelect
+              mode="multiple"
               placeholder="留空表示对所有客户通用"
               allowClear
               fetchPage={fetchCustomers}
               mapOption={mapCustomerOption}
               disabled={!isDraft}
-              initialOptions={template.customerId && template.customerName
-                ? [{ value: String(template.customerId), label: template.customerName }]
-                : []}
+              initialOptions={customerInitialOptions}
             />
           </Form.Item>
           <Form.Item name="description" label="描述">

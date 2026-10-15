@@ -15,6 +15,7 @@ import com.cpq.template.dto.TemplateDTO;
 import com.cpq.template.entity.Template;
 import com.cpq.template.entity.TemplateComponent;
 import com.cpq.template.entity.TemplateComponentSnapshot;
+import com.cpq.template.entity.TemplateCustomer;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
@@ -76,7 +77,7 @@ public class TemplateService {
             params.put("category", category);
         }
         if (customerId != null) {
-            where.append(" AND customerId = :customerId");
+            where.append(" AND (customerId = :customerId OR id IN (SELECT tc.id.templateId FROM TemplateCustomer tc WHERE tc.id.customerId = :customerId))");
             params.put("customerId", customerId);
         }
         if (status != null && !status.isBlank()) {
@@ -97,9 +98,11 @@ public class TemplateService {
             .limit(size)
             .collect(Collectors.toList());
 
-        return templates.stream()
+        List<TemplateDTO> result = templates.stream()
             .map(t -> TemplateDTO.from(t, Collections.emptyList()))
             .collect(Collectors.toList());
+        enrichCustomerSummaries(result);
+        return result;
     }
 
     public TemplateDTO getById(UUID id) {
@@ -108,7 +111,9 @@ public class TemplateService {
             throw new BusinessException(404, "Template not found: " + id);
         }
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
-        return TemplateDTO.from(template, tcs);
+        TemplateDTO dto = TemplateDTO.from(template, tcs);
+        enrichCustomerSummaries(List.of(dto));
+        return dto;
     }
 
     @Transactional
@@ -133,9 +138,12 @@ public class TemplateService {
                 : "QUOTATION";
         template.status = "DRAFT";
         template.persist();
+        syncCustomers(template.id, request);
 
         LOG.infof("Created template id=%s name=%s", template.id, template.name);
-        return TemplateDTO.from(template, Collections.emptyList());
+        TemplateDTO dto = TemplateDTO.from(template, Collections.emptyList());
+        enrichCustomerSummaries(List.of(dto));
+        return dto;
     }
 
     @Transactional
@@ -157,6 +165,7 @@ public class TemplateService {
         if (request.customerId != null) {
             template.customerId = request.customerId;
         }
+        if (request.customerIds != null || request.customerId != null) syncCustomers(template.id, request);
         if (request.categoryId != null) {
             template.categoryId = request.categoryId;
         }
@@ -175,7 +184,9 @@ public class TemplateService {
 
         LOG.infof("Updated template id=%s", id);
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
-        return TemplateDTO.from(template, tcs);
+        TemplateDTO dto = TemplateDTO.from(template, tcs);
+        enrichCustomerSummaries(List.of(dto));
+        return dto;
     }
 
     @Transactional
@@ -187,6 +198,9 @@ public class TemplateService {
         if (!"DRAFT".equals(template.status)) {
             throw new BusinessException("Only DRAFT templates can be deleted");
         }
+        em.createQuery("DELETE FROM TemplateCustomer tc WHERE tc.id.templateId = :tid")
+                .setParameter("tid", id)
+                .executeUpdate();
         // cascade deletes template_component rows
         template.delete();
         LOG.infof("Deleted template id=%s", id);
@@ -298,6 +312,7 @@ public class TemplateService {
         LOG.infof("[perf] renderTemplate publish templateId=%s tabs=%d sql=constant(batched)", id, tcs.size());
         LOG.infof("Published template id=%s version=%s", id, template.version);
         TemplateDTO dto = TemplateDTO.from(template, tcs);
+        enrichCustomerSummaries(List.of(dto));
         // task-260909 B-7：混方言告警。🚫 只告警不拦——必须放在状态已置 PUBLISHED **之后**、
         // 且实现里一行异常都不许抛（见 collectCrossDatasetTabWarnings 的 javadoc）。
         dto.warnings = collectCrossDatasetTabWarnings(template, snapshotRows, compById);
@@ -448,7 +463,9 @@ public class TemplateService {
         template.status = "ARCHIVED";
         LOG.infof("Archived template id=%s", id);
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
-        return TemplateDTO.from(template, tcs);
+        TemplateDTO dto = TemplateDTO.from(template, tcs);
+        enrichCustomerSummaries(List.of(dto));
+        return dto;
     }
 
     /**
@@ -507,7 +524,9 @@ public class TemplateService {
         LOG.infof("[task-0806 B22-a] freeze：templateId=%s status=%s 首次冻结 %d 行快照"
                 + "（非破坏性操作——冻结前快照行数恒为 0）", id, template.status, tcs.size());
 
-        return TemplateDTO.from(template, tcs);
+        TemplateDTO dto = TemplateDTO.from(template, tcs);
+        enrichCustomerSummaries(List.of(dto));
+        return dto;
     }
 
     @Transactional
@@ -545,7 +564,15 @@ public class TemplateService {
         draft.excelViewConfig = source.excelViewConfig;
         draft.status = "DRAFT";
         draft.persist();
-
+        List<UUID> sourceCustomerIds = TemplateCustomer.customerIds(source.id);
+        if (sourceCustomerIds.isEmpty() && source.customerId != null) {
+            sourceCustomerIds = List.of(source.customerId);
+        }
+        for (UUID cid : sourceCustomerIds) {
+            TemplateCustomer tc = new TemplateCustomer();
+            tc.id = new TemplateCustomer.Id(draft.id, cid);
+            em.persist(tc);
+        }
         // Copy TemplateComponent associations (含 preset_rows / formula_assignments / V200 overrides)
         List<TemplateComponent> sourceTcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", sourceId);
         for (TemplateComponent stc : sourceTcs) {
@@ -572,7 +599,9 @@ public class TemplateService {
         templateSqlViewService.deepCopySqlViews(sourceId, draft.id);
 
         LOG.infof("Created new draft id=%s from source=%s", draft.id, sourceId);
-        return TemplateDTO.from(draft, tcs);
+        TemplateDTO dto = TemplateDTO.from(draft, tcs);
+        enrichCustomerSummaries(List.of(dto));
+        return dto;
     }
 
     /**
@@ -606,11 +635,11 @@ public class TemplateService {
             throw new BusinessException("customerId 和 categoryId 不能为空");
         }
         List<Template> specific = Template.list(
-                "customerId = ?1 AND categoryId = ?2 AND templateKind = 'QUOTATION' AND status = 'PUBLISHED' "
+                "(customerId = ?1 OR id IN (SELECT tc.id.templateId FROM TemplateCustomer tc WHERE tc.id.customerId = ?1)) AND categoryId = ?2 AND templateKind = 'QUOTATION' AND status = 'PUBLISHED' "
                         + "ORDER BY publishedAt DESC NULLS LAST",
                 customerId, categoryId);
         List<Template> general = Template.list(
-                "customerId IS NULL AND categoryId = ?1 AND templateKind = 'QUOTATION' AND status = 'PUBLISHED' "
+                "customerId IS NULL AND id NOT IN (SELECT tc.id.templateId FROM TemplateCustomer tc) AND categoryId = ?1 AND templateKind = 'QUOTATION' AND status = 'PUBLISHED' "
                         + "ORDER BY publishedAt DESC NULLS LAST",
                 categoryId);
 
@@ -637,11 +666,65 @@ public class TemplateService {
             combined.addAll(general);
         }
 
-        return new com.cpq.template.dto.TemplateMatchResult(
-                matchType,
-                combined.stream()
-                        .map(t -> TemplateDTO.from(t, Collections.emptyList()))
-                        .collect(Collectors.toList()));
+        List<TemplateDTO> matched = combined.stream()
+                .map(t -> TemplateDTO.from(t, Collections.emptyList()))
+                .collect(Collectors.toList());
+        enrichCustomerSummaries(matched);
+        return new com.cpq.template.dto.TemplateMatchResult(matchType, matched);
+    }
+
+    @Transactional
+    void syncCustomers(UUID templateId, CreateTemplateRequest request) {
+        List<UUID> ids = request.customerIds != null
+                ? request.customerIds
+                : (request.customerId == null ? List.of() : List.of(request.customerId));
+        ids = ids.stream().filter(Objects::nonNull).distinct().toList();
+        if (!ids.isEmpty()) {
+            Number missing = (Number) em.createQuery("select count(c) from Customer c where c.id in :ids")
+                    .setParameter("ids", ids)
+                    .getSingleResult();
+            if (missing.longValue() != ids.size()) {
+                throw new BusinessException("存在不存在的客户");
+            }
+        }
+        // Keep the legacy scalar only for the single-customer case; an empty or multi range
+        // must never remain discoverable through the old column.
+        Template t = Template.findById(templateId);
+        t.customerId = ids.size() == 1 ? ids.get(0) : null;
+        em.createQuery("DELETE FROM TemplateCustomer tc WHERE tc.id.templateId = :tid")
+                .setParameter("tid", templateId)
+                .executeUpdate();
+        for (UUID cid : ids) {
+            TemplateCustomer tc = new TemplateCustomer();
+            tc.id = new TemplateCustomer.Id(templateId, cid);
+            em.persist(tc);
+        }
+    }
+
+    private void enrichCustomerSummaries(List<TemplateDTO> dtos) {
+        if (dtos == null || dtos.isEmpty()) return;
+        List<UUID> tids = dtos.stream().map(d -> d.id).toList();
+        List<Object[]> rows = em.createNativeQuery("SELECT x.template_id, x.customer_id, x.code, x.name FROM (" +
+                "SELECT tc.template_id, c.id AS customer_id, c.code, c.name FROM template_customer tc JOIN customer c ON c.id=tc.customer_id WHERE tc.template_id IN (:tids) " +
+                "UNION ALL " +
+                "SELECT t.id AS template_id, c.id AS customer_id, c.code, c.name FROM template t JOIN customer c ON c.id=t.customer_id " +
+                "WHERE t.id IN (:tids) AND NOT EXISTS (SELECT 1 FROM template_customer tc0 WHERE tc0.template_id=t.id)" +
+                ") x ORDER BY x.template_id, x.name, x.customer_id")
+                .setParameter("tids", tids).getResultList();
+        Map<UUID, TemplateDTO> byId = dtos.stream().collect(Collectors.toMap(d -> d.id, d -> d));
+        for (Object[] r : rows) {
+            TemplateDTO d = byId.get((UUID) r[0]);
+            if (d != null) {
+                d.customerIds.add((UUID) r[1]);
+                d.customerNames.add((String) r[3]);
+                d.customers.add(new TemplateDTO.CustomerSummary((UUID) r[1], (String) r[2], (String) r[3]));
+            }
+        }
+        for (TemplateDTO d : dtos) {
+            if (d.customerIds.size() == 1) {
+                d.customerName = d.customerNames.get(0);
+            }
+        }
     }
 
     public List<TemplateDTO> getVersionHistory(UUID templateSeriesId) {
@@ -649,9 +732,11 @@ public class TemplateService {
             "templateSeriesId = ?1 ORDER BY publishedAt DESC NULLS LAST, createdAt DESC",
             templateSeriesId
         );
-        return templates.stream()
+        List<TemplateDTO> result = templates.stream()
             .map(t -> TemplateDTO.from(t, Collections.emptyList()))
             .collect(Collectors.toList());
+        enrichCustomerSummaries(result);
+        return result;
     }
 
     // ---- Admin / data migration endpoints ----
@@ -1862,7 +1947,7 @@ public class TemplateService {
                     out.customerTemplateSeriesId = first.templateSeriesId;
                     out.customerTemplateName = first.name;
                     out.customerTemplateVersion = first.version;
-                    boolean specific = first.customerId != null && first.customerId.equals(customerId);
+                    boolean specific = first.customerIds != null && first.customerIds.contains(customerId);
                     out.customerTemplateSource = specific ? "CUSTOMER_SPECIFIC_FALLBACK" : "GENERAL_FALLBACK";
                 } else {
                     out.customerTemplateSource = "NONE";
@@ -1874,16 +1959,23 @@ public class TemplateService {
 
         // 5. 核价模板(独立,不记忆):客户专属优先 → publishedAt DESC
         if (categoryId != null) {
-            Template costing = Template.find(
-                    "categoryId = ?1 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
-                            + "AND (customerId = ?2 OR customerId IS NULL) "
-                            + "ORDER BY CASE WHEN customerId = ?2 THEN 0 ELSE 1 END, publishedAt DESC NULLS LAST",
-                    categoryId, customerId).firstResult();
+            List<Template> costingSpecific = Template.list(
+                    "(customerId = ?1 OR id IN (SELECT tc.id.templateId FROM TemplateCustomer tc WHERE tc.id.customerId = ?1)) "
+                            + "AND categoryId = ?2 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
+                            + "ORDER BY publishedAt DESC NULLS LAST",
+                    customerId, categoryId);
+            List<Template> costingGeneral = Template.list(
+                    "customerId IS NULL AND id NOT IN (SELECT tc.id.templateId FROM TemplateCustomer tc) "
+                            + "AND categoryId = ?1 AND templateKind = 'COSTING' AND status = 'PUBLISHED' "
+                            + "ORDER BY publishedAt DESC NULLS LAST",
+                    categoryId);
+            Template costing = !costingSpecific.isEmpty() ? costingSpecific.get(0)
+                    : (!costingGeneral.isEmpty() ? costingGeneral.get(0) : null);
             if (costing != null) {
                 out.costingTemplateId = costing.id;
                 out.costingTemplateName = costing.name;
                 out.costingTemplateVersion = costing.version;
-                boolean specific = costing.customerId != null && costing.customerId.equals(customerId);
+                boolean specific = !costingSpecific.isEmpty();
                 out.costingTemplateSource = specific ? "CUSTOMER_SPECIFIC" : "GENERAL";
             } else {
                 out.costingTemplateSource = "NONE";
