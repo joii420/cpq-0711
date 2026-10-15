@@ -1,12 +1,14 @@
 package com.cpq.template.dto;
 
 import java.util.UUID;
+import java.util.List;
 
 public class CreateTemplateRequest {
 
     public String name;
     public String category;
     public UUID customerId;
+    public List<UUID> customerIds;
     public UUID categoryId;
     public String description;
     public String usageNote;

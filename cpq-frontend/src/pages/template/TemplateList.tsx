@@ -18,8 +18,13 @@ import { productCategoryService, type ProductCategory } from '../../services/pro
 import { customerService } from '../../services/customerService';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import type { TemplateData } from './types';
 
 interface CustomerLite { id: string; name: string }
+
+const getTemplateCustomerIds = (template: Pick<TemplateData, 'customerIds' | 'customerId'>): string[] => Array.isArray(template.customerIds)
+  ? template.customerIds.filter(Boolean)
+  : (template.customerId ? [template.customerId] : []);
 
 const { Title } = Typography;
 const { Search } = Input;
@@ -105,7 +110,7 @@ const TemplateList: React.FC = () => {
       });
       let list = res.data || [];
       if (scopeFilter === 'GENERAL') {
-        list = list.filter((t: any) => !t.customerId);
+        list = list.filter((t: any) => getTemplateCustomerIds(t).length === 0);
       }
       setTemplates(list);
     } catch (e: any) {
@@ -172,8 +177,19 @@ const TemplateList: React.FC = () => {
       title: '适用范围',
       key: 'scope',
       render: (_: any, record: any) => {
-        if (record.customerName) return <Tag color="purple">客户专属:{record.customerName}</Tag>;
-        if (record.customerId) return <Tag color="purple">客户专属</Tag>;
+        const customers: Array<{ name?: string }> = Array.isArray(record.customers) ? record.customers : [];
+        const names = customers.length
+          ? customers.map(c => c.name).filter(Boolean)
+          : (record.customerNames || (record.customerName ? [record.customerName] : []));
+        if (names.length > 0) {
+          return (
+            <span>
+              {names.slice(0, 3).map((name: string) => <Tag color="purple" key={name}>{name}</Tag>)}
+              {names.length > 3 && <Tag color="purple">+ {names.length - 3} 个客户</Tag>}
+            </span>
+          );
+        }
+        if (getTemplateCustomerIds(record).length > 0) return <Tag color="purple">客户专属</Tag>;
         return <Tag color="cyan">通用</Tag>;
       },
     },
@@ -367,13 +383,14 @@ const TemplateList: React.FC = () => {
               const isCosting = kind === 'COSTING';
               return (
                 <Form.Item
-                  name="customerId"
+                  name="customerIds"
                   label="适用客户"
                   tooltip={isCosting
                     ? '核价模板：留空表示对所有客户可用（推荐）；选择特定客户则只对该客户生效'
                     : '报价模板：留空 = 通用模板；选择客户 = 该客户专属模板。匹配时客户专属优先，无则回退通用'}
                 >
                   <RemoteInfiniteSelect<CustomerLite>
+                    mode="multiple"
                     placeholder={isCosting ? '默认所有客户可用，可选择特定客户' : '不选则为通用模板，选择则为客户专属'}
                     allowClear
                     fetchPage={fetchCustomers}

@@ -90,7 +90,9 @@ const TemplateConfiguration: React.FC = () => {
       form.setFieldsValue({
         name: t.name,
         categoryId: t.categoryId,
-        customerId: t.customerId ?? undefined,
+        customerIds: Array.isArray(t.customerIds)
+          ? t.customerIds
+          : (t.customerId ? [t.customerId] : []),
         description: t.description,
         usageNote: t.usageNote,
       });
