@@ -28,3 +28,11 @@
 1. 本次无可用的独立 PostgreSQL 16 实例，生产 SQL 未在任何共享库执行；上线前必须在数据库副本运行两次并保留日志。
 2. 前端全量 lint 受 master 基线问题阻塞，但生产构建通过；Gate B 需要按项目 UI/E2E SOP 在独立测试数据前缀下补跑。
 3. 测试工程师/前端工程师子代理因模型容量限制未能接管执行，本报告保留客观限制，不把未执行的 E2E 标记为通过。
+
+## 合并后服务重启验证（2026-10-14）
+
+- 主分支合并提交：`d1c48339 merge: 模板支持多客户适用范围`。
+- 后端以默认 dev profile 启动，连接 `cpq_db_0724`；Flyway 日志确认 `V450` 成功应用，`template_customer` 回填后共有 41 条关联。
+- `curl --noproxy '*' http://localhost:8081/api/cpq/components` 返回 HTTP `401`，说明后端已启动且鉴权链路正常。
+- `curl --noproxy '*' http://localhost:5174/` 返回 HTTP `200`，前端 Vite 服务正常。
+- 启动日志存在既有 schema validation 警告 `missing table [mat_composite_process]`，未阻止服务启动；本任务未新增该表依赖。
