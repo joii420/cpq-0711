@@ -12,6 +12,7 @@ import {
   Popconfirm,
   Modal,
   InputNumber,
+  Alert,
 } from 'antd';
 import {
   SendOutlined,
@@ -21,6 +22,7 @@ import {
 } from '@ant-design/icons';
 import type { TemplateData, VersionHistoryItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
+import { canCreateNewDraftFromTemplate } from './softDeleteRules';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
 import { customerService } from '../../services/customerService';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
@@ -41,6 +43,7 @@ interface TemplateConfigPanelProps {
   versionHistory: VersionHistoryItem[];
   onVersionClick: (id: string) => void;
   currentId: string;
+  isSystemAdmin?: boolean;
 }
 
 const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
@@ -54,9 +57,11 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
   versionHistory,
   onVersionClick,
   currentId,
+  isSystemAdmin = false,
 }) => {
   const isDraft = template.status === 'DRAFT';
   const isPublished = template.status === 'PUBLISHED';
+  const isDeleted = template.status === 'DELETED';
   const [publishModalOpen, setPublishModalOpen] = useState(false);
   const [majorVersion, setMajorVersion] = useState<number | undefined>(undefined);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -90,6 +95,16 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
     <>
       {/* Title */}
       <div className="tm-config-title">模板配置</div>
+
+      {isDeleted && (
+        <Alert
+          type="error"
+          showIcon
+          style={{ margin: '0 12px 12px' }}
+          message="该模板已删除"
+          description="不能恢复、编辑、发布或作为新报价模板引用；历史报价仍保留原模板引用和快照。"
+        />
+      )}
 
       {/* Basic info form */}
       <div className="tm-config-section">
@@ -192,9 +207,16 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
               </Button>
             </Popconfirm>
           )}
-          <Button icon={<CopyOutlined />} block onClick={onNewDraft}>
-            创建新草稿
-          </Button>
+          {canCreateNewDraftFromTemplate(template.status, isSystemAdmin) && (
+            <Button icon={<CopyOutlined />} block onClick={onNewDraft}>
+              {isDeleted ? '创建新模板' : '创建新草稿'}
+            </Button>
+          )}
+          {isDeleted && (
+            <Button block disabled title="DELETED 不支持恢复或编辑">
+              恢复 / 编辑（不可用）
+            </Button>
+          )}
           <Button block onClick={onBack}>
             返回列表
           </Button>

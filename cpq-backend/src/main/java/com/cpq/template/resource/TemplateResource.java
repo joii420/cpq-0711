@@ -51,13 +51,20 @@ public class TemplateResource {
             @QueryParam("keyword") String keyword,
             // V71：按模板类型过滤（QUOTATION / COSTING），不传则返全部
             @QueryParam("templateKind") String templateKind) {
+        if ("DELETED".equalsIgnoreCase(status)) {
+            sessionHelper.requireSystemAdmin(httpRequest());
+        }
         return ApiResponse.success(templateService.list(page, size, category, customerId, categoryId, status, keyword, templateKind));
     }
 
     @GET
     @Path("/{id}")
     public ApiResponse<TemplateDTO> getById(@PathParam("id") UUID id) {
-        return ApiResponse.success(templateService.getById(id));
+        TemplateDTO dto = templateService.getById(id, true);
+        if ("DELETED".equals(dto.status)) {
+            sessionHelper.requireSystemAdmin(httpRequest());
+        }
+        return ApiResponse.success(dto);
     }
 
     /**
@@ -97,9 +104,8 @@ public class TemplateResource {
     @DELETE
     @Path("/{id}")
     @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
-    public ApiResponse<Void> delete(@PathParam("id") UUID id) {
-        templateService.delete(id);
-        return ApiResponse.success();
+    public ApiResponse<TemplateDTO> delete(@PathParam("id") UUID id) {
+        return ApiResponse.success(templateService.delete(id, sessionHelper.getCurrentUserIdOrFallback(httpRequest())));
     }
 
     @POST
@@ -124,7 +130,22 @@ public class TemplateResource {
     @Path("/{id}/new-draft")
     @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<TemplateDTO> createNewDraft(@PathParam("id") UUID id) {
-        return ApiResponse.success(templateService.createNewDraft(id));
+        // The service keeps the default path strict for internal callers.  The
+        // resource grants the deleted-source exception only after the RBAC gate.
+        TemplateDTO source = templateService.getById(id, true);
+        boolean allowDeleted = false;
+        if ("DELETED".equals(source.status)) {
+            sessionHelper.requireSystemAdmin(httpRequest());
+            allowDeleted = true;
+        }
+        return ApiResponse.success(templateService.createNewDraft(id, allowDeleted));
+    }
+
+    @Context
+    HttpServerRequest request;
+
+    private HttpServerRequest httpRequest() {
+        return request;
     }
 
     /**
@@ -174,14 +195,14 @@ public class TemplateResource {
     /**
      * task-0806 B11 / api.md §4 · A3：A2 的批量版，兼迁移前体检 A。
      *
-     * @param status    默认 PUBLISHED,ARCHIVED；逗号分隔
+     * @param status    默认 PUBLISHED,ARCHIVED,DELETED；逗号分隔
      * @param onlyDrift 默认 true，只返回有差异的模板
      */
     @GET
     @Path("/admin/frozen-drift")
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<java.util.Map<String, Object>> adminFrozenDrift(
-            @QueryParam("status") @DefaultValue("PUBLISHED,ARCHIVED") String status,
+            @QueryParam("status") @DefaultValue("PUBLISHED,ARCHIVED,DELETED") String status,
             @QueryParam("onlyDrift") @DefaultValue("true") boolean onlyDrift) {
         List<String> statuses = Arrays.asList(status.split(","));
         return ApiResponse.success(templateFreezeDriftService.driftOfMany(statuses, onlyDrift));
@@ -196,7 +217,7 @@ public class TemplateResource {
     @Path("/admin/sqlview-closure-check")
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<java.util.Map<String, Object>> sqlviewClosureCheck(
-            @QueryParam("status") @DefaultValue("PUBLISHED,ARCHIVED") String status) {
+            @QueryParam("status") @DefaultValue("PUBLISHED,ARCHIVED,DELETED") String status) {
         List<String> statuses = Arrays.asList(status.split(","));
         return ApiResponse.success(templateFreezeDriftService.sqlviewClosureCheck(statuses));
     }

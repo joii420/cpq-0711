@@ -94,6 +94,13 @@ public class ProductTemplateBindingService {
         if (binding == null) {
             throw new BusinessException(404, "Binding not found: " + bindingId);
         }
+        Template template = Template.findById(binding.templateId);
+        if (template == null) {
+            throw new BusinessException(404, "Template not found: " + binding.templateId);
+        }
+        if (!"PUBLISHED".equals(template.status)) {
+            throw new BusinessException("Only PUBLISHED templates can be set as default");
+        }
         // Unset all other defaults for this product+hash
         clearDefaults(binding.productId, binding.processIdsHash);
         binding.isDefault = true;
@@ -106,7 +113,9 @@ public class ProductTemplateBindingService {
             processIds.stream().map(UUID::toString).collect(Collectors.toList());
         String hash = computeHash(stringIds);
         List<ProductTemplateBinding> bindings = ProductTemplateBinding.list(
-            "productId = ?1 AND processIdsHash = ?2 ORDER BY isDefault DESC, createdAt DESC",
+            "productId = ?1 AND processIdsHash = ?2 "
+                + "AND templateId IN (SELECT t.id FROM Template t WHERE t.status = 'PUBLISHED') "
+                + "ORDER BY isDefault DESC, createdAt DESC",
             productId, hash
         );
         return bindings.stream().map(ProductTemplateBindingDTO::from).collect(Collectors.toList());

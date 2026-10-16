@@ -68,7 +68,7 @@ public class TemplateFreezeDriftService {
     /** A3：批量差异（admin，兼迁移前体检 A）。 */
     public Map<String, Object> driftOfMany(List<String> statuses, boolean onlyDrift) {
         List<Template> templates = (statuses == null || statuses.isEmpty())
-                ? Template.list("status IN ?1", List.of("PUBLISHED", "ARCHIVED"))
+                ? Template.list("status IN ?1", List.of("PUBLISHED", "ARCHIVED", "DELETED"))
                 : Template.list("status IN ?1", statuses);
 
         int withDrift = 0;
@@ -261,7 +261,7 @@ public class TemplateFreezeDriftService {
      */
     public Map<String, Object> sqlviewClosureCheck(List<String> statuses) {
         List<Template> templates = (statuses == null || statuses.isEmpty())
-                ? Template.list("status IN ?1", List.of("PUBLISHED", "ARCHIVED"))
+                ? Template.list("status IN ?1", List.of("PUBLISHED", "ARCHIVED", "DELETED"))
                 : Template.list("status IN ?1", statuses);
 
         int totalRefs = 0;

@@ -436,7 +436,7 @@ public class QuotationService {
         }
         if (!"PUBLISHED".equals(tpl.status)) {
             throw new BusinessException(400,
-                    "模板未发布，无法绑定：templateId=" + templateId + "，期望 status=PUBLISHED，实际=" + tpl.status);
+                    "模板不可作为新引用绑定：templateId=" + templateId + "，期望 status=PUBLISHED，实际=" + tpl.status);
         }
     }
 
@@ -2033,6 +2033,12 @@ public class QuotationService {
         if (source == null) throw new BusinessException(404, "Quotation not found: " + id);
 
         UUID newTemplateId = (templateId != null) ? templateId : source.customerTemplateId;
+        // Copying creates a new quotation reference.  Unlike saving an existing DRAFT
+        // with the same template id, it must not mint a new reference to a tombstoned
+        // template (including the source template when templateId is omitted).
+        rejectDeletedCopyTemplate(source.customerTemplateId);
+        rejectDeletedCopyTemplate(source.costingCardTemplateId);
+        rejectDeletedCopyTemplate(newTemplateId);
         // task-0729: currentValue = source.customerTemplateId —— 同模板复制(含 templateId==null)天然
         // 相等 ⇒ 豁免状态校验(源模板已归档也能复制)；换模板 ⇒ 严格要求新模板 PUBLISHED。
         // costingCardTemplateId 在下方 :=source.costingCardTemplateId 是延续既有绑定而非新绑定，不加校验。
@@ -2221,6 +2227,14 @@ public class QuotationService {
         QuotationDTO dto = QuotationDTO.from(copy);
         dto.lineItems = loadLineItems(copy.id);
         return dto;
+    }
+
+    private void rejectDeletedCopyTemplate(UUID templateId) {
+        if (templateId == null) return;
+        com.cpq.template.entity.Template template = com.cpq.template.entity.Template.findById(templateId);
+        if (template != null && "DELETED".equals(template.status)) {
+            throw new BusinessException(400, "DELETED 模板不可用于复制报价：templateId=" + templateId);
+        }
     }
 
     /**

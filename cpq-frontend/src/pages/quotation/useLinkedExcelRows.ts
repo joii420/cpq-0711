@@ -34,7 +34,7 @@ interface LinkedExcelTemplateShape {
   name?: string;
   version?: string;
   isDefault?: boolean;
-  status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'DELETED';
 }
 
 /** BNF path cache key: `${partNo}::${path}` */

@@ -18,7 +18,9 @@ import { productCategoryService, type ProductCategory } from '../../services/pro
 import { customerService } from '../../services/customerService';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
-import type { TemplateData } from './types';
+import { useAuthStore } from '../../stores/authStore';
+import { STATUS_COLORS, STATUS_LABELS, type TemplateData } from './types';
+import { canEditTemplate, canDeleteTemplate, deletedTemplateStatusOption } from './softDeleteRules';
 
 interface CustomerLite { id: string; name: string }
 
@@ -28,18 +30,6 @@ const getTemplateCustomerIds = (template: Pick<TemplateData, 'customerIds' | 'cu
 
 const { Title } = Typography;
 const { Search } = Input;
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'blue',
-  PUBLISHED: 'green',
-  ARCHIVED: 'default',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: '草稿',
-  PUBLISHED: '已发布',
-  ARCHIVED: '已归档',
-};
 
 const LEGACY_CATEGORY_LABELS: Record<string, string> = {
   STANDARD_PARTS: '标准件',
@@ -68,6 +58,8 @@ const KIND_OPTIONS = [
 
 const TemplateList: React.FC = () => {
   const navigate = useNavigate();
+  const userRole = useAuthStore((s) => s.user?.role);
+  const isSystemAdmin = userRole === 'SYSTEM_ADMIN';
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
@@ -109,6 +101,12 @@ const TemplateList: React.FC = () => {
         size: 100,
       });
       let list = res.data || [];
+      // The backend is authoritative for the default exclusion. Keep this
+      // client-side guard as a defence-in-depth fallback while older API
+      // instances are being rolled forward.
+      if (!(isSystemAdmin && statusFilter === 'DELETED')) {
+        list = list.filter((t: any) => t.status !== 'DELETED');
+      }
       if (scopeFilter === 'GENERAL') {
         list = list.filter((t: any) => getTemplateCustomerIds(t).length === 0);
       }
@@ -129,7 +127,13 @@ const TemplateList: React.FC = () => {
   useEffect(() => {
     loadTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [keyword, categoryFilter, statusFilter, customerFilter, scopeFilter, kindFilter]);
+  }, [keyword, categoryFilter, statusFilter, customerFilter, scopeFilter, kindFilter, isSystemAdmin]);
+
+  useEffect(() => {
+    // A role change (or logout/login in another tab) must not leave a normal
+    // user on the privileged historical status query.
+    if (!isSystemAdmin && statusFilter === 'DELETED') setStatusFilter(undefined);
+  }, [isSystemAdmin, statusFilter]);
 
   const handleCreate = async (values: any) => {
     try {
@@ -150,7 +154,9 @@ const TemplateList: React.FC = () => {
       dataIndex: 'name',
       key: 'name',
       render: (text: string, record: any) => (
-        <a onClick={(e) => { e.stopPropagation(); navigate(`/templates/${record.id}`); }}>{text}</a>
+        (record.status !== 'DELETED' || isSystemAdmin)
+          ? <a onClick={(e) => { e.stopPropagation(); navigate(`/templates/${record.id}`); }}>{text}</a>
+          : <span>{text}</span>
       ),
     },
     {
@@ -226,7 +232,11 @@ const TemplateList: React.FC = () => {
       key: 'edit',
       label: '编辑',
       icon: <EditOutlined />,
-      enabledWhen: (rows) => rows.length === 1 ? true : '编辑一次只能选一行',
+      enabledWhen: (rows) => {
+        if (rows.length !== 1) return '编辑一次只能选一行';
+        if (!canEditTemplate(rows[0].status)) return '已删除模板不可编辑，请使用“创建新模板”';
+        return true;
+      },
       onClick: (rows) => navigate(`/templates/${rows[0].id}`),
     },
     {
@@ -236,12 +246,14 @@ const TemplateList: React.FC = () => {
       danger: true,
       enabledWhen: (rows) => {
         if (rows.length === 0) return false;
-        if (rows.some((r: any) => r.status !== 'DRAFT')) return '仅草稿状态可删除';
+        if (rows.some((r: any) => r.status === 'DELETED')) return '已删除模板不可再次删除';
+        if (rows.some((r: any) => r.status === 'ARCHIVED')) return '已归档模板不可删除';
+        if (rows.some((r: any) => !canDeleteTemplate(r.status))) return '仅草稿或已发布状态可删除';
         return true;
       },
       needsConfirm: true,
       confirmTitle: '确认删除选中的 {N} 个模板？',
-      confirmDescription: '⚠️ 此操作不可撤销。已发布过的版本请改为归档。',
+      confirmDescription: '⚠️ 删除已发布模板仅改变模板状态，历史报价引用和快照不变；草稿模板仍执行现有物理删除。此操作不可撤销。',
       onClick: async (rows) => {
         await runBatch(rows, (r: any) => templateService.delete(r.id).then(() => undefined), {
           rowLabel: (r: any) => `${r.name}${r.version ? ' ' + r.version : ''}`,
@@ -257,7 +269,8 @@ const TemplateList: React.FC = () => {
       <div>
         <Title level={4} style={{ margin: 0 }}>模板配置</Title>
         <span style={{ color: '#8c8c8c', fontSize: 12 }}>
-          配置报价单的「产品卡片视图」（组件 tab、字段、公式、产品属性），按客户专属/通用维度管理
+          配置报价单的「产品卡片视图」（组件 tab、字段、公式、产品属性）；默认列表不含已删除模板
+          {isSystemAdmin ? '，系统管理员可查看删除历史' : ''}
         </span>
       </div>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateModalOpen(true)}>
@@ -327,8 +340,9 @@ const TemplateList: React.FC = () => {
         <Col span={4}>
           <Select
             placeholder="状态筛选"
-            options={STATUS_OPTIONS}
+            options={isSystemAdmin ? [...STATUS_OPTIONS, deletedTemplateStatusOption] : STATUS_OPTIONS}
             allowClear
+            value={statusFilter}
             style={{ width: '100%' }}
             onChange={setStatusFilter}
           />

@@ -69,6 +69,13 @@ public class TemplateService {
                                   String status, String keyword, String templateKind) {
         StringBuilder where = new StringBuilder("1=1");
         Map<String, Object> params = new HashMap<>();
+        // DELETED is an audit-only state.  It is available only through an explicit
+        // status=DELETED query (the resource guards that query to SYSTEM_ADMIN).
+        // Keeping this predicate here also protects non-HTTP callers from accidentally
+        // treating tombstones as active templates.
+        if (status == null || status.isBlank()) {
+            where.append(" AND status <> 'DELETED'");
+        }
         if (categoryId != null) {
             where.append(" AND categoryId = :categoryId");
             params.put("categoryId", categoryId);
@@ -81,6 +88,7 @@ public class TemplateService {
             params.put("customerId", customerId);
         }
         if (status != null && !status.isBlank()) {
+            status = status.trim().toUpperCase(Locale.ROOT);
             where.append(" AND status = :status");
             params.put("status", status);
         }
@@ -106,9 +114,20 @@ public class TemplateService {
     }
 
     public TemplateDTO getById(UUID id) {
+        return getById(id, false);
+    }
+
+    /**
+     * Read a template for the management API.  Deleted templates are intentionally
+     * hidden unless the caller has passed the SYSTEM_ADMIN gate in the resource.
+     */
+    public TemplateDTO getById(UUID id, boolean allowDeleted) {
         Template template = Template.findById(id);
         if (template == null) {
             throw new BusinessException(404, "Template not found: " + id);
+        }
+        if ("DELETED".equals(template.status) && !allowDeleted) {
+            throw new BusinessException(403, "DELETED 模板仅系统管理员可查看");
         }
         List<TemplateComponent> tcs = TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id);
         TemplateDTO dto = TemplateDTO.from(template, tcs);
@@ -190,20 +209,43 @@ public class TemplateService {
     }
 
     @Transactional
-    public void delete(UUID id) {
+    public TemplateDTO delete(UUID id) {
+        return delete(id, null);
+    }
+
+    @Transactional
+    public TemplateDTO delete(UUID id, UUID operatorId) {
         Template template = Template.findById(id);
         if (template == null) {
             throw new BusinessException(404, "Template not found: " + id);
         }
-        if (!"DRAFT".equals(template.status)) {
-            throw new BusinessException("Only DRAFT templates can be deleted");
+        if ("PUBLISHED".equals(template.status)) {
+            // Soft delete only.  Do not touch template_component, snapshots, bindings,
+            // quotations or any other historical reference.
+            String previousStatus = template.status;
+            template.status = "DELETED";
+            Map<String, Object> details = new LinkedHashMap<>();
+            details.put("fromStatus", previousStatus);
+            details.put("toStatus", "DELETED");
+            details.put("referencesChanged", false);
+            if (operatorId != null) {
+                operationLogService.log(operatorId, "TEMPLATE_SOFT_DELETE", "TEMPLATE", id,
+                        "已发布模板软删除：" + id, details);
+            }
+            LOG.infof("Soft-deleted published template id=%s", id);
+            return TemplateDTO.from(template,
+                    TemplateComponent.list("templateId = ?1 ORDER BY sortOrder ASC", id));
         }
-        em.createQuery("DELETE FROM TemplateCustomer tc WHERE tc.id.templateId = :tid")
-                .setParameter("tid", id)
-                .executeUpdate();
-        // cascade deletes template_component rows
-        template.delete();
-        LOG.infof("Deleted template id=%s", id);
+        if ("DRAFT".equals(template.status)) {
+            em.createQuery("DELETE FROM TemplateCustomer tc WHERE tc.id.templateId = :tid")
+                    .setParameter("tid", id)
+                    .executeUpdate();
+            // cascade deletes template_component rows
+            template.delete();
+            LOG.infof("Deleted template id=%s", id);
+            return null;
+        }
+        throw new BusinessException("仅 PUBLISHED 模板可转为 DELETED；当前 status=" + template.status);
     }
 
     @Transactional
@@ -497,6 +539,10 @@ public class TemplateService {
                     "DRAFT 模板不支持首次冻结：草稿期本就不写快照，发布（publish）时会自动生成，"
                     + "templateId=" + id);
         }
+        if ("DELETED".equals(template.status)) {
+            throw new BusinessException(400,
+                    "DELETED 模板不可补冻或修改历史快照：templateId=" + id);
+        }
 
         // 零行守卫（核心，不许放松）：仅当该模板 template_component_snapshot 行数 == 0 时才允许
         // 执行——结构上保证本方法不可能覆盖已有快照，因此不破坏不可变性，可以放心开给业务角色
@@ -531,9 +577,22 @@ public class TemplateService {
 
     @Transactional
     public TemplateDTO createNewDraft(UUID sourceId) {
+        return createNewDraft(sourceId, false);
+    }
+
+    /**
+     * Create an independent draft from a template.  A DELETED source is an
+     * administrator-only audit path; the HTTP resource performs the role gate and
+     * passes allowDeleted=true after it succeeds.
+     */
+    @Transactional
+    public TemplateDTO createNewDraft(UUID sourceId, boolean allowDeleted) {
         Template source = Template.findById(sourceId);
         if (source == null) {
             throw new BusinessException(404, "Template not found: " + sourceId);
+        }
+        if ("DELETED".equals(source.status) && !allowDeleted) {
+            throw new BusinessException(403, "DELETED 模板仅系统管理员可创建新模板");
         }
 
         // Per series: at most one DRAFT may exist concurrently. If a DRAFT already exists,
@@ -729,7 +788,7 @@ public class TemplateService {
 
     public List<TemplateDTO> getVersionHistory(UUID templateSeriesId) {
         List<Template> templates = Template.list(
-            "templateSeriesId = ?1 ORDER BY publishedAt DESC NULLS LAST, createdAt DESC",
+            "templateSeriesId = ?1 AND status <> 'DELETED' ORDER BY publishedAt DESC NULLS LAST, createdAt DESC",
             templateSeriesId
         );
         List<TemplateDTO> result = templates.stream()
@@ -1793,7 +1852,7 @@ public class TemplateService {
     private String calculateNextVersion(UUID seriesId, PublishRequest request) {
         // 查找同 series 任何已发布过的版本(PUBLISHED 或 ARCHIVED)以推算下一版本号
         List<Template> published = Template.list(
-            "templateSeriesId = ?1 AND status IN ('PUBLISHED', 'ARCHIVED') ORDER BY publishedAt DESC NULLS LAST",
+            "templateSeriesId = ?1 AND status IN ('PUBLISHED', 'ARCHIVED', 'DELETED') ORDER BY publishedAt DESC NULLS LAST",
             seriesId
         );
 

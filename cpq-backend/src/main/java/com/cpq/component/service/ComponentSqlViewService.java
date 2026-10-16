@@ -436,7 +436,7 @@ public class ComponentSqlViewService {
     private boolean isTemplateFrozen(UUID templateId) {
         Template t = Template.findById(templateId);
         if (t == null) return false;
-        return "PUBLISHED".equals(t.status) || "ARCHIVED".equals(t.status);
+        return "PUBLISHED".equals(t.status) || "ARCHIVED".equals(t.status) || "DELETED".equals(t.status);
     }
 
     // ──────────── snapshot 反序列化辅助（阶段 3） ────────────

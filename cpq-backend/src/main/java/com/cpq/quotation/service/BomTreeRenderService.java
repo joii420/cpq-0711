@@ -468,7 +468,7 @@ public class BomTreeRenderService {
         Template _bt18Tpl = Template.findById(templateId);
         String _bt18Status = (_bt18Tpl != null) ? _bt18Tpl.status : null;
         List<Object[]> driverComps;
-        if ("PUBLISHED".equals(_bt18Status) || "ARCHIVED".equals(_bt18Status)) {
+        if ("PUBLISHED".equals(_bt18Status) || "ARCHIVED".equals(_bt18Status) || "DELETED".equals(_bt18Status)) {
             List<Object[]> viaReader = new ArrayList<>();
             Set<UUID> seenDriverIds = new HashSet<>();   // 与旧 SQL 的 DISTINCT c.id 同语义
             for (TemplateComponentSnapshot s : publishedTemplateReader.driverCompsOf(templateId)) {
