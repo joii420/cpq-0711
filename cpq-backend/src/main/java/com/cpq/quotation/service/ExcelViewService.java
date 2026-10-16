@@ -808,13 +808,13 @@ public class ExcelViewService {
      *
      * <p><b>B23（D-2 修复）</b>：判据从「{@code componentsSnapshot} 是否非空」改为「模板状态是否
      * DRAFT」，与 {@link #tabDefsOfTemplate}（B21 已改）同款判据。原判据在 V382（B21）把
-     * <b>未冻结的</b> PUBLISHED/ARCHIVED 模板的 {@code components_snapshot} 也置空后
+     * <b>未冻结的</b> PUBLISHED/ARCHIVED/DELETED 模板的 {@code components_snapshot} 也置空后
      * （D16/D17：未冻结时两个来源都空），会把这类模板误判成「DRAFT」→ 调用方
      * {@link #buildTabJoinEffectiveRows} 据此回落 {@code Component.findById()} 读活表——正是本次
      * 改造要消灭的「已发布模板静默读活配置」。
      *
      * <p>只有真正 DRAFT 才短路返回空 map（草稿期一律走活表，§5.1.2，行为不变）。非 DRAFT
-     * （PUBLISHED/ARCHIVED）一律委托 {@link PublishedTemplateReader#allTabsOf}——已冻结时正常
+     * （PUBLISHED/ARCHIVED/DELETED）一律委托 {@link PublishedTemplateReader#allTabsOf}——已冻结时正常
      * 返回全部快照行；<b>未冻结</b>时由 {@code allTabsOf} 内部
      * {@code verifyConsistentWithJsonb} 自然抛 {@link com.cpq.template.exception.TemplateNotFrozenException}
      * （HTTP 409）。本方法<b>不捕获</b>该异常——按 {@link PublishedTemplateReader} 类级 Javadoc
@@ -824,8 +824,8 @@ public class ExcelViewService {
      * （{@link #buildLineRowData}/{@link #buildLineTreeRows}）已有的 {@code catch (Exception)}
      * 会把它吸收为「优雅降级返回空」，两种落点都不会触发活表回落，符合本次红线。
      *
-     * @return DRAFT / 模板不存在 → 空 map；PUBLISHED/ARCHIVED 已冻结 → 全部快照行；
-     *         PUBLISHED/ARCHIVED 未冻结 → 不返回，抛 {@code TemplateNotFrozenException}
+     * @return DRAFT / 模板不存在 → 空 map；PUBLISHED/ARCHIVED/DELETED 已冻结 → 全部快照行；
+     *         PUBLISHED/ARCHIVED/DELETED 未冻结 → 不返回，抛 {@code TemplateNotFrozenException}
      */
     private java.util.Map<java.util.UUID, com.cpq.template.entity.TemplateComponentSnapshot>
             loadFrozenComponentMetaMap(UUID templateId) {
@@ -1370,7 +1370,7 @@ public class ExcelViewService {
         Template t = Template.findById(templateId);
         if (t == null) return List.of();
         // task-0806 B21：判据从"componentsSnapshot 是否非空"改为"模板状态是否 DRAFT"。
-        // 原判据在 components_snapshot 被 V382 清空后（缺口一：PUBLISHED/ARCHIVED 但尚未按新
+        // 原判据在 components_snapshot 被 V382 清空后（缺口一：PUBLISHED/ARCHIVED/DELETED 但尚未按新
         // 语义重新发布的过渡态）会把这类模板误判成"DRAFT"，从而回落 buildLiveComponentsList
         // 直读活表——这正是本次改造要消灭的"未冻结时回落活表"红线。只有真正 DRAFT 的模板才配
         // 读活表（草稿配公式期 snapshot 尚未冻结，历史行为不变）。

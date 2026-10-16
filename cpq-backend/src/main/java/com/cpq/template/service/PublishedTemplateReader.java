@@ -34,7 +34,7 @@ import java.util.UUID;
  * <p><b>miss 语义（B20 / FR-8 / D16~D19，2026-08-07 由「一律 500」改为两分——原 D3「存量一次性
  * 对齐后冻死」已被 D16 推翻）</b>：
  * <ul>
- *   <li><b>零行</b>：模板 status ∈ (PUBLISHED, ARCHIVED) 且查不到<b>任何</b>快照行 →
+ *   <li><b>零行</b>：模板 status ∈ (PUBLISHED, ARCHIVED, DELETED) 且查不到<b>任何</b>快照行 →
  *       <b>不是错误</b>，是「尚未按新语义重新发布」的正常过渡态（D17）。抛
  *       {@link TemplateNotFrozenException}（HTTP 409，{@code code=TEMPLATE_NOT_FROZEN}），
  *       调用方必须让它一路冒泡到 HTTP 响应——<b>禁止捕获后回落活表</b> {@code component} /
@@ -72,7 +72,7 @@ public class PublishedTemplateReader {
 
     /**
      * B20：该模板是否已完成「全量冻结重新发布」（{@code template_component_snapshot} 非空）。
-     * 一次 {@code COUNT} 查询。PUBLISHED/ARCHIVED 且返回 {@code false} = 过渡期「未冻结」
+     * 一次 {@code COUNT} 查询。PUBLISHED/ARCHIVED/DELETED 且返回 {@code false} = 过渡期「未冻结」
      * （D17）；DRAFT 恒 {@code false}，但草稿本就不适用冻结语义（不在本类职责内）。
      *
      * <p>供调用方在真正需要「区分未冻结 vs 正常」的展示场景（如体检/诊断类只读端点）主动判断，
@@ -88,8 +88,8 @@ public class PublishedTemplateReader {
     /**
      * repair-0814：这批模板里<b>尚未冻结</b>的那些（{@link #isFrozen} 的批量版，判定口径逐字相同）。
      *
-     * <p>「未冻结」= {@code status ∉ {PUBLISHED, ARCHIVED}}（DRAFT 等，渲染期直读活表配置）
-     * <b>或</b> {@code status ∈ {PUBLISHED, ARCHIVED}} 但快照零行（D17 过渡态）。
+     * <p>「未冻结」= {@code status ∉ {PUBLISHED, ARCHIVED, DELETED}}（DRAFT 等，渲染期直读活表配置）
+     * <b>或</b> {@code status ∈ {PUBLISHED, ARCHIVED, DELETED}} 但快照零行（D17 过渡态）。
      * 换个说法：<b>返回的这些模板，其渲染仍会受活表 component 配置影响</b>——这正是调用方关心的事。
      *
      * <p><b>为什么需要批量版</b>：调用方（{@code ComponentService.assertNotReferencedByCostingTemplate}）
@@ -178,7 +178,7 @@ public class PublishedTemplateReader {
     /**
      * 多模板批量（供整单场景，避免逐模板查）。一次 {@code IN} 查询取全部模板的全部页签，
      * 按 templateId 分桶；每个请求的 templateId 若无结果，按模板状态判定：不存在→404，
-     * PUBLISHED/ARCHIVED 但零行→{@link TemplateNotFrozenException}（B20，未冻结不是错误），
+     * PUBLISHED/ARCHIVED/DELETED 但零行→{@link TemplateNotFrozenException}（B20，未冻结不是错误），
      * DRAFT→静默放入空列表。
      *
      * <p>N+1 纪律：缺失的 templateId 集合用<b>一次</b> {@code IN} 查询批量取模板状态
@@ -221,7 +221,7 @@ public class PublishedTemplateReader {
      * 手上（会先抛 {@link TemplateNotFrozenException}）——本方法收到非空 {@code allTabs}
      * 却找不到目标 sortOrder，只可能是「快照被破坏」（D19），故仍然抛 500，不会跟「未冻结」混淆。
      *
-     * @return 命中的快照行；templateId 非 PUBLISHED/ARCHIVED 且未命中时返回 null（DRAFT 场景）
+     * @return 命中的快照行；templateId 非 PUBLISHED/ARCHIVED/DELETED 且未命中时返回 null（DRAFT 场景）
      * @throws BusinessException 500，模板已发布/归档但该 sortOrder 缺失快照行（D19：快照损坏）
      */
     public TemplateComponentSnapshot findTab(List<TemplateComponentSnapshot> allTabs, UUID templateId, int sortOrder) {
@@ -242,7 +242,7 @@ public class PublishedTemplateReader {
     // ---- 内部工具 ----
 
     private static boolean isFrozenStatus(String status) {
-        return "PUBLISHED".equals(status) || "ARCHIVED".equals(status);
+        return "PUBLISHED".equals(status) || "ARCHIVED".equals(status) || "DELETED".equals(status);
     }
 
     private Map<UUID, Template> loadTemplatesByIds(List<UUID> ids) {

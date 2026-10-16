@@ -1,6 +1,12 @@
 
 # CPQ 系统开发记录
 
+[2026-10-15] 模板管理 - **已发布模板软删除状态 Path A 立项，完成只读影响面勘察，待 A0 方案裁决** | 涉及文档：`dev-docs/task-261015-已发布模板软删除状态/需求文档.md`、`影响面分析.md`、`docs/BACKLOG.md`、`dev-docs/INDEX.md` | 已核实 `template.status` 源码 CHECK 仅含 `DRAFT/PUBLISHED/ARCHIVED`；当前共享开发库 `PUBLISHED=45`、`ARCHIVED=12`，发布模板关联报价 181 张、报价明细 5246 条；模板快照表 342 行覆盖 56 个模板。物理删除会撞外键或级联历史快照，故本任务按保留记录/快照、禁止新引用、历史报价继续读取的软删除方向进入 A0。待裁决：删除入口状态范围、是否可恢复、已有草稿报价保存、显式查询及冻结体检口径。| 只读核查，无业务代码改动
+
+[2026-10-15] 模板管理 - **A0 裁决方案甲：`PUBLISHED -> DELETED` 终态软删除** | 涉及文档：`dev-docs/task-261015-已发布模板软删除状态/需求文档.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md`、`原型图/` | 用户裁决：历史 DRAFT 报价允许继续保存；DELETED 不支持恢复，但仅 `SYSTEM_ADMIN` 可查看并从其创建新 DRAFT；默认列表隐藏，管理员可显式查询；删除只更新目标模板状态，不阻断、不改写其他引用，报价查询继续带出原模板。已补齐 AC、接口契约、前后端任务、测试分片和原型，待闸门 A；本轮仍无业务代码改动。
+
+[2026-10-15] 模板管理 - **已完成 `PUBLISHED -> DELETED` 软删除实现，待闸门 B** | 涉及文件：`cpq-backend/src/main/resources/db/migration/V451__task261015_template_soft_delete.sql`、模板服务/资源/报价绑定/产品绑定/冻结读取链路、`cpq-frontend/src/pages/template/`、`dev-docs/task-261015-已发布模板软删除状态/test-report.md` | 仅目标模板状态变更；DRAFT 仍物理删除，DELETED 终态且仅 SYSTEM_ADMIN 可显式查看/创建新 DRAFT；新报价/切换/复制/产品绑定拒绝 DELETED；历史报价绑定、模板组件快照和报价快照保留，DELETED 按冻结快照读取。[自检✓] 后端编译通过；专用契约测试 7/7 通过；前端 build 与 113 文件/1448 测试通过；Flyway V451 在 `cpq_db_test` 自动验证。未执行共享开发库写入或手工迁移。
+
 [2026-09-13] 规则升级 ×2 - **`change-protocol.md §4.5` 补「结果缓存 key 维度」· `CLAUDE.md §5` 新增「代码存在 ≠ 用户走得到」**（纯文档，路径 B，用户裁决采纳两条）| 涉及文件：`docs/rules/change-protocol.md`、`CLAUDE.md`
 
 **规则 1 · `§4.5` 传播点表新增第 6 行「结果缓存的 key 维度」**

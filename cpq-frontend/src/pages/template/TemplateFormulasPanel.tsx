@@ -820,6 +820,9 @@ const FormulaDrawer: React.FC<FormulaDrawerProps> = ({
 // ---- Main Panel ----
 const TemplateFormulasPanel: React.FC<Props> = ({ templateId, templateStatus, onChange }) => {
   const isDraft = templateStatus === 'DRAFT';
+  const readOnlyReason = templateStatus === 'DELETED'
+    ? '已删除模板只读，请从该模板创建新模板'
+    : '已发布模板不可编辑公式，请新建草稿';
   const [formulas, setFormulas] = useState<TemplateFormula[]>([]);
   const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -959,7 +962,7 @@ const TemplateFormulasPanel: React.FC<Props> = ({ templateId, templateStatus, on
       width: 160,
       render: (_: any, record: TemplateFormula) => (
         <Space size={4}>
-          <Tooltip title={isDraft ? '编辑' : '已发布模板不可编辑公式，请新建草稿'}>
+          <Tooltip title={isDraft ? '编辑' : readOnlyReason}>
             <Button
               size="small"
               icon={<EditOutlined />}
@@ -967,7 +970,7 @@ const TemplateFormulasPanel: React.FC<Props> = ({ templateId, templateStatus, on
               onClick={() => handleEdit(record)}
             />
           </Tooltip>
-          <Tooltip title={isDraft ? '删除' : '已发布模板不可删除公式，请新建草稿'}>
+          <Tooltip title={isDraft ? '删除' : readOnlyReason}>
             <Button
               size="small"
               danger
@@ -1002,11 +1005,11 @@ const TemplateFormulasPanel: React.FC<Props> = ({ templateId, templateStatus, on
           共 {formulas.length} 条公式
           {!isDraft && (
             <span style={{ marginLeft: 8, color: '#faad14' }}>
-              （已发布模板，公式只读）
+              （{templateStatus === 'DELETED' ? '已删除' : '已发布'}模板，公式只读）
             </span>
           )}
         </Text>
-        <Tooltip title={isDraft ? '' : '已发布模板不可改公式，请新建草稿'}>
+        <Tooltip title={isDraft ? '' : readOnlyReason}>
           <Button
             type="primary"
             icon={<PlusOutlined />}

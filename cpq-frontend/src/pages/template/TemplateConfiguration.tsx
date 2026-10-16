@@ -19,6 +19,7 @@ import {
 } from '@dnd-kit/core';
 import { templateService } from '../../services/templateService';
 import { componentService } from '../../services/componentService';
+import { useAuthStore } from '../../stores/authStore';
 import type { ProductAttribute, TemplateData, VersionHistoryItem, TemplateComponentItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
 import ComponentPalette from './ComponentPalette';
@@ -60,6 +61,7 @@ const TemplateConfiguration: React.FC = () => {
   const [formulaCycles, setFormulaCycles] = useState<FormulaCycle[]>([]);
   const [form] = Form.useForm();
   const autoSaveTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isSystemAdmin = useAuthStore((s) => s.user?.role === 'SYSTEM_ADMIN');
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -363,6 +365,10 @@ const TemplateConfiguration: React.FC = () => {
   // ---- New Draft ----
   const handleNewDraft = async () => {
     if (!id) return;
+    if (template?.status === 'DELETED' && !isSystemAdmin) {
+      message.error('只有系统管理员可以从已删除模板创建新模板');
+      return;
+    }
     try {
       const res = await templateService.createNewDraft(id);
       message.success('新草稿已创建');
@@ -549,6 +555,7 @@ const TemplateConfiguration: React.FC = () => {
           onPublish={handlePublish}
           onArchive={handleArchive}
           onNewDraft={handleNewDraft}
+          isSystemAdmin={isSystemAdmin}
           onBack={() => navigate('/templates')}
           versionHistory={versionHistory}
           onVersionClick={(vid) => navigate(`/templates/${vid}`)}

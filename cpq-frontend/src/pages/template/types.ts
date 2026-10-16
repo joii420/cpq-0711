@@ -47,7 +47,7 @@ export interface TemplateData {
   customers?: TemplateCustomerSummary[];
   description?: string;
   usageNote?: string;
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED' | 'DELETED';
   /** 模板类型：QUOTATION(报价模板) / COSTING(核价模板) / EXCEL(Excel视图) */
   templateKind?: 'QUOTATION' | 'COSTING' | 'EXCEL';
   version?: string;
@@ -74,12 +74,14 @@ export const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'blue',
   PUBLISHED: 'green',
   ARCHIVED: 'default',
+  DELETED: 'red',
 };
 
 export const STATUS_LABELS: Record<string, string> = {
   DRAFT: '草稿',
   PUBLISHED: '已发布',
   ARCHIVED: '已归档',
+  DELETED: '已删除',
 };
 
 export const FIELD_TYPE_LABELS: Record<string, string> = {

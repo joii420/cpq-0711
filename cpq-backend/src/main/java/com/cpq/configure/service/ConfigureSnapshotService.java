@@ -1098,7 +1098,7 @@ public class ConfigureSnapshotService {
 
         List<DriverComp> out = new ArrayList<>();
         Set<UUID> seen = new HashSet<>();   // 与旧 SQL 的 DISTINCT c.id 同语义：同 componentId 只取一次
-        if ("PUBLISHED".equals(status) || "ARCHIVED".equals(status)) {
+        if ("PUBLISHED".equals(status) || "ARCHIVED".equals(status) || "DELETED".equals(status)) {
             for (com.cpq.template.entity.TemplateComponentSnapshot s : publishedTemplateReader.driverCompsOf(templateId)) {
                 if (!seen.add(s.componentId)) continue;
                 DriverComp dc = new DriverComp();
