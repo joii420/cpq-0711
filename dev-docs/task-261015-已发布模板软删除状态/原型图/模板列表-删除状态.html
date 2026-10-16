@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>模板列表 · 删除状态</title>
+<style>
+body{margin:0;background:#f5f7fa;font:14px Arial,"Microsoft YaHei",sans-serif;color:#1f2937}.wrap{padding:28px 36px}.toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.title{font-size:22px;font-weight:600}.sub{color:#8c8c8c;font-size:12px;margin-top:6px}.actions button,.filters select{height:32px;border:1px solid #d9d9d9;border-radius:6px;background:#fff;padding:0 12px;margin-left:8px}.primary{background:#1677ff!important;color:#fff;border-color:#1677ff!important}.danger{color:#cf1322;border-color:#ffa39e!important}.filters{background:#fff;padding:14px;border-radius:8px;margin-bottom:14px}.filters input{height:30px;border:1px solid #d9d9d9;border-radius:6px;padding:0 10px;width:210px}.table{background:#fff;border-radius:8px;overflow:hidden}.row,.head{display:grid;grid-template-columns:2.2fr 1.2fr 1fr 1.3fr 1fr 1fr;padding:14px 16px;align-items:center;border-bottom:1px solid #f0f0f0}.head{background:#fafafa;color:#595959;font-weight:600}.tag{display:inline-block;padding:3px 8px;border-radius:10px;font-size:12px;margin-right:5px}.green{background:#f6ffed;color:#389e0d}.blue{background:#e6f4ff;color:#1677ff}.gray{background:#f5f5f5;color:#595959}.red{background:#fff1f0;color:#cf1322}.disabled{color:#bfbfbf}.empty{padding:42px;text-align:center;color:#8c8c8c}.long{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:260px}
+</style>
+<div class="wrap">
+  <div class="toolbar"><div><div class="title">模板配置</div><div class="sub">默认列表不查询“已删除”；仅系统管理员可查看历史删除模板</div></div><div class="actions"><button class="primary">＋ 新建模板</button><button class="danger disabled" title="仅已发布模板可删除">删除</button></div></div>
+  <div class="filters"><input placeholder="搜索模板名称" value=""><select><option>产品分类</option></select><select><option>适用范围：全部</option></select><select><option>状态：全部（不含已删除）</option></select></div>
+  <div class="table"><div class="head"><span>模板名称</span><span>模板类型</span><span>适用范围</span><span>版本</span><span>状态</span><span>创建时间</span></div>
+    <div class="row"><span class="long">正泰测试模板 2 · 超长模板名称示例</span><span><span class="tag blue">报价模板</span></span><span>通用</span><span>v2.1</span><span><span class="tag green">已发布</span></span><span>2026/10/14 16:20</span></div>
+    <div class="row"><span>核价模板1</span><span><span class="tag gray">核价模板</span></span><span>客户专属</span><span>v1.0</span><span><span class="tag gray">已归档</span></span><span>2026/09/28 10:12</span></div>
+  </div>
+  <h3 style="margin-top:32px">SYSTEM_ADMIN：显式历史筛选</h3>
+  <div class="filters"><select><option>状态：已删除（DELETED）</option></select><span style="color:#8c8c8c;margin-left:12px">普通角色不显示此筛选项</span></div>
+  <div class="table"><div class="head"><span>模板名称</span><span>模板类型</span><span>适用范围</span><span>版本</span><span>状态</span><span>操作提示</span></div>
+    <div class="row"><span>正泰旧版卡片</span><span><span class="tag blue">报价模板</span></span><span>客户 A、B</span><span>v1.3</span><span><span class="tag red">已删除</span></span><span class="disabled">打开后可创建新模板；不可恢复</span></div>
+  </div>
+  <div class="empty">空数据态：该管理员没有已删除模板时显示“暂无已删除模板”</div>
+</div>

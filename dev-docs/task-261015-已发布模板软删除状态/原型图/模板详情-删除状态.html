@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>模板详情 · 删除状态</title>
+<style>
+body{margin:0;background:#f5f7fa;font:14px Arial,"Microsoft YaHei",sans-serif;color:#1f2937}.drawer{width:820px;margin:24px auto;background:#fff;min-height:690px;border-radius:10px;box-shadow:0 4px 20px #0001}.head{padding:22px 26px;border-bottom:1px solid #f0f0f0;display:flex;justify-content:space-between}.name{font-size:20px;font-weight:600}.meta{color:#8c8c8c;margin-top:8px}.body{padding:24px 26px}.alert{padding:12px 14px;border-radius:6px;background:#fff1f0;border:1px solid #ffa39e;color:#cf1322;margin-bottom:22px}.grid{display:grid;grid-template-columns:150px 1fr;border-top:1px solid #f0f0f0}.cell{padding:14px 8px;border-bottom:1px solid #f0f0f0}.label{color:#8c8c8c}.btns{text-align:right;margin-top:28px}.btn{height:34px;border-radius:6px;border:1px solid #d9d9d9;background:#fff;padding:0 16px;margin-left:10px}.primary{background:#1677ff;color:#fff;border-color:#1677ff}.disabled{color:#bfbfbf;background:#fafafa}.foot{padding:16px 26px;color:#8c8c8c;border-top:1px solid #f0f0f0;font-size:12px}
+</style>
+<div class="drawer">
+  <div class="head"><div><div class="name">正泰旧版卡片 <span style="color:#cf1322;font-size:13px">已删除</span></div><div class="meta">报价模板 · v1.3 · 删除时间 2026/10/15 10:08</div></div><div>×</div></div>
+  <div class="body">
+    <div class="alert">该模板已删除，不能恢复、编辑、发布或作为新报价模板引用。历史报价仍保留原模板引用和快照。</div>
+    <div class="grid"><div class="cell label">适用范围</div><div class="cell">客户 A、客户 B</div><div class="cell label">历史引用</div><div class="cell">报价 181 张；报价明细 5246 条（只读展示）</div><div class="cell label">组件快照</div><div class="cell">已冻结 · 8 个页签</div><div class="cell label">管理员操作</div><div class="cell">创建新模板会复制为新的 DRAFT，源模板状态不变</div></div>
+    <div class="btns"><button class="btn disabled" title="DELETED 不支持恢复">恢复</button><button class="btn disabled" title="DELETED 不可编辑">编辑</button><button class="btn primary">创建新模板</button></div>
+  </div>
+  <div class="foot">错误态示例：非 SYSTEM_ADMIN 访问该详情返回 403；创建新模板失败时保留在详情页并显示错误原因。</div>
+</div>
