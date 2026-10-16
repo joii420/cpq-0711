@@ -5,7 +5,8 @@
 
 [2026-10-15] 模板管理 - **A0 裁决方案甲：`PUBLISHED -> DELETED` 终态软删除** | 涉及文档：`dev-docs/task-261015-已发布模板软删除状态/需求文档.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md`、`原型图/` | 用户裁决：历史 DRAFT 报价允许继续保存；DELETED 不支持恢复，但仅 `SYSTEM_ADMIN` 可查看并从其创建新 DRAFT；默认列表隐藏，管理员可显式查询；删除只更新目标模板状态，不阻断、不改写其他引用，报价查询继续带出原模板。已补齐 AC、接口契约、前后端任务、测试分片和原型，待闸门 A；本轮仍无业务代码改动。
 
-[2026-10-15] 模板管理 - **已完成 `PUBLISHED -> DELETED` 软删除实现，待闸门 B** | 涉及文件：`cpq-backend/src/main/resources/db/migration/V451__task261015_template_soft_delete.sql`、模板服务/资源/报价绑定/产品绑定/冻结读取链路、`cpq-frontend/src/pages/template/`、`dev-docs/task-261015-已发布模板软删除状态/test-report.md` | 仅目标模板状态变更；DRAFT 仍物理删除，DELETED 终态且仅 SYSTEM_ADMIN 可显式查看/创建新 DRAFT；新报价/切换/复制/产品绑定拒绝 DELETED；历史报价绑定、模板组件快照和报价快照保留，DELETED 按冻结快照读取。[自检✓] 后端编译通过；专用契约测试 7/7 通过；前端 build 与 113 文件/1448 测试通过；Flyway V451 在 `cpq_db_test` 自动验证。未执行共享开发库写入或手工迁移。
+[2026-10-15] 模板管理 - **已完成 `PUBLISHED -> DELETED` 软删除实现** | 涉及文件：`cpq-backend/src/main/resources/db/migration/V451__task261015_template_soft_delete.sql`、模板服务/资源/报价绑定/产品绑定/冻结读取链路、`cpq-frontend/src/pages/template/`、`dev-docs/task-261015-已发布模板软删除状态/test-report.md` | 仅目标模板状态变更；DRAFT 仍物理删除，DELETED 终态且仅 SYSTEM_ADMIN 可显式查看/创建新 DRAFT；新报价/切换/复制/产品绑定拒绝 DELETED；历史报价绑定、模板组件快照和报价快照保留，DELETED 按冻结快照读取。[自检✓] 后端编译通过；专用契约测试 7/7 通过；前端 build 与 113 文件/1448 测试通过；Flyway V451 在 `cpq_db_test` 自动验证。未执行共享开发库写入或手工迁移。
+[2026-10-15] 模板管理 - **用户验收通过，任务已交付** | 合并 master `0c78a2c8`；用户确认前后端服务验收通过。验收范围：`PUBLISHED -> DELETED`、默认列表隐藏、`SYSTEM_ADMIN` 历史查看/创建新模板、DELETED 新引用拦截、历史报价/草稿保存和冻结快照读取。服务探活：前端 `200`、后端未登录 `401`；共享开发库 Flyway `V451` 已自动应用。[已自检✓] 合并后编译、前端构建、全量前端测试及任务专用契约测试均通过。
 
 [2026-09-13] 规则升级 ×2 - **`change-protocol.md §4.5` 补「结果缓存 key 维度」· `CLAUDE.md §5` 新增「代码存在 ≠ 用户走得到」**（纯文档，路径 B，用户裁决采纳两条）| 涉及文件：`docs/rules/change-protocol.md`、`CLAUDE.md`
 
