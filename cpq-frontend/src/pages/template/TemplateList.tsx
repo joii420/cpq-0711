@@ -180,26 +180,6 @@ const TemplateList: React.FC = () => {
       },
     },
     {
-      title: '适用范围',
-      key: 'scope',
-      render: (_: any, record: any) => {
-        const customers: Array<{ name?: string }> = Array.isArray(record.customers) ? record.customers : [];
-        const names = customers.length
-          ? customers.map(c => c.name).filter(Boolean)
-          : (record.customerNames || (record.customerName ? [record.customerName] : []));
-        if (names.length > 0) {
-          return (
-            <span>
-              {names.slice(0, 3).map((name: string) => <Tag color="purple" key={name}>{name}</Tag>)}
-              {names.length > 3 && <Tag color="purple">+ {names.length - 3} 个客户</Tag>}
-            </span>
-          );
-        }
-        if (getTemplateCustomerIds(record).length > 0) return <Tag color="purple">客户专属</Tag>;
-        return <Tag color="cyan">通用</Tag>;
-      },
-    },
-    {
       title: '版本',
       dataIndex: 'version',
       key: 'version',
