@@ -1,6 +1,8 @@
 
 # CPQ 系统开发记录
 
+[2026-10-16] 模板管理 - **用户裁决补充：扩大已发布模板删除权限并调整列表展示** | 涉及文件：`cpq-backend/src/main/java/com/cpq/template/resource/TemplateResource.java`、`cpq-frontend/src/pages/template/TemplateList.tsx`、`cpq-backend/src/test/java/com/cpq/template/resource/TemplateResourcePermissionContractTest.java` | `PUBLISHED -> DELETED` 删除开放给 `SALES_REP`、`SALES_MANAGER`、`PRICING_MANAGER`、`SYSTEM_ADMIN`；`DELETED` 仍不可恢复，历史查询/明细打开/从已删除模板创建新草稿仍仅 `SYSTEM_ADMIN`；模板管理列表移除“适用范围”列，其他客户范围筛选和历史引用不变；无数据库迁移。
+
 [2026-10-15] 模板管理 - **已发布模板软删除状态 Path A 立项，完成只读影响面勘察，待 A0 方案裁决** | 涉及文档：`dev-docs/task-261015-已发布模板软删除状态/需求文档.md`、`影响面分析.md`、`docs/BACKLOG.md`、`dev-docs/INDEX.md` | 已核实 `template.status` 源码 CHECK 仅含 `DRAFT/PUBLISHED/ARCHIVED`；当前共享开发库 `PUBLISHED=45`、`ARCHIVED=12`，发布模板关联报价 181 张、报价明细 5246 条；模板快照表 342 行覆盖 56 个模板。物理删除会撞外键或级联历史快照，故本任务按保留记录/快照、禁止新引用、历史报价继续读取的软删除方向进入 A0。待裁决：删除入口状态范围、是否可恢复、已有草稿报价保存、显式查询及冻结体检口径。| 只读核查，无业务代码改动
 
 [2026-10-15] 模板管理 - **A0 裁决方案甲：`PUBLISHED -> DELETED` 终态软删除** | 涉及文档：`dev-docs/task-261015-已发布模板软删除状态/需求文档.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md`、`原型图/` | 用户裁决：历史 DRAFT 报价允许继续保存；DELETED 不支持恢复，但仅 `SYSTEM_ADMIN` 可查看并从其创建新 DRAFT；默认列表隐藏，管理员可显式查询；删除只更新目标模板状态，不阻断、不改写其他引用，报价查询继续带出原模板。已补齐 AC、接口契约、前后端任务、测试分片和原型，待闸门 A；本轮仍无业务代码改动。

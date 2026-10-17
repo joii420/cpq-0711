@@ -103,7 +103,7 @@ public class TemplateResource {
 
     @DELETE
     @Path("/{id}")
-    @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
+    @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<TemplateDTO> delete(@PathParam("id") UUID id) {
         return ApiResponse.success(templateService.delete(id, sessionHelper.getCurrentUserIdOrFallback(httpRequest())));
     }
