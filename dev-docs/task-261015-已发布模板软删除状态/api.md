@@ -1,6 +1,6 @@
 # 接口契约
 
-> 角色口径：本任务中的“管理员”= `SYSTEM_ADMIN`；`SALES_MANAGER` 不获得 `DELETED` 历史查看或从已删除模板创建新模板的额外权限。
+> 角色口径：本任务中的“管理员”= `SYSTEM_ADMIN`；`SALES_REP`、`SALES_MANAGER`、`PRICING_MANAGER`、`SYSTEM_ADMIN` 均可删除 `DRAFT/PUBLISHED` 模板，但只有 `SYSTEM_ADMIN` 可查询、打开 `DELETED` 历史或从已删除模板创建新模板。
 
 ## 兼容原则
 
@@ -16,7 +16,7 @@
 - `PUBLISHED`：不删除行，只把 `template.status` 更新为 `DELETED`，返回更新后的模板 DTO。
 - `ARCHIVED` / `DELETED`：HTTP 400，返回明确的状态错误。
 - 删除不检查进行中报价或产品绑定，不修改任何引用表。
-- 角色：`SALES_MANAGER`、`SYSTEM_ADMIN`，沿用现有权限。
+- 角色：`SALES_REP`、`SALES_MANAGER`、`PRICING_MANAGER`、`SYSTEM_ADMIN`。
 
 ### `GET /api/cpq/templates`
 
