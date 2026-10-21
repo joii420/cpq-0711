@@ -6,10 +6,8 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -71,11 +69,11 @@ class UserImportApiTest extends Task260902TestBase {
     // ═══════════════════ T-15 → AC-15：新增 + 密码回显 ═══════════════════
 
     /**
-     * T-15 → AC-15：3 个全新用户名 ⇒ 新增 3 条 / 跳过 0 条；3 个初始密码互不相同且非空；
+     * T-15：3 个全新用户名 ⇒ 新增 3 条 / 跳过 0 条；每个初始密码等于对应用户名；
      * 前后基准查询④ 的差值 == 3；3 条新记录 {@code is_first_login=true}、{@code status='ACTIVE'}。
      */
     @Test
-    void t15_importThreeNewUsers_createdWithDistinctInitialPasswords() {
+    void t15_importThreeNewUsers_createdWithUsernameInitialPasswords() {
         long before = baseUserCount();
         Map<String, Object> rep = doImport(threeUserFile());
         long after = baseUserCount();
@@ -91,14 +89,13 @@ class UserImportApiTest extends Task260902TestBase {
         List<Map<String, Object>> created = assertNonEmpty(listOf(rep, "created"), "AC-15 created 明细");
         assertEquals(3, created.size(), "AC-15：created 明细应有 3 条");
 
-        Set<String> pwds = new LinkedHashSet<>();
         for (Map<String, Object> c : created) {
             String u = String.valueOf(c.get("username"));
             Object pw = c.get("initialPassword");
             assertNotNull(pw, "AC-15：created 明细必须逐人回显 initialPassword，用户 " + u + " 没有");
             String pws = String.valueOf(pw);
             assertFalse(pws.isBlank(), "AC-15：用户 " + u + " 的初始密码为空串");
-            pwds.add(pws);
+            assertEquals(u, pws, "用户导入默认密码必须等于用户名");
 
             // 🚨 api.md § B-5：不落库明文
             assertEquals(0, count("SELECT count(*) FROM \"user\" WHERE username='" + u
@@ -112,9 +109,6 @@ class UserImportApiTest extends Task260902TestBase {
             assertEquals("true", p[0], "AC-15：新用户 " + u + " 的 is_first_login 应为 true（首登强制改密）");
             assertEquals("ACTIVE", p[1], "AC-15：新用户 " + u + " 的 status 应为 ACTIVE");
         }
-        System.out.println("[AC-15] 三个初始密码（去重后）= " + pwds.size() + " 个");
-        assertEquals(3, pwds.size(),
-                "AC-15：3 个初始密码必须互不相同，去重后只剩 " + pwds.size() + " 个 —— 生成器可能是常量");
     }
 
     // ═══════════════════ T-16 → AC-16：重复跳过（序列）═══════════════════

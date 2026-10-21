@@ -7,7 +7,7 @@
  * **导入完成后在同一个抽屉里换内容**，不新开弹层。
  *
  * 🚨 这是全任务唯一的敏感界面：**初始密码只在本次响应里出现一次**，
- * 关掉抽屉后再也查不到（只能到用户列表点「重置密码」重新生成）。所以：
+ * 关掉抽屉后再也查不到（只能到用户列表点「重置密码」重新设置为用户名）。所以：
  *   ① 密码区必须带「只显示这一次」的警示条；
  *   ② `createdCount === 0` 时**整个密码区（含警示条）不渲染** —— 空的密码表格会让人以为密码丢了；
  *   ③ 「跳过」与「提示」分开渲染：跳过 = 这一行**没有**创建用户（独立表格）；
@@ -295,7 +295,7 @@ const UserImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
                 message={<Text strong>以下初始密码只显示这一次，请立即复制并转交给对应同事。</Text>}
                 description={
                   <div style={{ lineHeight: 1.8 }}>
-                    关闭本窗口后无法再查看；忘了可以在用户列表对该用户点「重置密码」重新生成。
+                    关闭本窗口后无法再查看；忘了可以在用户列表对该用户点「重置密码」重新设置为用户名。
                     <br />
                     新用户首次登录时会被<Text strong>强制修改密码</Text>。
                   </div>
@@ -442,7 +442,7 @@ const UserImportDrawer: React.FC<Props> = ({ open, onClose, onImported }) => {
               description={
                 <Paragraph style={{ marginBottom: 0 }}>
                   • <Text strong>只新增，不修改</Text> —— 用户名已存在的行整行跳过，不会覆盖现有用户的姓名/角色/部门<br />
-                  • <Text strong>不填密码</Text> —— 系统为每个新用户生成一个随机初始密码，导入完成后在结果页统一显示<br />
+                  • <Text strong>不填密码</Text> —— 系统默认使用用户名作为初始密码，导入完成后在结果页统一显示<br />
                   • <Text strong>角色</Text>填：系统管理员 / 销售经理 / 销售代表 / 财务（也接受 <Text code>SYSTEM_ADMIN</Text> 等英文枚举）<br />
                   • <Text strong>区域 / 部门</Text>可留空；填了但系统里没有该名称时，该行<Text strong>仍会创建</Text>，
                   只是这两个字段留空并在报告里提示

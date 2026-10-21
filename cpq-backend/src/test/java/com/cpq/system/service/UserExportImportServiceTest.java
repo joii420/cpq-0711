@@ -1,6 +1,7 @@
 package com.cpq.system.service;
 
 import com.cpq.system.dto.UserImportReportDTO;
+import com.cpq.system.dto.CreateUserRequest;
 import com.cpq.system.entity.User;
 import com.cpq.system.exception.UserApiException;
 import jakarta.persistence.EntityManager;
@@ -20,9 +21,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -40,6 +39,9 @@ public class UserExportImportServiceTest {
 
     @Inject
     UserExportImportService service;
+
+    @Inject
+    UserService userService;
 
     @Inject
     EntityManager em;
@@ -108,10 +110,10 @@ public class UserExportImportServiceTest {
 
     // ──────────────────────────── B-5 导入 ────────────────────────────
 
-    /** AC-15：3 个全新用户 → 新增 3 / 跳过 0；密码互不相同；is_first_login=true、status=ACTIVE。 */
+    /** 用户导入：3 个全新用户 → 新增 3 / 跳过 0；初始密码等于用户名。 */
     @Test
     @TestTransaction
-    void createsNewUsersWithDistinctPasswords() throws Exception {
+    void createsNewUsersWithUsernamePasswords() throws Exception {
         long before = User.count();
         UserImportReportDTO r = service.importUsers(build(new String[][]{
             row(P + "a", "张明", P + "a@example.com", "销售代表"),
@@ -124,13 +126,10 @@ public class UserExportImportServiceTest {
         assertEquals(3, r.totalRows);
         assertEquals(before + 3, User.count(), "库内条数增量必须是 3");
 
-        Set<String> pwds = new HashSet<>();
         for (UserImportReportDTO.CreatedUser c : r.created) {
             assertNotNull(c.initialPassword, "每行必须回显初始密码");
-            assertFalse(c.initialPassword.isBlank());
-            pwds.add(c.initialPassword);
+            assertEquals(c.username, c.initialPassword, "导入用户默认密码必须等于用户名");
         }
-        assertEquals(3, pwds.size(), "3 个密码必须互不相同");
 
         assertEquals("SALES_REP", r.created.get(0).role);
         assertEquals("销售代表", r.created.get(0).roleLabel);
@@ -145,6 +144,41 @@ public class UserExportImportServiceTest {
         assertFalse(u.passwordHash.equals(r.created.get(0).initialPassword),
             "库里存的必须是哈希，不是明文");
         assertTrue(u.passwordHash.startsWith("$2"), "沿用 BCrypt（与新增用户同一条路径）");
+    }
+
+    /** 管理员重置密码：回显并写入的初始密码必须等于用户名，而不是随机值。 */
+    @Test
+    @TestTransaction
+    void resetPasswordUsesUsernameAsInitialPassword() {
+        User user = User.find("username", "admin").firstResult();
+        assertNotNull(user, "测试基线必须存在 admin 用户");
+
+        var result = userService.resetPassword(user.id);
+
+        assertEquals(user.username, result.initialPassword);
+        assertTrue(org.mindrot.jbcrypt.BCrypt.checkpw(user.username, user.passwordHash),
+            "重置密码必须以 BCrypt 哈希保存用户名");
+        assertTrue(user.isFirstLogin, "重置后仍需强制首次登录改密");
+    }
+
+    /** 手工新增用户与导入、重置保持同一口径：初始密码等于用户名，库内仅保存 BCrypt 哈希。 */
+    @Test
+    @TestTransaction
+    void createUserUsesUsernameAsInitialPassword() {
+        CreateUserRequest request = new CreateUserRequest();
+        request.username = P + "manual";
+        request.fullName = "手工新增";
+        request.email = P + "manual@example.com";
+        request.role = "SALES_REP";
+
+        var result = userService.create(request);
+        User persisted = User.find("username", request.username).firstResult();
+
+        assertEquals(request.username, result.initialPassword);
+        assertNotNull(persisted);
+        assertTrue(org.mindrot.jbcrypt.BCrypt.checkpw(request.username, persisted.passwordHash),
+            "手工新增用户必须以 BCrypt 哈希保存用户名");
+        assertTrue(persisted.isFirstLogin, "手工新增用户仍需强制首次登录改密");
     }
 
     /** AC-16：同一份文件再导一次 ⇒ 新增 0 / 跳过 3「用户名已存在」，且既有字段一个字都没被改。 */

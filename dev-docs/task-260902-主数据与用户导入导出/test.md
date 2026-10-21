@@ -83,7 +83,7 @@
 | AC-12 | B-3 / F-3 | T-12 | 接口 | 8 个列名逐字；角色列 ∈ 4 个中文标签；**断言文件里不含 `password`/`id` 任何列** |
 | AC-13 | B-3 / F-3 | T-13 | 接口 | 不传参行数 == 基准查询④；`role=SALES_REP` 时每行角色 = `销售代表` |
 | AC-14 | B-4 / F-4 | T-14 | 接口 | 模板 6 列名逐字；有 1 行示例；角色列表头有批注且含 4 个合法值 |
-| AC-15 | B-5 / F-5 | T-15 | 接口 | 导入 3 新用户 → `createdCount=3`；3 个 `initialPassword` **两两不等且非空**；前后 count 差 == 3；3 行 `is_first_login=true` |
+| AC-15 | B-5 / F-5 | T-15 | 接口 | 导入 3 新用户 → `createdCount=3`；每个 `initialPassword` **等于对应用户名且非空**；前后 count 差 == 3；3 行 `is_first_login=true` |
 | AC-16 | B-5 / F-5 | T-16 | 接口 | 同文件二次导入 → `createdCount=0`、`skippedCount=3`、原因全为「用户名已存在」；**逐字段比对 3 个用户的 full_name/role/email 与首次导入后完全相同** |
 | AC-17 | B-5 / F-5 | T-17 | 接口 | 角色填 `财务总监` → 该行进 `skipped`、原因含「角色不合法」；**同文件其余合法行仍被创建**（部分成功） |
 | AC-18 | B-5 / F-5 | T-18 | 接口 | 区域/部门留空 → 创建成功且两列为 NULL；填不存在的部门名 → **仍创建成功**、`department_id` 为 NULL、该行 `hint` 含「部门未匹配」 |

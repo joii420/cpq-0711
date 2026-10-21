@@ -191,7 +191,7 @@ public ApiResponse<UserImportReportDTO> importUsers(@RestForm("file") FileUpload
   "created": [                       // 仅本次新建的用户，含初始密码
     { "rowNum": 2, "username": "t260902a", "fullName": "张明",
       "role": "SALES_REP", "roleLabel": "销售代表",
-      "initialPassword": "Kv7#mQ2xLp9d", "hint": null }
+      "initialPassword": "t260902a", "hint": null }
   ],
   "skipped": [
     { "rowNum": 4, "username": "admin", "reason": "用户名已存在" }
@@ -200,7 +200,7 @@ public ApiResponse<UserImportReportDTO> importUsers(@RestForm("file") FileUpload
 ```
 
 🚨 **`initialPassword` 只在本响应出现一次**：不落库明文、**不写任何日志**、不进导出文件。
-密码生成**必须复用现有创建用户路径**的同一套生成器与哈希逻辑（`UserService` 里 `initialPassword` 的产出点），🚫 不许新写一套。
+手工新增、导入用户和管理员重置的默认初始密码均为**用户名本身**，不使用随机数；三条路径均复用现有 `UserService` 的 BCrypt 哈希逻辑，🚫 不在导入侧另写哈希实现。
 新用户 `status='ACTIVE'`、`is_first_login=true`（沿用既有语义，首登强制改密）。
 
 **性能**：N 行导入的 SQL 条数必须与 N **无关**（一次批量查重、批量 INSERT）。🚫 循环体内查库。

@@ -13,7 +13,6 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 import org.mindrot.jbcrypt.BCrypt;
 
-import java.security.SecureRandom;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -28,10 +27,6 @@ public class UserService {
 
     @Inject
     NotificationService notificationService;
-
-    private static final String PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
-    private static final int PASSWORD_LENGTH = 10;
-    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
     /**
      * <b>用户列表过滤条件的唯一出处</b>（task-260902 · B-3 抽取，条件文本逐字沿用改造前的 list()）。
@@ -89,7 +84,9 @@ public class UserService {
             throw new BusinessException("邮箱已存在: " + request.email);
         }
 
-        String rawPassword = generatePassword();
+        // All user entry points share the same deterministic initial-password policy:
+        // the username is returned once, while only its BCrypt hash is persisted.
+        String rawPassword = request.username;
         String hash = hashPassword(rawPassword);
 
         User user = new User();
@@ -195,7 +192,10 @@ public class UserService {
             throw new BusinessException(404, "用户不存在: " + id);
         }
 
-        String rawPassword = generatePassword();
+        // Administrator resets use the stable username default so the recipient can identify it
+        // without relying on a separately generated random value. The password is still hashed
+        // before persistence and the account remains forced to change it on first login.
+        String rawPassword = user.username;
         user.passwordHash = hashPassword(rawPassword);
         user.isFirstLogin = true;
         user.initialPasswordExpiresAt = OffsetDateTime.now().plusHours(24);
@@ -212,20 +212,7 @@ public class UserService {
     }
 
     /**
-     * <b>初始密码生成的唯一实现</b>（新建用户 / 重置密码 / task-260902 批量导入 三处共用）。
-     * 🚫 不许在导入侧另写一套 —— 两套实现＝两套强度，且以后改密码策略只会改到一边。
-     * task-260902：由 private 放宽到<b>包可见</b>供同包的 {@code UserExportImportService} 调用。
-     */
-    String generatePassword() {
-        StringBuilder sb = new StringBuilder(PASSWORD_LENGTH);
-        for (int i = 0; i < PASSWORD_LENGTH; i++) {
-            sb.append(PASSWORD_CHARS.charAt(SECURE_RANDOM.nextInt(PASSWORD_CHARS.length())));
-        }
-        return sb.toString();
-    }
-
-    /**
-     * <b>口令哈希的唯一实现</b>（BCrypt cost 12），同上由三处共用。
+     * <b>口令哈希的唯一实现</b>（BCrypt cost 12），新建、导入和重置密码共用。
      * task-260902：从 create()/resetPassword() 原地抽出，参数与轮数逐字不变。
      */
     String hashPassword(String rawPassword) {

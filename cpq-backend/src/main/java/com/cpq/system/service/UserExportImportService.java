@@ -43,9 +43,8 @@ import java.util.regex.Pattern;
  * 🚫 <b>绝不 UPDATE 任何既有用户的任何字段</b>（否则误传一份老文件就会回退现有用户的角色/部门）。
  * 部分成功、不整单回滚：某行不合格只跳过该行。
  *
- * <p>🚨 <b>初始密码</b>：生成与哈希一律走 {@link UserService#generatePassword()} /
- * {@link UserService#hashPassword(String)} —— 与「新增用户」「重置密码」<b>同一条路径</b>，
- * 🚫 不在这里另写一套（两套实现＝两套强度，改策略只会改到一边）。
+ * <p>🚨 <b>初始密码</b>：手工「新增用户」、导入用户和管理员「重置密码」均默认使用用户名作为初始密码，
+ * 再统一走 {@link UserService#hashPassword(String)} 哈希；不使用随机数。
  * 明文<b>只在当次响应里出现一次</b>：不落库、<b>不写任何日志</b>、不进导出文件。
  *
  * <p><b>N+1 纪律</b>：三个动作的 SQL 条数都与行数 N <b>无关</b>。
@@ -186,7 +185,7 @@ public class UserExportImportService {
                 "角色只能填以下四个之一：" + String.join(" / ", ROLE_LABEL.values()) + "。\n"
                     + "用户名必须唯一，已存在的账号会被跳过（只新增、不覆盖）。\n"
                     + "区域 / 部门可留空；填了但系统里没有同名项时该行仍会创建，只在报告里给提示。\n"
-                    + "初始密码由系统生成，导入完成后在结果页逐人回显，请及时复制。"));
+                    + "初始密码默认使用用户名，导入完成后在结果页逐人回显，请及时复制。"));
             h.getCell(3).setCellComment(comment);
 
             for (int i = 0; i < IMPORT_HEADER.size(); i++) s.setColumnWidth(i, 18 * 256);
@@ -258,8 +257,8 @@ public class UserExportImportService {
                 if (deptId == null) hints.add("部门未匹配：" + p.department);
             }
 
-            // 🚨 密码：复用 UserService 的同一套生成器与哈希，明文只进响应，不落库不写日志
-            String rawPassword = userService.generatePassword();
+            // 🚨 导入用户默认使用用户名作为初始密码；只把明文放进本次响应，不落库不写日志
+            String rawPassword = p.username;
 
             User u = new User();
             u.username = p.username;

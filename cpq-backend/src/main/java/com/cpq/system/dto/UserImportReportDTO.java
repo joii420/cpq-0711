@@ -25,7 +25,7 @@ public class UserImportReportDTO {
 
     public long elapsedMs;
 
-    /** 仅本次新建的用户，逐人带系统生成的初始密码。 */
+    /** 仅本次新建的用户，逐人带以用户名为默认值的初始密码。 */
     public List<CreatedUser> created = new ArrayList<>();
 
     /** 被跳过的行，逐行给出原因。 */

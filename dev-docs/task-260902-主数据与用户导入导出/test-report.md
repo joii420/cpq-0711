@@ -324,3 +324,13 @@ cd cpq-frontend && VITE_PORT=<空闲端口> VITE_API_TARGET=http://localhost:<�
 cd cpq-frontend && PW_BASE_URL=http://localhost:<前端端口> PW_BACKEND_URL=http://localhost:<后端端口> \
   npx playwright test e2e/task260902-export-import.spec.ts --timeout=150000 --reporter=list
 ```
+
+---
+
+## 2026-10-19 需求变更补记
+
+用户将手工新增、用户导入与管理员重置密码的默认口径统一改为「用户名作为密码，不使用随机数」。本报告中 AC-15 关于“初始密码互不相同”的历史证据对应旧口径；现行实现与回归测试已改为断言三条路径的初始密码等于对应用户名。
+
+## 2026-10-20 用户验收
+
+用户在 `master` 工作区的前后端 dev server（前端 5174、后端 8081）完成真机验收并确认通过。验收环境探针：前端返回 200，后端未登录业务接口返回 401（鉴权正常）。
