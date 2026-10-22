@@ -3,6 +3,7 @@ package com.cpq.common.exception;
 import com.cpq.common.dto.ApiResponse;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import jakarta.validation.ConstraintViolationException;
 import jakarta.ws.rs.NotAcceptableException;
@@ -292,24 +293,44 @@ public class GlobalExceptionMapper {
     @ServerExceptionMapper
     public Response handleHibernateConstraint(org.hibernate.exception.ConstraintViolationException e) {
         String constraint = e.getConstraintName();
-        String detail = constraint != null ? "constraint=" + constraint : "constraint violation";
         // Best-effort: extract Postgres error message
         String dbMsg = e.getSQLException() != null ? e.getSQLException().getMessage() : null;
-        if (dbMsg != null && dbMsg.contains("duplicate key") && dbMsg.contains("Key (")) {
-            int s = dbMsg.indexOf("Key (");
-            int e1 = dbMsg.indexOf(")", s);
-            if (s >= 0 && e1 > s) {
-                detail = "Duplicate value for " + dbMsg.substring(s, e1 + 1);
-            }
-        } else if (dbMsg != null && dbMsg.contains("violates foreign key")) {
-            detail = "Referenced record does not exist or is in use";
-        } else if (dbMsg != null && dbMsg.contains("violates not-null")) {
-            detail = "Required field cannot be null";
-        }
+        String detail = userFriendlyConstraintMessage(constraint, dbMsg);
         LOG.warnf("DB constraint violation: %s | sql=%s", constraint, dbMsg);
         return Response.status(409)
                 .entity(ApiResponse.error(409, detail))
                 .build();
+    }
+
+    /**
+     * Convert database constraint details into a message that can be shown directly in the UI.
+     * The raw PostgreSQL text is intentionally kept in the server log only; it exposes internal
+     * column names and is not actionable for a business user.
+     */
+    static String userFriendlyConstraintMessage(String constraint, String dbMsg) {
+        String normalizedConstraint = constraint == null
+                ? ""
+                : constraint.toLowerCase(Locale.ROOT);
+        String normalizedDbMsg = dbMsg == null ? "" : dbMsg.toLowerCase(Locale.ROOT);
+
+        if (normalizedDbMsg.contains("duplicate key")
+                || normalizedDbMsg.contains("unique constraint")) {
+            if (normalizedConstraint.contains("component_code")) {
+                return "组件编码已存在，请更换组件编码后重试。";
+            }
+            if (normalizedConstraint.contains("component_sql_view")
+                    || normalizedConstraint.contains("uq_csv_component_view_name")) {
+                return "该组件的 SQL 视图名称已存在，请修改视图名称后重试。";
+            }
+            return "数据已存在，不能重复保存，请检查后重试。";
+        }
+        if (normalizedDbMsg.contains("violates foreign key")) {
+            return "关联数据不存在或仍被使用，请刷新后重试。";
+        }
+        if (normalizedDbMsg.contains("violates not-null")) {
+            return "必填信息缺失，请补充完整后重试。";
+        }
+        return "数据保存失败，请稍后重试。";
     }
 
     /**
