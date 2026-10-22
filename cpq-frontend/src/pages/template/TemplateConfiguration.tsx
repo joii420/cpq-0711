@@ -23,14 +23,10 @@ import { useAuthStore } from '../../stores/authStore';
 import type { ProductAttribute, TemplateData, VersionHistoryItem, TemplateComponentItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
 import ComponentPalette from './ComponentPalette';
-import ProductAttributesGrid from './ProductAttributesGrid';
 import TabComponentArea from './TabComponentArea';
 import SubtotalDropBar from './SubtotalDropBar';
 import TemplateConfigPanel from './TemplateConfigPanel';
-import ViewToggle from './ViewToggle';
 import ExcelViewConfigTab from './ExcelViewConfigTab';
-import TemplateFormulasPanel from './TemplateFormulasPanel';
-import TemplateSqlViewsTab from './TemplateSqlViewsTab';
 import FormulaCycleDrawer, { type FormulaCycle } from '../component/FormulaCycleDrawer';
 import './styles.css';
 
@@ -46,8 +42,7 @@ const TemplateConfiguration: React.FC = () => {
   const [versionHistory, setVersionHistory] = useState<VersionHistoryItem[]>([]);
   const [productAttrs, setProductAttrs] = useState<ProductAttribute[]>([]);
   const [activeTabKey, setActiveTabKey] = useState('');
-  const [viewMode, setViewMode] = useState<'detail' | 'simple' | 'excel'>('detail');
-  const [centerTab, setCenterTab] = useState<'components' | 'formulas' | 'sql-views'>('components');
+  const [viewMode, setViewMode] = useState<'detail' | 'excel'>('detail');
   const [excelViewConfig, setExcelViewConfig] = useState<any>(null);
   // Bug1：左侧调色板当前所选组件目录，下传给 Excel 视图下拉，使其只列本目录的 EXCEL 副本。
   const [paletteDirId, setPaletteDirId] = useState<string>('');
@@ -430,26 +425,27 @@ const TemplateConfiguration: React.FC = () => {
             {dirty && !saving && <Text className="tm-status-saving">未保存</Text>}
           </div>
           <Space>
-            {centerTab === 'components' && (
-              <>
-                <ViewToggle mode={viewMode as 'detail' | 'simple'} onChange={v => setViewMode(v)} />
-                <button
-                  className={`tm-view-btn${viewMode === 'excel' ? ' active' : ''}`}
-                  style={{
-                    padding: '4px 12px',
-                    borderRadius: 6,
-                    border: '1px solid #d9d9d9',
-                    background: viewMode === 'excel' ? '#1890ff' : '#fff',
-                    color: viewMode === 'excel' ? '#fff' : '#595959',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                  }}
-                  onClick={() => setViewMode(viewMode === 'excel' ? 'detail' : 'excel')}
-                >
-                  Excel视图
-                </button>
-              </>
-            )}
+            <button
+              className="tm-view-btn active"
+              onClick={() => setViewMode('detail')}
+            >
+              明细
+            </button>
+            <button
+              className={`tm-view-btn${viewMode === 'excel' ? ' active' : ''}`}
+              style={{
+                padding: '4px 12px',
+                borderRadius: 6,
+                border: '1px solid #d9d9d9',
+                background: viewMode === 'excel' ? '#1890ff' : '#fff',
+                color: viewMode === 'excel' ? '#fff' : '#595959',
+                cursor: 'pointer',
+                fontSize: 13,
+              }}
+              onClick={() => setViewMode(viewMode === 'excel' ? 'detail' : 'excel')}
+            >
+              Excel视图
+            </button>
             {isDraft && (
               <button className="tm-save-btn" onClick={handleSave}>
                 💾 保存模板
@@ -458,10 +454,8 @@ const TemplateConfiguration: React.FC = () => {
           </Space>
         </div>
 
-        {/* Center tabs: 组件配置 / 公式 */}
+        {/* 暂时只开放组件配置。 */}
         <Tabs
-          activeKey={centerTab}
-          onChange={k => setCenterTab(k as 'components' | 'formulas' | 'sql-views')}
           style={{ padding: '0 16px' }}
           items={[
             {
@@ -470,15 +464,6 @@ const TemplateConfiguration: React.FC = () => {
               children: (
                 <div className="tm-canvas-scroll" style={{ padding: 0 }}>
                   <div className="tm-product-card-container">
-                    <ProductAttributesGrid
-                      attributes={productAttrs}
-                      disabled={!isDraft}
-                      onChange={(a) => {
-                        setProductAttrs(a);
-                        markDirty();
-                      }}
-                    />
-
                     {viewMode === 'excel' ? (
                       id ? (
                         <ExcelViewConfigTab
@@ -520,27 +505,6 @@ const TemplateConfiguration: React.FC = () => {
                   </div>
                 </div>
               ),
-            },
-            {
-              key: 'formulas',
-              label: '公式',
-              children: id ? (
-                <TemplateFormulasPanel
-                  templateId={id}
-                  templateStatus={template.status}
-                  onChange={() => {/* 公式变更不影响主模板 dirty 状态 */}}
-                />
-              ) : null,
-            },
-            {
-              key: 'sql-views',
-              label: 'SQL 视图',
-              children: id ? (
-                <TemplateSqlViewsTab
-                  templateId={id}
-                  readonly={!isDraft}
-                />
-              ) : null,
             },
           ]}
         />
