@@ -22,3 +22,12 @@
 - 反向验证新字段不是直接读 `ds_quote_self_process_fee` 的不存在列，而是由 process_master LOOKUP 边投影。
 - 反向验证使用 LEFT JOIN，不因缺失工序主数据把自制加工费行过滤掉。
 - 反向验证字段顺序不是按数组末尾追加。
+
+## 实际执行
+
+- T-1/T-2/T-4：`SelfProcessNameLookupTest` 2/2、`FieldTreeAndDialectParseSelfCheckTest` 9/9 通过。
+- T-3：编译结构已验证为 `LEFT JOIN` 且未启用 key fallback；测试库现有 79 条自制加工费记录均有工序主数据匹配，因此未写入共享测试夹具做真实空值行预览。
+- T-5：`SelfProcessNameMigrationTest` 1/1 通过；`cpq_db_test` 的 Flyway V452 为 `success=true`；前端 `tsc -b --pretty false` 通过。
+- S-UI：以只读方式打开组件 `COMP-2414`，确认字段顺序、选择交互及编译 SQL；未保存组件配置。
+
+完整证据与环境限制见 [`test-report.md`](test-report.md)。
