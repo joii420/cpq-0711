@@ -385,30 +385,13 @@ public class FieldTreeBuilder {
             }
 
             if (isMain) {
-                // 🔄 repair-260908 B-1（AC-R1/R2/R3）：查名字段由「追加到组末尾」改为
-                // 「插到**最后一个带 PART_NO 角色的列之后**」。
-                //
-                // 为什么原来是末尾：本方法此前在现网**产出 0 个字段**（BL-0213 缺口 G-A），
-                // 这段 addAll 事实上不可达，位置问题从未显现；task-260908 新增 46 条查名边
-                // 让它有了产出，「材料名」就掉到了锚点全部物理列之后。
-                //
-                // 🚫 判据用**角色**不用列名：实测存在「方案编号」这类带 PART_NO 角色但名字
-                //    不含「料号」的列，也存在名字含「料号」却无该角色的列 —— 按 display_name
-                //    匹配会同时产生漏插与错插，且两者都静默。
-                //
-                // 🚫 不改 syntheticLookupFields 自身的返回内容与顺序（它的 coalesceGroup 去重
-                //    与 AC-7「不另起分组」都依赖现状），本次**只改插入位置**。
-                //
-                // 边界（AC-R3）：锚点组内没有任何 PART_NO 列时 lastPartNo = -1，
-                // 走 fields.size() 分支 ⇒ 退化成原来的追加语义，行为逐字节不变。
-                List<Field> lookups = syntheticLookupFields(snap, dialect, anchor, nodesWithOwnGroup);
-                if (!lookups.isEmpty()) {
-                    int lastPartNo = -1;
-                    for (int i = 0; i < fields.size(); i++) {
-                        if (fields.get(i).roles != null && fields.get(i).roles.contains("PART_NO")) lastPartNo = i;
-                    }
-                    fields.addAll(lastPartNo < 0 ? fields.size() : lastPartNo + 1, lookups);
-                }
+                // task-261022：查名字段跟随 LOOKUP 边的左连接键展示。
+                // 例如「材料名」的边键是 input_material_no，它仍紧跟「投入料号」；新增的
+                // 「工序名称」边键是 operation_no，因此精确落在「工序编号」之后。
+                // 边键缺失或不在主源字段中时，仍按 repair-260908 的旧规则退化到最后一个
+                // PART_NO 后（没有 PART_NO 则追加到末尾），保证既有异常图谱的展示行为不变。
+                insertSyntheticLookupFields(fields,
+                        syntheticLookupFields(snap, dialect, anchor, nodesWithOwnGroup));
             }
             g.fields = fields;
             groups.add(g);
@@ -526,9 +509,11 @@ public class FieldTreeBuilder {
      * 不受影响、继续内联。<b>不靠去重收场</b> —— 去重只是把症状盖掉，"桥该不该内联"这个问题
      * 还在，换个页签形态又会以别的形式冒出来。
      */
-    private List<Field> syntheticLookupFields(SemanticGraphSnapshot snap, CompileDialect dialect,
-                                              SemanticNode anchor, Set<UUID> nodesWithOwnGroup) {
-        List<Field> out = new ArrayList<>();
+    private record SyntheticLookupField(Field field, String anchorColumn) {}
+
+    private List<SyntheticLookupField> syntheticLookupFields(SemanticGraphSnapshot snap, CompileDialect dialect,
+                                                             SemanticNode anchor, Set<UUID> nodesWithOwnGroup) {
+        List<SyntheticLookupField> out = new ArrayList<>();
         Set<String> handledGroups = new HashSet<>();
         for (SemanticEdge e : snap.edgesFrom(anchor.id)) {
             SemanticNode target = snap.nodeById.get(e.toNodeId);
@@ -544,17 +529,63 @@ public class FieldTreeBuilder {
                     SemanticNode leadNode = snap.nodeById.get(lead.toNodeId);
                     // 多源 COALESCE：代表节点可能与触发本次循环的 target 不是同一个，单独再判一次
                     if (leadNode == null || nodesWithOwnGroup.contains(leadNode.id)) continue;
+                    String anchorColumn = firstLeftColumn(snap, lead);
                     for (SemanticNodeColumn col : snap.columnsOf(leadNode.id)) {
-                        if (!col.isCode) out.add(lookupField(dialect, leadNode, col));
+                        if (!col.isCode) {
+                            out.add(new SyntheticLookupField(lookupField(dialect, leadNode, col), anchorColumn));
+                        }
                     }
                 } else {
+                    String anchorColumn = firstLeftColumn(snap, e);
                     for (SemanticNodeColumn col : snap.columnsOf(target.id)) {
-                        if (!col.isCode) out.add(lookupField(dialect, target, col));
+                        if (!col.isCode) {
+                            out.add(new SyntheticLookupField(lookupField(dialect, target, col), anchorColumn));
+                        }
                     }
                 }
             }
         }
         return out;
+    }
+
+    private String firstLeftColumn(SemanticGraphSnapshot snap, SemanticEdge edge) {
+        return snap.keysOf(edge.id).stream()
+                .min(Comparator.comparingInt(k -> k.seq))
+                .map(k -> k.leftColumn)
+                .orElse(null);
+    }
+
+    private void insertSyntheticLookupFields(List<Field> fields, List<SyntheticLookupField> lookups) {
+        if (lookups.isEmpty()) return;
+
+        int fallbackAnchor = -1;
+        Map<String, Integer> directFieldIndex = new HashMap<>();
+        for (int i = 0; i < fields.size(); i++) {
+            Field field = fields.get(i);
+            directFieldIndex.putIfAbsent(field.sourceColumn, i);
+            if (field.roles != null && field.roles.contains("PART_NO")) fallbackAnchor = i;
+        }
+        if (fallbackAnchor < 0) fallbackAnchor = fields.size() - 1;
+
+        Map<Integer, List<Field>> lookupsAfterIndex = new HashMap<>();
+        for (SyntheticLookupField lookup : lookups) {
+            Integer anchor = directFieldIndex.get(lookup.anchorColumn());
+            lookupsAfterIndex.computeIfAbsent(anchor == null ? fallbackAnchor : anchor, ignored -> new ArrayList<>())
+                    .add(lookup.field());
+        }
+
+        if (fields.isEmpty()) {
+            fields.addAll(lookupsAfterIndex.getOrDefault(-1, List.of()));
+            return;
+        }
+
+        List<Field> ordered = new ArrayList<>(fields.size() + lookups.size());
+        for (int i = 0; i < fields.size(); i++) {
+            ordered.add(fields.get(i));
+            ordered.addAll(lookupsAfterIndex.getOrDefault(i, List.of()));
+        }
+        fields.clear();
+        fields.addAll(ordered);
     }
 
     private Field lookupField(CompileDialect dialect, SemanticNode lookupNode, SemanticNodeColumn col) {
