@@ -444,7 +444,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     @DisplayName("T261026_QBE_22 / AC-15、AC-18：报价导入物化冻结 12 位利润字符串")
     void T261026_QBE_22_importMaterializationFreezesProfit() throws Exception {
         String materialNo = PREFIX + "IMPORT_MAT";
-        byte[] workbook = quotationImportWorkbook(materialNo, "1.234567891500");
+        byte[] workbook = quotationImportWorkbook(materialNo, "1.234567891500", customer.code());
         Response imported = request()
                 .multiPart("customerId", customer.id().toString())
                 .multiPart("file", PREFIX + "quotation-import.xlsx", workbook, XLSX_MIME)
@@ -856,7 +856,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
                 + (last == null ? "<none>" : last.asString()));
     }
 
-    private byte[] quotationImportWorkbook(String materialNo, String profit) throws Exception {
+    private byte[] quotationImportWorkbook(String materialNo, String profit, String customerNo) throws Exception {
         Path template = task260902Dir().resolve("报价 - 数据导入与表格建表.xlsx");
         assertTrue(Files.isRegularFile(template), "正式报价模板不存在：" + template);
         try (InputStream input = Files.newInputStream(template);
@@ -882,6 +882,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
             ensureOptionalHeader(customerPart, "结算单位", "客户料号名称");
             Row customerPartRow = requireFirstDataRow(customerPart);
             writeText(customerPart, customerPartRow, "销售料号", materialNo);
+            writeIfHeader(customerPart, customerPartRow, "客户编号", customerNo);
             writeIfHeader(customerPart, customerPartRow, "客户产品编号", PREFIX + "IMPORT_CPN");
             writeIfHeader(customerPart, customerPartRow, "客户料号", PREFIX + "IMPORT_CPN");
             writeIfHeader(customerPart, customerPartRow, "客户料号名称", PREFIX + "导入产品");
