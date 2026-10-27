@@ -1,0 +1,9 @@
+BEGIN
+  database   | db_user  | is_replica 
+-------------+----------+------------
+ cpq_db_test | postgres | f
+(1 row)
+
+NOTICE:  TASK_PREFIX_MATCH_TOTAL=0
+DO
+ROLLBACK

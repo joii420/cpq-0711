@@ -1,0 +1,80 @@
+{
+  "directoryId": "ad7f02b5-85a7-487a-9321-0d8434393e12",
+  "componentCode": "T261026-CRYPTO-UI-COMP-1793085615199-214192",
+  "browserRequests": [
+    {
+      "url": "http://127.0.0.1:15196/api/cpq/component-directories/ad7f02b5-85a7-487a-9321-0d8434393e12/import?conflictPolicy=SKIP",
+      "contentType": "multipart/form-data; boundary=----WebKitFormBoundary4MXeb8u6rorRqLjA"
+    },
+    {
+      "url": "http://127.0.0.1:15196/api/cpq/component-directories/ad7f02b5-85a7-487a-9321-0d8434393e12/import?conflictPolicy=RENAME",
+      "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryioKKKrBRAMuAmoyT"
+    },
+    {
+      "url": "http://127.0.0.1:15196/api/cpq/component-directories/ad7f02b5-85a7-487a-9321-0d8434393e12/import/commit?conflictPolicy=RENAME&ignoreMissingDeps=false&ignoreUnboundFormulas=false",
+      "contentType": "multipart/form-data; boundary=----WebKitFormBoundaryJK6EJZackMzr02OK"
+    }
+  ],
+  "upstream": [
+    {
+      "method": "POST",
+      "path": "/v1/inspect",
+      "size": 45,
+      "sha256": "7bea0df33186b6c87a8c818882856300b9ba415d624c92af34cd33a0a9b8e4e5",
+      "contentType": "application/octet-stream",
+      "encodedFileName": "T261026-CRYPTO-UI-bundle.json",
+      "requestId": "8e1e67ed-3291-42e9-ab5c-6501cef6f2be",
+      "authorizationMatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/v1/decrypt",
+      "size": 45,
+      "sha256": "7bea0df33186b6c87a8c818882856300b9ba415d624c92af34cd33a0a9b8e4e5",
+      "contentType": "application/octet-stream",
+      "encodedFileName": "T261026-CRYPTO-UI-bundle.json",
+      "requestId": "8e1e67ed-3291-42e9-ab5c-6501cef6f2be",
+      "authorizationMatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inspect",
+      "size": 45,
+      "sha256": "7bea0df33186b6c87a8c818882856300b9ba415d624c92af34cd33a0a9b8e4e5",
+      "contentType": "application/octet-stream",
+      "encodedFileName": "T261026-CRYPTO-UI-bundle.json",
+      "requestId": "30e23b00-fcde-429a-922a-11de2a28f571",
+      "authorizationMatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/v1/decrypt",
+      "size": 45,
+      "sha256": "7bea0df33186b6c87a8c818882856300b9ba415d624c92af34cd33a0a9b8e4e5",
+      "contentType": "application/octet-stream",
+      "encodedFileName": "T261026-CRYPTO-UI-bundle.json",
+      "requestId": "30e23b00-fcde-429a-922a-11de2a28f571",
+      "authorizationMatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/v1/inspect",
+      "size": 45,
+      "sha256": "7bea0df33186b6c87a8c818882856300b9ba415d624c92af34cd33a0a9b8e4e5",
+      "contentType": "application/octet-stream",
+      "encodedFileName": "T261026-CRYPTO-UI-bundle.json",
+      "requestId": "d4a42081-6c1a-42bc-ba35-3391e436a2f8",
+      "authorizationMatched": true
+    },
+    {
+      "method": "POST",
+      "path": "/v1/decrypt",
+      "size": 45,
+      "sha256": "7bea0df33186b6c87a8c818882856300b9ba415d624c92af34cd33a0a9b8e4e5",
+      "contentType": "application/octet-stream",
+      "encodedFileName": "T261026-CRYPTO-UI-bundle.json",
+      "requestId": "d4a42081-6c1a-42bc-ba35-3391e436a2f8",
+      "authorizationMatched": true
+    }
+  ]
+}
