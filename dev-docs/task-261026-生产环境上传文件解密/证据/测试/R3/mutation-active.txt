@@ -1,0 +1,1 @@
+105:        byte[] bytes = new byte[]{0}; // R3 mutation: bypass the unified upload boundary

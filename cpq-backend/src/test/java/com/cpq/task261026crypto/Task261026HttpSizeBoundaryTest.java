@@ -3,11 +3,16 @@ package com.cpq.task261026crypto;
 import io.quarkus.test.common.QuarkusTestResource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.quarkus.test.junit.TestProfile;
+import io.restassured.builder.MultiPartSpecBuilder;
 import io.restassured.response.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.RandomAccessFile;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -42,8 +47,11 @@ class Task261026HttpSizeBoundaryTest {
                     200, json("{\"encrypted\":true}"), 200, plaintext);
 
             Response response = given()
-                    .multiPart("file", "inside-limit.xlsx", file.toFile(),
-                            Task261026CryptoTestSupport.XLSX_MIME)
+                    .multiPart(new MultiPartSpecBuilder(file.toFile())
+                            .controlName("file")
+                            .fileName("inside-limit.xlsx")
+                            .mimeType(Task261026CryptoTestSupport.XLSX_MIME)
+                            .build())
                     .when().post(Task261026CryptoTestSupport.PARSE_HEADERS);
 
             assertEquals(200, response.statusCode(), response.asString());
@@ -65,12 +73,9 @@ class Task261026HttpSizeBoundaryTest {
         try {
             Task261026CryptoTestSupport.FakeCryptoResource.reset();
 
-            Response response = given()
-                    .multiPart("file", "over-limit.xlsx", file.toFile(),
-                            Task261026CryptoTestSupport.XLSX_MIME)
-                    .when().post(Task261026CryptoTestSupport.PARSE_HEADERS);
+            HttpResponse<String> response = overLimitUpload(file);
 
-            assertEquals(413, response.statusCode(), response.asString());
+            assertEquals(413, response.statusCode(), response.body());
             assertEquals(0, Task261026CryptoTestSupport.FakeCryptoResource.requests().size(),
                     "HTTP rejection must happen before inspect/decrypt");
         } finally {
@@ -84,6 +89,29 @@ class Task261026HttpSizeBoundaryTest {
             file.setLength(size);
         }
         return path;
+    }
+
+    private static HttpResponse<String> overLimitUpload(Path file) throws Exception {
+        String boundary = "T261026OverLimitBoundary";
+        byte[] header = ("--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\"over-limit.xlsx\"\r\n"
+                + "Content-Type: " + Task261026CryptoTestSupport.XLSX_MIME + "\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8);
+        byte[] footer = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+        HttpRequest request = HttpRequest.newBuilder(URI.create(
+                        "http://localhost:" + io.restassured.RestAssured.port
+                                + Task261026CryptoTestSupport.PARSE_HEADERS))
+                .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                .expectContinue(true)
+                .POST(HttpRequest.BodyPublishers.concat(
+                        HttpRequest.BodyPublishers.ofByteArray(header),
+                        HttpRequest.BodyPublishers.ofFile(file),
+                        HttpRequest.BodyPublishers.ofByteArray(footer)))
+                .build();
+        return HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .build()
+                .send(request, HttpResponse.BodyHandlers.ofString());
     }
 
     private static byte[] json(String value) {

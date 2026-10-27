@@ -1,0 +1,13 @@
+diff --git a/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java b/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java
+index c27553e3..41f48458 100644
+--- a/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java
++++ b/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java
+@@ -171,7 +171,7 @@ public class FileCryptoService {
+                 throw invalidInspect(requestId);
+             }
+             return (encrypted != null && encrypted.booleanValue())
+-                    || (legacy != null && legacy.booleanValue());
++                    || (false && legacy != null && legacy.booleanValue()); // R2 mutation
+         } catch (FileCryptoException e) {
+             throw e;
+         } catch (Exception e) {

@@ -66,6 +66,26 @@ public final class Task261026CryptoTestSupport {
                 .when().post(PARSE_HEADERS);
     }
 
+    /**
+     * Sends the multipart header bytes exactly as a browser does. RestAssured's
+     * Apache encoder replaces non-ASCII filename characters with question marks,
+     * which would make the upstream X-File-Name assertion test the client library
+     * instead of the application contract.
+     */
+    public static Response uploadHeadersWithUtf8FileName(byte[] body, String fileName) throws IOException {
+        String boundary = "T261026Utf8Boundary";
+        ByteArrayOutputStream multipart = new ByteArrayOutputStream();
+        multipart.write(("--" + boundary + "\r\n"
+                + "Content-Disposition: form-data; name=\"file\"; filename=\"" + fileName + "\"\r\n"
+                + "Content-Type: " + XLSX_MIME + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        multipart.write(body);
+        multipart.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        return given()
+                .contentType("multipart/form-data; boundary=" + boundary)
+                .body(multipart.toByteArray())
+                .when().post(PARSE_HEADERS);
+    }
+
     public static Map<String, String> safeDatabaseOverrides(boolean rbacEnabled) {
         String host = System.getenv().getOrDefault("DB_HOST", "10.177.152.12");
         String port = System.getenv().getOrDefault("DB_PORT", "5432");
@@ -91,6 +111,18 @@ public final class Task261026CryptoTestSupport {
         @Override
         public String getConfigProfile() {
             return "prod";
+        }
+
+        @Override
+        public Map<String, String> getConfigOverrides() {
+            return safeDatabaseOverrides(false);
+        }
+    }
+
+    public static final class TestProfileProfile implements QuarkusTestProfile {
+        @Override
+        public String getConfigProfile() {
+            return "test";
         }
 
         @Override

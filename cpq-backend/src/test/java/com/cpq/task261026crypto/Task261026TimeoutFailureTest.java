@@ -17,6 +17,6 @@ class Task261026TimeoutFailureTest extends Task261026CryptoFailureWriteBase {
         Task261026CryptoTestSupport.FakeCryptoResource.planWithDelay(35_000);
 
         assertFailureAndNoBusinessWrite(
-                postEncryptedCommit(), 504, "FILE_CRYPTO_TIMEOUT");
+                postEncryptedCommitWithClientReadTimeout(45_000), 504, "FILE_CRYPTO_TIMEOUT");
     }
 }

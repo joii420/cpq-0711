@@ -30,7 +30,7 @@ export default defineConfig({
     headless: true,
     viewport: { width: 1440, height: 900 },
     locale: 'zh-CN',
-    trace: 'retain-on-failure',
+    trace: 'off',
     screenshot: 'only-on-failure',
     video: 'off',
     actionTimeout: 20_000,

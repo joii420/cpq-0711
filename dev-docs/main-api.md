@@ -1,7 +1,7 @@
 # CPQ 系统接口总览文档（main-api.md）
 
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
-> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-09-22（task-260922 料号搜索加生产料号：`GET /quotations` 的 `partNo` 增加生产料号一路，并补回写 task-260914 的三个过滤参数）；此前同日 task-260920 审核列表秒开与按需试算：`/price-adjust/reviews` 新增 `compute-now` 与 `/{id}/row`、列表返回 `notComputedTotal` / `excludedByNotComputed` 与确定排序、`reject` 预算守门、`impact` 新增 `materials[]`、详情 `budgetError`，新配置 `cpq.price-adjust.budget.concurrency` / `interactive-concurrency`，见 12.X.4 补充）**；此前：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
+> 生成日期：2026-07-08 ｜ 最近契约更新：**2026-10-26（task-261026 生产环境上传文件解密：20 个有效上传操作在 `prod` 下统一 inspect/decrypt；组件 Bundle 预览和提交新增 multipart 形态；见全局约定 §2.1 与组件管理 §2.1）**；此前：**2026-09-22（task-260922 料号搜索加生产料号：`GET /quotations` 的 `partNo` 增加生产料号一路，并补回写 task-260914 的三个过滤参数）；此前同日 task-260920 审核列表秒开与按需试算：`/price-adjust/reviews` 新增 `compute-now` 与 `/{id}/row`、列表返回 `notComputedTotal` / `excludedByNotComputed` 与确定排序、`reject` 预算守门、`impact` 新增 `materials[]`、详情 `budgetError`，新配置 `cpq.price-adjust.budget.concurrency` / `interactive-concurrency`，见 12.X.4 补充）**；此前：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
 
 ---
@@ -26,6 +26,41 @@
   3. 方法或类上标注了 `@RoleAllowed` 才校验：未登录返 **401 未登录**，角色不匹配返 **403 无权限访问**；
   4. **未标注 `@RoleAllowed` 的端点不做角色校验**（正文标注为"不校验"，但仍可能依赖会话定位当前用户）。
 - 可通过配置 `cpq.security.rbac.enabled=false` 全局关闭 RBAC（仅用于本地调试）。
+
+### 2.1 生产环境上传文件识别／解密
+
+- 仅 Quarkus active profile **精确为 `prod`** 时启用；`dev`、`test` 和其他自定义 profile 原字节透传，不校验加解密配置，也不发外部请求。
+- 基础地址配置为 `file.encryption.server=http://172.16.18.45:9502`，值只允许 `scheme://host:port`（可带一个尾 `/`），不得包含接口 path、query 或 fragment。代码固定追加 `/v1/inspect`、必要时再调用 `/v1/decrypt`。可用 JVM 参数 `-Dfile.encryption.server=http://<ip>:<port>` 覆盖。
+- 服务令牌由 `file.encryption.token=${CRYPTO_API_TOKEN:}` 注入；`prod` 上传时为空即失败关闭。令牌、原文件内容和上游原始错误体不得进入浏览器、CPQ 响应或日志。
+- 上游请求 body 为文件原始字节，`Content-Type: application/octet-stream`；`X-File-Name` 按 RFC 3986 编码（空格为 `%20`）；同一文件的 inspect/decrypt 共用 `X-Request-Id`。inspect 同时兼容布尔字段 `encrypted` 和 `isEncrypted`，字段缺失、类型错误或非法 JSON 均拒绝上传。
+- 本契约覆盖 20 个有效 multipart 操作（含 3D 模型的 `glbFile`／可选 `thumbnailFile` 两个独立文件位，以及组件 Bundle 的两个新增 multipart 操作）。所有处理必须发生在业务解析、异步受理和文件落盘之前；两份模型文件都处理成功后才能落盘。已永久停用的 `POST /api/cpq/basic-data-import/v6/quote` 仍直接返回 410，不读取文件、不调外部服务。
+
+文件安全处理失败沿用现有错误信封，并在 `detail` 中提供安全业务码：
+
+```json
+{
+  "code": 503,
+  "message": "文件解密服务暂不可用，请稍后重试",
+  "detail": {
+    "bizCode": "FILE_CRYPTO_UNAVAILABLE",
+    "upstreamCode": "CRYPTO_NOT_INITIALIZED",
+    "requestId": "28dbd4c6-..."
+  }
+}
+```
+
+| 场景 | HTTP | `detail.bizCode` |
+|------|-----:|------------------|
+| 空文件 | 400 | `EMPTY_UPLOAD_FILE` |
+| `prod` 令牌缺失或 server 非法 | 503 | `FILE_CRYPTO_CONFIG_INVALID` |
+| 上游 400 / 422 | 400 / 422 | `FILE_CRYPTO_REJECTED` |
+| 上游 413 | 413 | `FILE_CRYPTO_FILE_TOO_LARGE` |
+| 上游 401 | 502 | `FILE_CRYPTO_AUTH_FAILED` |
+| 上游 503 | 503 | `FILE_CRYPTO_UNAVAILABLE` |
+| 上游其他非 2xx、连接失败或响应不完整 | 502 | `FILE_CRYPTO_BAD_GATEWAY` |
+| 30 秒调用超时 | 504 | `FILE_CRYPTO_TIMEOUT` |
+
+> 来源任务：`task-261026-生产环境上传文件解密`｜回写日期：2026-10-26
 
 ### 3. 角色枚举
 
@@ -1090,7 +1125,9 @@
 |------|------|------|------|
 | conflictPolicy | String | 否 | 冲突策略，`@DefaultValue("RENAME")` |
 
-- **请求体**: `ComponentExportBundle`（导出的 bundle JSON，字段同上「导出」小节；1.0 与 1.1 均接受）
+- **请求体**（task-261026 新增文件形态，二者同方法同路径并存）:
+  - CPQ 前端及文件上传调用：`multipart/form-data`，文件字段名 `file`；`prod` 下先解密再解析 Bundle JSON。
+  - 兼容既有直接 API 调用方：`application/json` 的 `ComponentExportBundle`（字段同上「导出」小节；1.0 与 1.1 均接受）；该形态不是文件上传，不调用加解密服务。
 - **响应内容**: `ApiResponse<ImportPreviewResult>`（🚨 **套** ApiResponse，取 `data`）
 
 `ImportPreviewResult` 字段（真实源码核对）：
@@ -1142,7 +1179,7 @@
 `ImportPreviewResult.FormulaBindingItem`（task-0805）：`fieldName` / `resolvedFormulaId` / `resolvedFormulaName` / `status` / `message`，均为 String。
 `ImportPreviewResult.CrossRefIssue`（task-0805）：`componentCode` / `refType` / `ref` / `reason`，均为 String。
 
-> 来源任务：`task-260915-组件导出导入往返保真`｜回写日期：2026-09-16
+> 来源任务：`task-260915-组件导出导入往返保真`、`task-261026-生产环境上传文件解密`｜回写日期：2026-10-26
 
 #### 导入提交（P3, 单事务写库）
 - **功能**: **单事务**按计划 INSERT 新组件 + 其 component_sql_view（全新 UUID），不动任何现有数据、不绑定模板。**任一组件校验失败则整包回滚、DB 零残留**。第二遍对 `formulas`（`cross_tab_ref.source` / `component_subtotal.component_code`）与 `excelColumns`（`tabs[].tabKey`，task-260915）做跨组件引用重映射；指向包外的引用保持原值。树 token 校验走与组件新建/更新同口径的**双判据**（task-260915）。
@@ -1158,7 +1195,9 @@
 | ignoreMissingDeps | boolean | 否 | `@DefaultValue("false")`；为 `true` 时显式忽略缺失依赖强制写入 |
 | ignoreUnboundFormulas | boolean | 否 | `@DefaultValue("false")`（task-0805）；为 `true` 时即使存在未显式绑定的 FORMULA 字段也继续，并记入 `unboundWarnings` |
 
-- **请求体**: `ComponentExportBundle`
+- **请求体**（task-261026 新增文件形态，二者同方法同路径并存）:
+  - CPQ 前端及文件上传调用：`multipart/form-data`，文件字段名 `file`；`prod` 下先解密再解析 Bundle JSON。
+  - 兼容既有直接 API 调用方：`application/json` 的 `ComponentExportBundle`；该形态不调用加解密服务。
 - **响应内容**: `ApiResponse<ImportCommitResult>`（🚨 **套** ApiResponse，取 `data`）
 
 `ImportCommitResult` 字段（真实源码核对）：
@@ -1186,7 +1225,7 @@
 | 非树页签使用 `tree_ref`/`tree_attr` | `公式「X」使用了父子取值（tree_ref/tree_attr），该功能仅支持 tabType="BOM" 的树页签组件，当前组件 tabType=…。` |
 | 🆕 **1.0 老包 + 取数配置器建的树页签使用 `tree_ref`** | 在上句之后追加：该组件的页签类型在「取数配置器」里配、**导入包是旧格式**（bundleVersion 1.0，不含配置器信息）、**请在源库升级到含本次修复的版本后重新导出**（task-260915）。判定条件：包版本 ≠ 1.1 + 有 `builder_` 前缀视图 + 该视图 `builderConfig` 为空 |
 
-> 来源任务：`task-260915-组件导出导入往返保真`｜回写日期：2026-09-16
+> 来源任务：`task-260915-组件导出导入往返保真`、`task-261026-生产环境上传文件解密`｜回写日期：2026-10-26
 
 #### 目录树查询
 - **功能**: 返回组件目录树（可按关键字过滤）。

@@ -1,0 +1,4 @@
+profile=prod
+serverOverride=<application.properties default>
+port=18451
+database=cpq_db_test

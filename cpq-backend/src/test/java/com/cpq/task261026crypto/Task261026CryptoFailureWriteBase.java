@@ -1,5 +1,7 @@
 package com.cpq.task261026crypto;
 
+import io.restassured.config.HttpClientConfig;
+import io.restassured.config.RestAssuredConfig;
 import io.restassured.response.Response;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -60,6 +62,18 @@ abstract class Task261026CryptoFailureWriteBase {
 
     Response postEncryptedCommit() {
         return given()
+                .multiPart("file", "failure-bundle.json", CIPHER, "application/json")
+                .queryParam("conflictPolicy", "RENAME")
+                .queryParam("ignoreMissingDeps", false)
+                .queryParam("ignoreUnboundFormulas", false)
+                .when().post("/api/cpq/component-directories/{id}/import/commit", directoryId);
+    }
+
+    Response postEncryptedCommitWithClientReadTimeout(int timeoutMillis) {
+        return given()
+                .config(RestAssuredConfig.config().httpClient(
+                        HttpClientConfig.httpClientConfig()
+                                .setParam("http.socket.timeout", timeoutMillis)))
                 .multiPart("file", "failure-bundle.json", CIPHER, "application/json")
                 .queryParam("conflictPolicy", "RENAME")
                 .queryParam("ignoreMissingDeps", false)

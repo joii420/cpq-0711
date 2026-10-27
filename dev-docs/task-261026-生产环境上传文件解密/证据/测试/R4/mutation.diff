@@ -1,0 +1,19 @@
+diff --git a/cpq-frontend/src/services/componentService.ts b/cpq-frontend/src/services/componentService.ts
+index 27b98fd7..260f0ab0 100644
+--- a/cpq-frontend/src/services/componentService.ts
++++ b/cpq-frontend/src/services/componentService.ts
+@@ -222,12 +222,10 @@ export const componentService = {
+   },
+   /** P2: 导入预览(dry-run,不写库)。原始 bundle 文件由后端解密并解析。 */
+   importPreview: (dirId: string, file: File, conflictPolicy: string) => {
+-    const formData = new FormData();
+-    formData.append('file', file);
+     return api.post(
+       `/component-directories/${dirId}/import?conflictPolicy=${encodeURIComponent(conflictPolicy)}`,
+-      formData,
+-      { headers: { 'Content-Type': 'multipart/form-data' } },
++      { fileName: file.name },
++      { headers: { 'Content-Type': 'application/json' } }, // R4 mutation
+     ) as Promise<any>;
+   },
+   /**

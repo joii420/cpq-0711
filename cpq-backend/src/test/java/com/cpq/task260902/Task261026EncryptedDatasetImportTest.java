@@ -61,6 +61,17 @@ class Task261026EncryptedDatasetImportTest extends DatasetAcTestBase {
         DatasetFixtureBuilder builder = Fixtures.costBasic(probe());
         byte[] plaintext;
         try {
+            // The repository template predates pricing_unit in the current registry.
+            // Keep one real unversioned write and remove unrelated cross-sheet axes.
+            if (!builder.hasColumn("物料", "计价单位")) {
+                builder.insertColumnAt("物料", 6, "计价单位", "PCS");
+            }
+            for (int rowNo : builder.dataRowNumbers("物料", false)) {
+                builder.setText("物料", rowNo, "类型", "零件");
+            }
+            for (String sheet : Fixtures.COST_BASIC_VERSIONED_SHEETS) {
+                builder.clearDataRows(sheet, true);
+            }
             plaintext = replaceFixturePrefix(builder.toBytes(), P, runPrefix);
         } finally {
             builder.close();

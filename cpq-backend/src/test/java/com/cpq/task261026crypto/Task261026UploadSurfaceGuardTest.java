@@ -119,7 +119,9 @@ class Task261026UploadSurfaceGuardTest {
                 "172.16.18.45:9502", Task261026CryptoTestSupport.TOKEN);
         List<String> hits = new ArrayList<>();
         try (Stream<Path> files = Files.walk(FRONTEND_SRC)) {
-            for (Path path : files.filter(Files::isRegularFile).toList()) {
+            for (Path path : files.filter(Files::isRegularFile)
+                    .filter(Task261026UploadSurfaceGuardTest::isFrontendTextSource)
+                    .toList()) {
                 String source = Files.readString(path, StandardCharsets.UTF_8);
                 for (String marker : forbidden) {
                     if (source.contains(marker)) {
@@ -132,7 +134,8 @@ class Task261026UploadSurfaceGuardTest {
     }
 
     private static boolean hasPath(String source, String value) {
-        return Pattern.compile("@Path\\s*\\(\\s*\\\"" + Pattern.quote(value) + "\\\"\\s*\\)")
+        return Pattern.compile("@(?:jakarta\\.ws\\.rs\\.)?Path\\s*\\(\\s*\\\""
+                        + Pattern.quote(value) + "\\\"\\s*\\)")
                 .matcher(source).find();
     }
 
@@ -148,7 +151,8 @@ class Task261026UploadSurfaceGuardTest {
             }
         } else {
             var matcher = Pattern.compile(
-                            "@Path\\s*\\(\\s*\\\"" + Pattern.quote(methodPath) + "\\\"\\s*\\)")
+                            "@(?:jakarta\\.ws\\.rs\\.)?Path\\s*\\(\\s*\\\""
+                                    + Pattern.quote(methodPath) + "\\\"\\s*\\)")
                     .matcher(source);
             while (matcher.find()) {
                 anchors.add(matcher.start());
@@ -167,15 +171,29 @@ class Task261026UploadSurfaceGuardTest {
 
     private static String methodAtAnchor(String source, int anchor) {
         int post = source.lastIndexOf("@POST", anchor);
-        if (post < 0 || post < source.lastIndexOf('}', anchor)) {
+        if (post < 0) {
             post = source.indexOf("@POST", anchor);
         }
         if (post < 0) {
             return null;
         }
-        int bodyStart = firstCodeBrace(source, Math.min(post, anchor));
+        var declaration = Pattern.compile("\\b(public|protected|private)\\b")
+                .matcher(source);
+        if (!declaration.find(Math.max(post, anchor))) {
+            return null;
+        }
+        int bodyStart = firstCodeBrace(source, declaration.start());
         int bodyEnd = bodyStart < 0 ? -1 : balancedBraceEnd(source, bodyStart);
         return bodyEnd < 0 ? null : source.substring(post, bodyEnd + 1);
+    }
+
+    private static boolean isFrontendTextSource(Path path) {
+        String name = path.getFileName().toString();
+        return name.endsWith(".ts") || name.endsWith(".tsx")
+                || name.endsWith(".js") || name.endsWith(".jsx")
+                || name.endsWith(".mjs") || name.endsWith(".css")
+                || name.endsWith(".scss") || name.endsWith(".less")
+                || name.endsWith(".json") || name.endsWith(".html");
     }
 
     private static int firstCodeBrace(String source, int start) {

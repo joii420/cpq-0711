@@ -61,7 +61,7 @@ class Task261026ProdCryptoContractTest {
         Task261026CryptoTestSupport.FakeCryptoResource.plan(
                 200, json("{\"encrypted\":true}"), 200, plain);
 
-        Response response = Task261026CryptoTestSupport.uploadHeaders(CIPHER, CHINESE_NAME);
+        Response response = Task261026CryptoTestSupport.uploadHeadersWithUtf8FileName(CIPHER, CHINESE_NAME);
 
         assertEquals(200, response.statusCode(), response.asString());
         assertTrue(response.asString().contains(Task261026CryptoTestSupport.HEADER_MARKER),

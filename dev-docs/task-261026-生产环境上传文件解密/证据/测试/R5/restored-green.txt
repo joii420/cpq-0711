@@ -1,0 +1,2 @@
+application-log-and-response matches=0
+search-exit=1 (no match, expected green)

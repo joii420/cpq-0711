@@ -21,7 +21,7 @@ case "$T261026_JDBC_URL" in
 esac
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-BACKEND_DIR=$(cd "$SCRIPT_DIR/../.." && pwd)
+BACKEND_DIR=$(cd "$SCRIPT_DIR/../../.." && pwd)
 REPO_DIR=$(cd "$BACKEND_DIR/.." && pwd)
 JAR="$BACKEND_DIR/target/quarkus-app/quarkus-run.jar"
 FAKE="$REPO_DIR/cpq-frontend/e2e/task261026-file-crypto-fake-server.mjs"

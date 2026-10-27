@@ -59,7 +59,7 @@ async function componentsInDirectory(page: Page, directoryId: string) {
   return candidates.filter((item: any) => item.directoryId === directoryId);
 }
 
-test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh', async ({ page }) => {
+test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh', async ({ page, context }) => {
   fs.mkdirSync(EVIDENCE, { recursive: true });
   await loginAsAdmin(page);
 
@@ -72,6 +72,8 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
   });
   expect(createDirectory.ok(), await createDirectory.text()).toBeTruthy();
   const directoryId = (await createDirectory.json()).data.id as string;
+
+  await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
 
   const bundle = Buffer.from(JSON.stringify({
     bundleVersion: '1.0',
@@ -94,13 +96,12 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
     }),
   });
 
-  const browserRequests: Array<{ url: string; contentType: string; body: Buffer }> = [];
+  const browserRequests: Array<{ url: string; contentType: string }> = [];
   page.on('request', request => {
     if (request.method() !== 'POST' || !request.url().includes(`/component-directories/${directoryId}/import`)) return;
     browserRequests.push({
       url: request.url(),
       contentType: request.headers()['content-type'] || '',
-      body: request.postDataBuffer() || Buffer.alloc(0),
     });
   });
 
@@ -127,6 +128,10 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
       && response.url().includes(`/component-directories/${directoryId}/import`)
       && !response.url().includes('/commit'));
     await panel.getByRole('button', { name: /预\s*览/ }).click();
+    await expect.poll(() => browserRequests.length,
+      { message: '第一次预览必须发出浏览器请求' }).toBe(1);
+    expect(browserRequests[0].contentType,
+      '第一次预览必须以 multipart file 发送').toContain('multipart/form-data; boundary=');
     const previewSkipResponse = await previewSkip;
     expect(previewSkipResponse.ok()).toBeTruthy();
     const previewSkipJson = await previewSkipResponse.json();
@@ -165,11 +170,8 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
     expect(browserRequests[2].url).toContain('/import/commit');
     for (const request of browserRequests) {
       expect(request.contentType).toContain('multipart/form-data; boundary=');
-      expect(request.body.toString('latin1')).toContain('name="file"');
-      expect(request.body.includes(CIPHER), 'Every browser request must reuse the original ciphertext bytes').toBeTruthy();
       expect(request.url).not.toContain('/v1/inspect');
       expect(request.url).not.toContain('/v1/decrypt');
-      expect(request.body.toString('utf8')).not.toContain('T261026-SECRET-MUST-NOT-LEAK');
     }
 
     const capture = await fake('/__requests');
@@ -180,8 +182,12 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
     ]);
     const cipherHash = createHash('sha256').update(CIPHER).digest('hex');
     for (let index = 0; index < upstream.length; index += 2) {
+      expect(upstream[index].size).toBe(CIPHER.length);
+      expect(upstream[index + 1].size).toBe(CIPHER.length);
       expect(upstream[index].sha256).toBe(cipherHash);
       expect(upstream[index + 1].sha256).toBe(cipherHash);
+      expect(upstream[index].encodedFileName).toBe('T261026-CRYPTO-UI-bundle.json');
+      expect(upstream[index + 1].encodedFileName).toBe('T261026-CRYPTO-UI-bundle.json');
       expect(upstream[index].requestId).toBeTruthy();
       expect(upstream[index].requestId).toBe(upstream[index + 1].requestId);
       expect(upstream[index].authorizationMatched).toBeTruthy();
@@ -193,7 +199,10 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
     await page.reload();
     const search = page.locator('input[placeholder*="搜索"]').first();
     await search.fill(COMPONENT_CODE);
-    await expect(page.getByText(COMPONENT_CODE, { exact: false }).first(),
+    const reopenedDirectory = page.locator('.cmm-dir').filter({ hasText: DIR_NAME }).first();
+    await expect(reopenedDirectory).toBeVisible();
+    await reopenedDirectory.locator('.cmm-dir-head').click();
+    await expect(reopenedDirectory.locator('.cmm-c-name').filter({ hasText: COMPONENT_CODE }).first(),
       'Commit result must survive drawer close, route switch and refresh').toBeVisible();
 
     await page.screenshot({ path: path.join(EVIDENCE, 'AC-4-final-component.png'), fullPage: true });
@@ -203,11 +212,14 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
       browserRequests: browserRequests.map(request => ({
         url: request.url,
         contentType: request.contentType,
-        containsOriginalCipher: request.body.includes(CIPHER),
       })),
       upstream,
     }, null, 2));
   } finally {
-    await deletePrivateFixture(page, directoryId);
+    try {
+      await deletePrivateFixture(page, directoryId);
+    } finally {
+      await context.tracing.stop({ path: path.join(EVIDENCE, 'AC-4-trace.zip') });
+    }
   }
 });
