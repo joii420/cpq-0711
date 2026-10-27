@@ -25,6 +25,12 @@ type Fixture = {
   fullResponse: QuotationResponse;
 };
 
+type ProfitOverlay = {
+  setProfit: (next: ProfitMode) => void;
+  getCounts: () => { detailGets: number; ensurePosts: number };
+  dispose: () => Promise<void>;
+};
+
 function isKnownBaselineConsoleError(text: string): boolean {
   const value = text.trim();
   return /^Warning: \[antd: (?:Drawer|Tabs|Modal)\] [`']?(?:width|destroyInactiveTabPane|destroyOnClose)[`']? is deprecated\b/.test(value)
@@ -114,28 +120,74 @@ async function createFixture(page: Page): Promise<Fixture> {
   return { quotationId, partNo, fullResponse };
 }
 
-async function installProfitOverlay(page: Page, fixture: Fixture) {
+function withProfitOverlay(
+  response: QuotationResponse,
+  fixture: Fixture,
+  mode: ProfitMode,
+  source: string,
+): QuotationResponse {
+  const body = JSON.parse(JSON.stringify(response)) as QuotationResponse;
+  const lines = body?.data?.lineItems;
+  if (!Array.isArray(lines) || lines.length !== 1) {
+    throw new Error(`${source} 利润覆写前必须有且仅有 1 行：${JSON.stringify(lines)}`);
+  }
+  if (lines[0]?.productPartNo !== fixture.partNo) {
+    throw new Error(`${source} 报价行身份与私有夹具不符：${JSON.stringify(lines[0]?.productPartNo)}`);
+  }
+  if (mode === 'MISSING') {
+    delete lines[0].profit;
+  } else {
+    lines[0].profit = mode;
+  }
+  return body;
+}
+
+async function installProfitOverlay(page: Page, fixture: Fixture): Promise<ProfitOverlay> {
   let mode: ProfitMode = null;
-  const pathname = `/api/cpq/quotations/${fixture.quotationId}`;
-  await page.route(`**${pathname}`, async (route) => {
+  let detailGets = 0;
+  let ensurePosts = 0;
+  const detailPathname = `/api/cpq/quotations/${fixture.quotationId}`;
+  const ensurePathname = `${detailPathname}/ensure-card-values`;
+  const detailPattern = `**${detailPathname}`;
+  const ensurePattern = `**${ensurePathname}`;
+
+  await page.route(detailPattern, async (route) => {
     const requestUrl = new URL(route.request().url());
-    if (route.request().method() !== 'GET' || requestUrl.pathname !== pathname) {
+    if (route.request().method() !== 'GET' || requestUrl.pathname !== detailPathname) {
       await route.continue();
       return;
     }
-    const body = JSON.parse(JSON.stringify(fixture.fullResponse));
-    const lines = body?.data?.lineItems;
-    if (!Array.isArray(lines) || lines.length !== 1) {
-      throw new Error(`利润覆写前完整响应的行数不再为 1：${JSON.stringify(lines)}`);
-    }
-    if (mode === 'MISSING') {
-      delete lines[0].profit;
-    } else {
-      lines[0].profit = mode;
-    }
+    const body = withProfitOverlay(fixture.fullResponse, fixture, mode, 'quotation GET');
+    detailGets++;
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   });
-  return (next: ProfitMode) => { mode = next; };
+
+  await page.route(ensurePattern, async (route) => {
+    const requestUrl = new URL(route.request().url());
+    if (route.request().method() !== 'POST' || requestUrl.pathname !== ensurePathname) {
+      await route.continue();
+      return;
+    }
+    // 先让真实 ensure mutation 完整执行，再只改其完整响应 DTO 中的利润字段。
+    const upstream = await route.fetch();
+    if (!upstream.ok()) {
+      await route.fulfill({ response: upstream });
+      return;
+    }
+    const fullResponse = await upstream.json() as QuotationResponse;
+    const body = withProfitOverlay(fullResponse, fixture, mode, 'ensure-card-values POST');
+    ensurePosts++;
+    await route.fulfill({ response: upstream, body: JSON.stringify(body) });
+  });
+
+  return {
+    setProfit: (next: ProfitMode) => { mode = next; },
+    getCounts: () => ({ detailGets, ensurePosts }),
+    dispose: async () => {
+      await page.unroute(detailPattern);
+      await page.unroute(ensurePattern);
+    },
+  };
 }
 
 async function openReadonly(page: Page, fixture: Fixture) {
@@ -149,11 +201,12 @@ async function openReadonly(page: Page, fixture: Fixture) {
     .toHaveCount(1);
 }
 
-async function openEditStep2(page: Page, fixture: Fixture) {
+async function openEditStep2(page: Page, fixture: Fixture, overlay: ProfitOverlay) {
   await openReadonly(page, fixture);
   const edit = page.getByRole('button', { name: /编辑/ });
   await expect(edit, '详情页必须且只能有一个 accessible name 包含“编辑”的按钮').toHaveCount(1);
   await expect(edit, '编辑态必须按“详情 → 编辑”入口进入').toBeVisible();
+  const beforeEditLoad = overlay.getCounts();
   await edit.click();
   const next = page.getByRole('button', { name: /下\s*一\s*步/ }).first();
   await expect(next, 'Step 1 必须提供“下一步”进入产品卡').toBeVisible();
@@ -161,6 +214,11 @@ async function openEditStep2(page: Page, fixture: Fixture) {
   await next.click();
   await expect(page.locator('.qt-product-card'), '编辑态 Step 2 必须且只能渲染 1 张产品卡')
     .toHaveCount(1, { timeout: 60_000 });
+  const afterEditLoad = overlay.getCounts();
+  expect(afterEditLoad.detailGets, '进入编辑向导后必须重新消费目标 quotation GET 响应')
+    .toBeGreaterThan(beforeEditLoad.detailGets);
+  expect(afterEditLoad.ensurePosts, '进入编辑向导后必须消费真实 ensure-card-values 完整响应')
+    .toBeGreaterThan(beforeEditLoad.ensurePosts);
 }
 
 async function assertHeaderContract(
@@ -257,9 +315,11 @@ async function assertNoErrorOverlay(page: Page) {
 }
 
 async function screenshot(page: Page, testInfo: TestInfo, name: string) {
-  await page.screenshot({
+  const card = page.locator('.qt-product-card').first();
+  await expect(card, '截图前必须有可见产品卡，避免留下空页面证据').toBeVisible();
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({
     path: testInfo.outputPath(`${name}.png`),
-    fullPage: true,
     animations: 'disabled',
     caret: 'hide',
   });
@@ -283,30 +343,30 @@ test('T261026_QUI_19 / AC-16：编辑/只读顺序、值/NULL/缺字段、HALF_U
 
   await loginAsAdmin(page);
   const fixture = await createFixture(page);
-  const setProfit = await installProfitOverlay(page, fixture);
+  const overlay = await installProfitOverlay(page, fixture);
 
   try {
-    setProfit('12.500000000000');
+    overlay.setProfit('12.500000000000');
     await openReadonly(page, fixture);
     await assertHeaderContract(page, '利润: 12.5', true);
     await screenshot(page, testInfo, '01-readonly-value');
 
-    setProfit(null);
+    overlay.setProfit(null);
     await page.reload({ waitUntil: 'networkidle' });
     await assertHeaderContract(page, '利润: -', true);
 
-    setProfit('MISSING');
+    overlay.setProfit('MISSING');
     await page.reload({ waitUntil: 'networkidle' });
     await assertHeaderContract(page, '利润: -', true);
     await screenshot(page, testInfo, '02-readonly-null-and-legacy-missing');
 
-    setProfit('99999999999999.999999999999');
+    overlay.setProfit('99999999999999.999999999999');
     await page.reload({ waitUntil: 'networkidle' });
     await assertHeaderContract(page, '利润: 100000000000000', true);
     await screenshot(page, testInfo, '03-readonly-max-value-layout');
 
-    setProfit('1.234567891500');
-    await openEditStep2(page, fixture);
+    overlay.setProfit('1.234567891500');
+    await openEditStep2(page, fixture, overlay);
     const { card } = await assertHeaderContract(page, '利润: 1.234567892', false);
     await screenshot(page, testInfo, '04-edit-half-up-and-delete-button');
 
@@ -333,7 +393,7 @@ test('T261026_QUI_19 / AC-16：编辑/只读顺序、值/NULL/缺字段、HALF_U
       `除明确的 AntD deprecated/nested form 基线外，console.error 必须为 0：\n${unexpectedConsoleErrors.join('\n')}`)
       .toEqual([]);
   } finally {
-    await page.unroute(`**/api/cpq/quotations/${fixture.quotationId}`).catch(() => {});
+    await overlay.dispose().catch(() => {});
     const removed = await page.request.delete(`/api/cpq/quotations/${fixture.quotationId}`, { data: {} });
     expect([200, 404], `清理私有报价失败：${removed.status()} ${await removed.text()}`)
       .toContain(removed.status());
