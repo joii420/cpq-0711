@@ -2,6 +2,7 @@ package com.cpq.system.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.system.dto.CreateUserRequest;
 import com.cpq.system.dto.UpdateUserRequest;
@@ -17,8 +18,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 
 import java.util.Map;
 import java.util.UUID;
@@ -34,6 +33,9 @@ public class UserResource {
 
     @Inject
     UserExportImportService exportImportService;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     public ApiResponse<PageResult<UserDTO>> list(
@@ -93,14 +95,8 @@ public class UserResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<UserImportReportDTO> importUsers(@RestForm("file") FileUpload file) {
-        if (file == null) throw new IllegalArgumentException("file 不能为空");
-        byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            bytes = in.readAllBytes();   // 请求线程读完（上传临时文件请求结束后可能被回收）
-        } catch (Exception e) {
-            throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
-        }
-        return ApiResponse.success(exportImportService.importUsers(bytes));
+        return ApiResponse.success(exportImportService.importUsers(
+                fileCryptoService.process(file).bytes()));
     }
 
     @POST

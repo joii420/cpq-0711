@@ -8,6 +8,7 @@ import com.cpq.basicdata.v6.service.ProcessMasterImportService;
 import com.cpq.basicdata.v6.service.ProcessMasterReadService;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import io.vertx.core.http.HttpServerRequest;
@@ -19,8 +20,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.List;
 import java.util.UUID;
 
@@ -42,6 +41,9 @@ public class ProcessMasterResource {
 
     @Inject
     ProcessMasterExportService exportService;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @Inject
     SessionHelper sessionHelper;
@@ -100,13 +102,7 @@ public class ProcessMasterResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ApiResponse<ProcessMasterImportReportDTO> importProcesses(@RestForm("file") FileUpload file) {
-        if (file == null) throw new IllegalArgumentException("file 不能为空");
-        byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            bytes = in.readAllBytes();
-        } catch (Exception e) {
-            throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
-        }
+        byte[] bytes = fileCryptoService.process(file).bytes();
         UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
         return ApiResponse.success(importService.importProcesses(bytes, userId));
     }

@@ -1,0 +1,67 @@
+__  ____  __  _____   ___  __ ____  ______ 
+ --/ __ \/ / / / _ | / _ \/ //_/ / / / __/ 
+ -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \   
+--\___\_\____/_/ |_/_/|_/_/|_|\____/___/   
+2026-10-26 23:28:09.198 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:28:09.547 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:28:09.598 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:28:09.851 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:28:09.851 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:28:10.721 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:28:10.915 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:28:10.923 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:28:11.044 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:28:11.230 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:28:11.439 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:28:11.548 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:28:11.627 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:28:11.667 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:28:11.729 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:28:11.730 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:28:12.187 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:28:12.257 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.596s. Listening on: http://0.0.0.0:18455
+2026-10-26 23:28:12.258 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:28:12.258 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:28:27.688 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:28:27.735 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:28:29.883 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-3) Created component directory id=2d5f3d14-3f1f-44f9-8162-210a154feaf5 name=T261026-CRYPTO-UI-DIR-1793082506144-171754
+2026-10-26 23:28:30.047 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 5 root directories
+2026-10-26 23:28:31.696 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-26 23:28:31.915 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-26 23:28:32.111 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-26 23:28:33.118 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: bundle 为空或格式不正确(缺 components)
+2026-10-26 23:28:33.227 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) Deleted component directory id=2d5f3d14-3f1f-44f9-8162-210a154feaf5
+2026-10-26 23:28:57.151 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:28:57.190 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:28:59.319 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-3) Created component directory id=b4de9f49-18d0-4315-835a-e828630cc0ff name=T261026-CRYPTO-UI-DIR-1793082535746-172038
+2026-10-26 23:28:59.407 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 5 root directories
+2026-10-26 23:28:59.551 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:01.311 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:01.455 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:01.586 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:02.679 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: bundle 为空或格式不正确(缺 components)
+2026-10-26 23:29:02.745 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) Deleted component directory id=b4de9f49-18d0-4315-835a-e828630cc0ff
+2026-10-26 23:29:11.123 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:29:17.844 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:29:17.909 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:29:19.989 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-3) Created component directory id=54f2e7b4-1168-42b3-ad0a-1e1c73e81b04 name=T261026-CRYPTO-UI-DIR-1793082556451-172262
+2026-10-26 23:29:20.332 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 5 root directories
+2026-10-26 23:29:21.628 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:21.985 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-26 23:29:22.123 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-26 23:29:23.457 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=51070e98-eb5d-4be3-bc82-4a886ab7aaca operation=inspect bytes=45 elapsedMs=35 status=200
+2026-10-26 23:29:23.460 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=51070e98-eb5d-4be3-bc82-4a886ab7aaca operation=decrypt bytes=45 elapsedMs=2 status=200
+2026-10-26 23:29:23.550 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-26 23:29:24.220 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=eca88b1a-530c-4012-b962-6f7fabe6c4ef operation=inspect bytes=45 elapsedMs=3 status=200
+2026-10-26 23:29:24.224 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=eca88b1a-530c-4012-b962-6f7fabe6c4ef operation=decrypt bytes=45 elapsedMs=3 status=200
+2026-10-26 23:29:24.309 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-26 23:29:24.460 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=9f67dfb2-4415-402c-8838-0d17ecc2492b operation=inspect bytes=45 elapsedMs=2 status=200
+2026-10-26 23:29:24.463 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=9f67dfb2-4415-402c-8838-0d17ecc2492b operation=decrypt bytes=45 elapsedMs=2 status=200
+2026-10-26 23:29:24.516 WARN  [com.cpq.com.ser.ComponentImportService] (executor-thread-1) 导入 bundle 含老格式 Item(id=null)，UUID 类跨组件引用(cross_tab_ref.source)未重映射；component_subtotal.component_code 仍通过 codeMap 映射
+2026-10-26 23:29:24.696 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:28.099 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:28.202 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:28.433 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:29:28.639 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-2) Deleted component id=22b396c8-8ff3-4b26-8ed5-96e149331426 code=T261026-CRYPTO-UI-COMP-1793082556451-172262
+2026-10-26 23:29:28.744 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) Deleted component directory id=54f2e7b4-1168-42b3-ad0a-1e1c73e81b04
+2026-10-26 23:29:35.009 INFO  [io.quarkus] (Shutdown thread) cpq-backend stopped in 0.027s

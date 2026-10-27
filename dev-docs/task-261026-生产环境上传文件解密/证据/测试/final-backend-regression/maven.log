@@ -1,0 +1,858 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 444 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 1029 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2561,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 25 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 809 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.task260902.Task261026EncryptedDatasetImportTest
+2026-10-26 23:31:29.104 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-10-26 23:31:29.127 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-10-26 23:31:29.270 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-10-26 23:31:29.768 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-10-26 23:31:29.883 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:31:30.149 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:31:30.274 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:31:30.443 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:31:30.443 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:31:31.213 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:31:31.349 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:31:31.356 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:31:31.399 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:31:31.479 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:31:31.857 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:31:31.876 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:31:31.891 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:31:31.909 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:31:31.910 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:31:32.165 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:31:32.171 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:31:32.233 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 68.062s. Listening on: http://localhost:55591
+2026-10-26 23:31:32.234 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:31:32.234 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-27T06:31:41.641285613Z main ERROR Log4j API could not find a logging provider.
+2026-10-26 23:31:43.977 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:31:44.013 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:31:44.263 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=68133c3a-7199-44fc-b0d4-13a7d9c82830 operation=inspect bytes=45 elapsedMs=54 status=200
+2026-10-26 23:31:44.269 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=68133c3a-7199-44fc-b0d4-13a7d9c82830 operation=decrypt bytes=45 elapsedMs=2 status=200
+2026-10-26 23:31:44.416 INFO  [com.cpq.dat.imp.DatasetImportService] (executor-thread-1) [dataset-import] dataset=cost-basic durationMs=79 sheets=10
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 41.31 s -- in com.cpq.task260902.Task261026EncryptedDatasetImportTest
+[INFO] Running com.cpq.task261026crypto.Task261026ComponentBundleContractTest
+2026-10-26 23:32:10.014 INFO  [io.quarkus] (main) cpq-backend stopped in 0.053s
+2026-10-26 23:32:11.096 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:11.278 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:11.286 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:11.315 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:11.315 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:11.586 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:11.656 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:11.659 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:11.737 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:11.808 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:12.094 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:12.132 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:12.155 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:12.177 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:12.177 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:12.191 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:12.418 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:12.426 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 2.130s. Listening on: http://localhost:56601
+2026-10-26 23:32:12.426 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:12.426 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:12.560 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-26 23:32:12.703 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=733f5526-d3c1-4c67-8e35-21889583fbdf operation=inspect bytes=25 elapsedMs=4 status=200
+2026-10-26 23:32:12.754 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=733f5526-d3c1-4c67-8e35-21889583fbdf operation=decrypt bytes=25 elapsedMs=49 status=200
+2026-10-26 23:32:12.798 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-26 23:32:12.857 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=96088f9f-d16d-45dc-9471-4f687bd2b09a operation=inspect bytes=25 elapsedMs=5 status=200
+2026-10-26 23:32:12.901 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=96088f9f-d16d-45dc-9471-4f687bd2b09a operation=decrypt bytes=25 elapsedMs=43 status=200
+2026-10-26 23:32:12.931 WARN  [com.cpq.com.ser.ComponentImportService] (executor-thread-2) 导入 bundle 含老格式 Item(id=null)，UUID 类跨组件引用(cross_tab_ref.source)未重映射；component_subtotal.component_code 仍通过 codeMap 映射
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.149 s -- in com.cpq.task261026crypto.Task261026ComponentBundleContractTest
+[INFO] Running com.cpq.task261026crypto.Task261026ConnectionFailureTest
+2026-10-26 23:32:13.192 INFO  [io.quarkus] (main) cpq-backend stopped in 0.009s
+2026-10-26 23:32:14.777 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:15.013 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:15.110 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:15.249 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:15.249 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:15.961 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:16.126 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:16.134 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:16.198 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:16.297 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:16.741 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:16.775 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:16.793 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:16.821 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:16.821 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:17.114 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:17.176 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.754s. Listening on: http://localhost:55587
+2026-10-26 23:32:17.176 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:17.176 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:17.202 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:17.725 WARN  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=698b37e6-9808-4cc8-9221-070e4dce2397 operation=inspect bytes=45 elapsedMs=2 result=connect_failed
+2026-10-26 23:32:17.726 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务通信失败
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.875 s -- in com.cpq.task261026crypto.Task261026ConnectionFailureTest
+[INFO] Running com.cpq.task261026crypto.Task261026CustomProfilePassThroughTest
+2026-10-26 23:32:18.139 INFO  [io.quarkus] (main) cpq-backend stopped in 0.015s
+2026-10-26 23:32:19.557 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:19.750 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:19.838 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:20.060 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-10-26 23:32:20.361 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 436 migrations (execution time 00:00.150s)
+2026-10-26 23:32:20.616 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 454
+2026-10-26 23:32:20.616 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-10-26 23:32:20.631 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-10-26 23:32:20.739 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:20.739 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:21.253 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:21.391 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:21.398 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:21.471 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:21.576 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:22.049 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:22.092 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:22.116 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:22.136 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:22.137 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:22.189 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:22.409 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:22.457 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.098s. Listening on: http://localhost:57087
+2026-10-26 23:32:22.457 INFO  [io.quarkus] (main) Profile crypto-contract activated. 
+2026-10-26 23:32:22.457 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-27T06:32:22.596942345Z main ERROR Log4j API could not find a logging provider.
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.169 s -- in com.cpq.task261026crypto.Task261026CustomProfilePassThroughTest
+[INFO] Running com.cpq.task261026crypto.Task261026CustomerEncryptedImportTest
+2026-10-26 23:32:23.315 INFO  [io.quarkus] (main) cpq-backend stopped in 0.017s
+2026-10-26 23:32:23.921 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:24.019 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:24.028 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:24.048 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:24.048 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:24.278 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:24.325 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:24.327 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:24.388 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:24.485 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:24.680 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:24.729 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:24.759 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:24.805 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:24.805 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:25.044 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:25.051 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.617s. Listening on: http://localhost:55629
+2026-10-26 23:32:25.051 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:25.051 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:25.126 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=d7432544-52e9-4d6b-bd67-beee0fca5f94 operation=inspect bytes=3815 elapsedMs=4 status=200
+2026-10-26 23:32:25.145 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:25.261 INFO  [com.cpq.cus.ser.CustomerImportService] (executor-thread-1) Imported customers rows=1 customers=1 contacts=1
+2026-10-26 23:32:25.512 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ec27c14c-a790-447e-90e6-ca0270debbd7 operation=inspect bytes=46 elapsedMs=2 status=200
+2026-10-26 23:32:25.516 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ec27c14c-a790-447e-90e6-ca0270debbd7 operation=decrypt bytes=46 elapsedMs=3 status=200
+2026-10-26 23:32:25.663 INFO  [com.cpq.cus.ser.CustomerImportService] (executor-thread-2) Imported customers rows=1 customers=1 contacts=1
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.510 s -- in com.cpq.task261026crypto.Task261026CustomerEncryptedImportTest
+[INFO] Running com.cpq.task261026crypto.Task261026CustomerPlainImportDevTest
+2026-10-26 23:32:25.878 INFO  [io.quarkus] (main) cpq-backend stopped in 0.006s
+2026-10-26 23:32:27.195 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:27.419 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:27.501 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:27.720 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-10-26 23:32:27.937 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 436 migrations (execution time 00:00.113s)
+2026-10-26 23:32:28.168 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 454
+2026-10-26 23:32:28.169 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-10-26 23:32:28.181 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-10-26 23:32:28.272 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:28.272 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:28.792 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:28.947 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:28.954 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:29.037 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:29.099 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:29.343 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:29.390 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:29.423 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:29.436 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:29.448 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:29.449 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:29.711 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:29.759 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.668s. Listening on: http://localhost:56017
+2026-10-26 23:32:29.759 INFO  [io.quarkus] (main) Profile dev activated. 
+2026-10-26 23:32:29.759 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-27T06:32:30.170004745Z executor-thread-1 ERROR Log4j API could not find a logging provider.
+2026-10-26 23:32:30.709 INFO  [com.cpq.cus.ser.CustomerImportService] (executor-thread-1) Imported customers rows=1 customers=1 contacts=1
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.181 s -- in com.cpq.task261026crypto.Task261026CustomerPlainImportDevTest
+[INFO] Running com.cpq.task261026crypto.Task261026DevProfilePassThroughTest
+2026-10-26 23:32:31.074 INFO  [io.quarkus] (main) cpq-backend stopped in 0.015s
+2026-10-26 23:32:31.796 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:31.901 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:31.908 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:32.020 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-10-26 23:32:32.250 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 436 migrations (execution time 00:00.101s)
+2026-10-26 23:32:32.513 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 454
+2026-10-26 23:32:32.513 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-10-26 23:32:32.526 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-10-26 23:32:32.615 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:32.615 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:32.837 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:32.899 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:32.902 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:32.973 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:33.055 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:33.172 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:33.207 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:33.245 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:33.271 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:33.298 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:33.299 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:33.553 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:33.559 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 2.358s. Listening on: http://localhost:56415
+2026-10-26 23:32:33.559 INFO  [io.quarkus] (main) Profile dev activated. 
+2026-10-26 23:32:33.559 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.544 s -- in com.cpq.task261026crypto.Task261026DevProfilePassThroughTest
+[INFO] Running com.cpq.task261026crypto.Task261026HttpSizeBoundaryTest
+2026-10-26 23:32:33.613 INFO  [io.quarkus] (main) cpq-backend stopped in 0.006s
+2026-10-26 23:32:34.190 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:34.271 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:34.277 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:34.298 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:34.298 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:34.549 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:34.674 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:34.677 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:34.782 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:34.890 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:35.065 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:35.092 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:35.124 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:35.136 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:35.152 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:35.154 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:35.348 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:35.355 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.628s. Listening on: http://localhost:55723
+2026-10-26 23:32:35.355 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:35.355 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:37.090 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=e6375e72-ba43-4b13-99d8-806214027a8d operation=inspect bytes=104792064 elapsedMs=650 status=200
+2026-10-26 23:32:37.753 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=e6375e72-ba43-4b13-99d8-806214027a8d operation=decrypt bytes=104792064 elapsedMs=662 status=200
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.170 s -- in com.cpq.task261026crypto.Task261026HttpSizeBoundaryTest
+[INFO] Running com.cpq.task261026crypto.Task261026InvalidServerFailureTest
+2026-10-26 23:32:37.851 INFO  [io.quarkus] (main) cpq-backend stopped in 0.006s
+2026-10-26 23:32:39.262 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:39.475 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:39.560 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:39.685 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:39.685 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:40.395 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:40.535 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:40.541 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:40.625 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:40.706 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:41.076 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:41.097 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:41.113 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:41.123 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:41.132 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:41.133 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:41.459 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:41.509 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.424s. Listening on: http://localhost:57093
+2026-10-26 23:32:41.509 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:41.509 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:41.997 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密配置不完整，请联系管理员
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.473 s -- in com.cpq.task261026crypto.Task261026InvalidServerFailureTest
+[INFO] Running com.cpq.task261026crypto.Task261026MissingTokenFailureTest
+2026-10-26 23:32:42.418 INFO  [io.quarkus] (main) cpq-backend stopped in 0.015s
+2026-10-26 23:32:43.913 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:44.129 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:44.216 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:44.341 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:44.341 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:45.029 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:45.149 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:45.158 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:45.275 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:45.370 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:45.762 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:45.796 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:45.814 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:45.867 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:45.868 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:46.144 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:46.200 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.490s. Listening on: http://localhost:57327
+2026-10-26 23:32:46.200 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:46.200 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:46.211 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:46.698 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密配置不完整，请联系管理员
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.607 s -- in com.cpq.task261026crypto.Task261026MissingTokenFailureTest
+[INFO] Running com.cpq.task261026crypto.Task261026ModelAtomicityTest
+2026-10-26 23:32:47.029 INFO  [io.quarkus] (main) cpq-backend stopped in 0.014s
+2026-10-26 23:32:47.618 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:47.707 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:47.714 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:47.734 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:47.734 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:47.951 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:48.042 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:48.044 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:48.137 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:48.221 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:48.352 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:48.393 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:48.422 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:48.462 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:48.505 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:48.506 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:48.719 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:48.726 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.590s. Listening on: http://localhost:55727
+2026-10-26 23:32:48.726 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:48.726 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:48.798 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=441eb57f-ee6d-4848-a5f3-97c25dadce6b operation=inspect bytes=18 elapsedMs=3 status=200
+2026-10-26 23:32:48.841 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=441eb57f-ee6d-4848-a5f3-97c25dadce6b operation=decrypt bytes=18 elapsedMs=43 status=200
+2026-10-26 23:32:48.886 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=7a364aba-e8d2-44cb-88f2-5cab0aae274b operation=inspect bytes=18 elapsedMs=43 status=200
+2026-10-26 23:32:48.930 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=7a364aba-e8d2-44cb-88f2-5cab0aae274b operation=decrypt bytes=18 elapsedMs=43 status=200
+2026-10-26 23:32:49.004 INFO  [com.cpq.mod.ser.ModelFileStorageService] (executor-thread-1) ModelFileStorageService: storage dir = /tmp/T261026-CRYPTO-MODEL-1765190785359271414
+2026-10-26 23:32:49.249 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=20d6ad98-f722-4b28-9fb4-52035c3b69fc operation=inspect bytes=18 elapsedMs=1 status=200
+2026-10-26 23:32:49.298 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=20d6ad98-f722-4b28-9fb4-52035c3b69fc operation=decrypt bytes=18 elapsedMs=48 status=200
+2026-10-26 23:32:49.341 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=09301203-ca4b-4fcc-8adf-87e050480e93 operation=inspect bytes=18 elapsedMs=43 status=200
+2026-10-26 23:32:49.385 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=09301203-ca4b-4fcc-8adf-87e050480e93 operation=decrypt bytes=18 elapsedMs=43 status=503
+2026-10-26 23:32:49.386 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 文件解密服务暂不可用，请稍后重试
+[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.436 s -- in com.cpq.task261026crypto.Task261026ModelAtomicityTest
+[INFO] Running com.cpq.task261026crypto.Task261026ProdCryptoContractTest
+2026-10-26 23:32:49.462 INFO  [io.quarkus] (main) cpq-backend stopped in 0.007s
+2026-10-26 23:32:50.027 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:50.122 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:50.129 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:50.148 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:50.149 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:50.337 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:50.382 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:50.384 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:50.472 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:50.555 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:50.693 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:50.722 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:50.755 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:50.782 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:50.782 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:51.076 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:51.082 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.521s. Listening on: http://localhost:56421
+2026-10-26 23:32:51.082 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:51.082 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:32:51.105 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=1dc62206-9589-4bcb-87c1-aa14710cc1b8 operation=inspect bytes=3328 elapsedMs=4 status=200
+2026-10-26 23:32:51.156 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:51.182 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=a2a0410b-8bed-4e10-a19d-d91ca2c580dd operation=inspect bytes=20 elapsedMs=45 status=400
+2026-10-26 23:32:51.182 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 上传文件被加解密服务拒绝
+2026-10-26 23:32:51.242 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=1dafb646-8930-452d-8c96-4a2c2422633b operation=inspect bytes=20 elapsedMs=42 status=401
+2026-10-26 23:32:51.242 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务认证失败，请联系管理员
+2026-10-26 23:32:51.301 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=d3c028bb-c40a-48d3-bfd7-6a87a71e6072 operation=inspect bytes=20 elapsedMs=43 status=413
+2026-10-26 23:32:51.302 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 上传文件超出加解密服务限制
+2026-10-26 23:32:51.361 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=6c0e6ebe-33b9-4c25-b7e5-fcb94682c886 operation=inspect bytes=20 elapsedMs=44 status=422
+2026-10-26 23:32:51.362 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 上传文件无法解密
+2026-10-26 23:32:51.422 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=b8612cf8-1ead-4a65-9951-d57e1aa5ff4a operation=inspect bytes=20 elapsedMs=46 status=500
+2026-10-26 23:32:51.422 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 文件解密服务返回异常
+2026-10-26 23:32:51.482 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=067b311f-af02-4fdb-869e-35becc8f5994 operation=inspect bytes=20 elapsedMs=45 status=503
+2026-10-26 23:32:51.482 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务暂不可用，请稍后重试
+2026-10-26 23:32:51.546 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=60bde3c3-4432-4131-bf70-b2885ad9147e operation=inspect bytes=20 elapsedMs=46 status=200
+2026-10-26 23:32:51.546 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 文件解密服务返回无效响应
+2026-10-26 23:32:51.606 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=cd69d82a-5f10-4dcd-80ce-9e98293d94de operation=inspect bytes=20 elapsedMs=44 status=200
+2026-10-26 23:32:51.654 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=cd69d82a-5f10-4dcd-80ce-9e98293d94de operation=decrypt bytes=20 elapsedMs=47 status=200
+2026-10-26 23:32:51.654 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务返回无效响应
+2026-10-26 23:32:51.730 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=c28a4a59-13d2-413a-83d9-92e09b8f220b operation=inspect bytes=20 elapsedMs=50 status=200
+2026-10-26 23:32:51.733 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=c28a4a59-13d2-413a-83d9-92e09b8f220b operation=decrypt bytes=20 elapsedMs=2 status=200
+2026-10-26 23:32:51.797 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=963c23df-5a5a-42c7-a7a6-110f1c1d9a29 operation=inspect bytes=20 elapsedMs=45 status=200
+2026-10-26 23:32:51.800 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=963c23df-5a5a-42c7-a7a6-110f1c1d9a29 operation=decrypt bytes=20 elapsedMs=1 status=200
+2026-10-26 23:32:51.858 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ccb082b9-0828-49f3-864c-91da63c5f6ec operation=inspect bytes=3328 elapsedMs=44 status=200
+2026-10-26 23:32:51.918 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=09a4f676-0928-4797-be33-6d252f0d8916 operation=inspect bytes=20 elapsedMs=44 status=200
+2026-10-26 23:32:51.919 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务返回无效响应
+2026-10-26 23:32:51.934 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 上传文件为空
+[INFO] Tests run: 6, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.489 s -- in com.cpq.task261026crypto.Task261026ProdCryptoContractTest
+[INFO] Running com.cpq.task261026crypto.Task261026ProdUnauthorizedTest
+2026-10-26 23:32:52.022 INFO  [io.quarkus] (main) cpq-backend stopped in 0.006s
+2026-10-26 23:32:53.568 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:53.788 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:53.881 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:54.016 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:54.016 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:54.708 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:54.869 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:54.876 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:55.158 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:32:55.264 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:32:55.476 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:32:55.494 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:32:55.556 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:32:55.577 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:55.590 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:32:55.591 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:32:55.906 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:32:55.959 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 3.667s. Listening on: http://localhost:57433
+2026-10-26 23:32:55.959 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:32:55.959 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.467 s -- in com.cpq.task261026crypto.Task261026ProdUnauthorizedTest
+[INFO] Running com.cpq.task261026crypto.Task261026TestProfilePassThroughTest
+2026-10-26 23:32:56.570 INFO  [io.quarkus] (main) cpq-backend stopped in 0.016s
+2026-10-26 23:32:58.061 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:32:58.303 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:32:58.404 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:32:58.633 INFO  [org.fly.cor.FlywayExecutor] (main) Database: jdbc:postgresql://10.177.152.12:5432/cpq_db_test?sslmode=disable (PostgreSQL 16.13)
+2026-10-26 23:32:58.899 INFO  [org.fly.cor.int.com.DbValidate] (main) Successfully validated 436 migrations (execution time 00:00.126s)
+2026-10-26 23:32:59.147 INFO  [org.fly.cor.int.com.DbMigrate] (main) Current version of schema "public": 454
+2026-10-26 23:32:59.147 WARN  [org.fly.cor.int.com.DbMigrate] (main) outOfOrder mode is active. Migration of schema "public" may not be reproducible.
+2026-10-26 23:32:59.160 INFO  [org.fly.cor.int.com.DbMigrate] (main) Schema "public" is up to date. No migration necessary.
+2026-10-26 23:32:59.242 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:32:59.242 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:32:59.797 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:32:59.931 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:32:59.937 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:32:59.998 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:33:00.078 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:33:00.413 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:33:00.445 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:33:00.480 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:33:00.509 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:00.601 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:00.602 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:33:00.892 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:33:00.942 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.150s. Listening on: http://localhost:55985
+2026-10-26 23:33:00.942 INFO  [io.quarkus] (main) Profile test activated. 
+2026-10-26 23:33:00.942 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-27T06:33:01.092431263Z main ERROR Log4j API could not find a logging provider.
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.133 s -- in com.cpq.task261026crypto.Task261026TestProfilePassThroughTest
+[INFO] Running com.cpq.task261026crypto.Task261026TimeoutFailureTest
+2026-10-26 23:33:01.705 INFO  [io.quarkus] (main) cpq-backend stopped in 0.014s
+2026-10-26 23:33:02.209 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:33:02.273 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:33:02.279 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:33:02.295 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:33:02.295 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:33:02.546 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:33:02.610 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:33:02.612 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:33:02.663 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:33:02.753 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:33:02.924 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:33:02.944 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:33:02.965 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:03.026 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:03.027 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:33:03.132 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:33:03.343 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:33:03.350 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.538s. Listening on: http://localhost:57211
+2026-10-26 23:33:03.350 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:33:03.350 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:33:33.386 WARN  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=107ee578-a917-4416-ab34-b92b52d76081 operation=inspect bytes=45 elapsedMs=30002 result=timeout
+2026-10-26 23:33:33.386 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务超时，请稍后重试
+[ERROR] Tests run: 1, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 31.77 s <<< FAILURE! -- in com.cpq.task261026crypto.Task261026TimeoutFailureTest
+[ERROR] com.cpq.task261026crypto.Task261026TimeoutFailureTest.ac9_slowInspectTimesOutAndCreatesNoBusinessRecord -- Time elapsed: 30.10 s <<< ERROR!
+java.net.SocketTimeoutException: Read timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedRead(NioSocketImpl.java:278)
+	at java.base/sun.nio.ch.NioSocketImpl.implRead(NioSocketImpl.java:304)
+	at java.base/sun.nio.ch.NioSocketImpl.read(NioSocketImpl.java:346)
+	at java.base/sun.nio.ch.NioSocketImpl$1.read(NioSocketImpl.java:796)
+	at java.base/java.net.Socket$SocketInputStream.read(Socket.java:1099)
+	at org.apache.http.impl.io.AbstractSessionInputBuffer.fillBuffer(AbstractSessionInputBuffer.java:161)
+	at org.apache.http.impl.io.SocketInputBuffer.fillBuffer(SocketInputBuffer.java:82)
+	at org.apache.http.impl.io.AbstractSessionInputBuffer.readLine(AbstractSessionInputBuffer.java:276)
+	at org.apache.http.impl.conn.DefaultHttpResponseParser.parseHead(DefaultHttpResponseParser.java:138)
+	at org.apache.http.impl.conn.DefaultHttpResponseParser.parseHead(DefaultHttpResponseParser.java:56)
+	at org.apache.http.impl.io.AbstractMessageParser.parse(AbstractMessageParser.java:259)
+	at org.apache.http.impl.AbstractHttpClientConnection.receiveResponseHeader(AbstractHttpClientConnection.java:294)
+	at org.apache.http.impl.conn.DefaultClientConnection.receiveResponseHeader(DefaultClientConnection.java:257)
+	at org.apache.http.impl.conn.ManagedClientConnectionImpl.receiveResponseHeader(ManagedClientConnectionImpl.java:207)
+	at org.apache.http.protocol.HttpRequestExecutor.doReceiveResponse(HttpRequestExecutor.java:273)
+	at org.apache.http.protocol.HttpRequestExecutor.execute(HttpRequestExecutor.java:125)
+	at org.apache.http.impl.client.DefaultRequestDirector.tryExecute(DefaultRequestDirector.java:679)
+	at org.apache.http.impl.client.DefaultRequestDirector.execute(DefaultRequestDirector.java:481)
+	at org.apache.http.impl.client.AbstractHttpClient.doExecute(AbstractHttpClient.java:835)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:83)
+	at io.restassured.internal.RestAssuredHttpBuilder.doRequest(RestAssuredHttpBuilder.java:141)
+	at io.restassured.internal.http.HTTPBuilder.post(HTTPBuilder.java:349)
+	at io.restassured.internal.http.HTTPBuilder$post$2.call(Unknown Source)
+	at io.restassured.internal.RequestSpecificationImpl.sendRequest(RequestSpecificationImpl.groovy:1209)
+	at io.restassured.internal.RequestSpecificationImpl.this$2$sendRequest(RequestSpecificationImpl.groovy)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.codehaus.groovy.reflection.CachedMethod.invoke(CachedMethod.java:343)
+	at groovy.lang.MetaMethod.doMethodInvoke(MetaMethod.java:328)
+	at groovy.lang.MetaClassImpl.doInvokeMethod(MetaClassImpl.java:1333)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1088)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1007)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:790)
+	at io.restassured.internal.RequestSpecificationImpl.invokeMethod(RequestSpecificationImpl.groovy)
+	at org.codehaus.groovy.runtime.callsite.PogoInterceptableSite.call(PogoInterceptableSite.java:46)
+	at org.codehaus.groovy.runtime.callsite.AbstractCallSite.call(AbstractCallSite.java:166)
+	at io.restassured.internal.filter.SendRequestFilter.filter(SendRequestFilter.groovy:30)
+	at io.restassured.filter.Filter$filter.call(Unknown Source)
+	at org.codehaus.groovy.runtime.callsite.CallSiteArray.defaultCall(CallSiteArray.java:45)
+	at io.restassured.filter.Filter$filter$0.call(Unknown Source)
+	at io.restassured.internal.filter.FilterContextImpl.next(FilterContextImpl.groovy:72)
+	at io.restassured.filter.time.TimingFilter.filter(TimingFilter.java:56)
+	at io.restassured.filter.Filter$filter$0.call(Unknown Source)
+	at org.codehaus.groovy.runtime.callsite.CallSiteArray.defaultCall(CallSiteArray.java:45)
+	at io.restassured.filter.Filter$filter$0.call(Unknown Source)
+	at io.restassured.internal.filter.FilterContextImpl.next(FilterContextImpl.groovy:72)
+	at io.restassured.filter.log.StatusCodeBasedLoggingFilter.filter(StatusCodeBasedLoggingFilter.java:112)
+	at io.restassured.filter.log.ResponseLoggingFilter.filter(ResponseLoggingFilter.java:31)
+	at io.restassured.filter.Filter$filter$0.call(Unknown Source)
+	at org.codehaus.groovy.runtime.callsite.CallSiteArray.defaultCall(CallSiteArray.java:45)
+	at io.restassured.filter.Filter$filter$0.call(Unknown Source)
+	at io.restassured.internal.filter.FilterContextImpl.next(FilterContextImpl.groovy:72)
+	at io.restassured.filter.log.RequestLoggingFilter.filter(RequestLoggingFilter.java:148)
+	at io.restassured.filter.Filter$filter$0.call(Unknown Source)
+	at org.codehaus.groovy.runtime.callsite.CallSiteArray.defaultCall(CallSiteArray.java:45)
+	at io.restassured.filter.Filter$filter.call(Unknown Source)
+	at io.restassured.internal.filter.FilterContextImpl.next(FilterContextImpl.groovy:72)
+	at io.restassured.filter.FilterContext$next.call(Unknown Source)
+	at io.restassured.internal.filter.CsrfFilter.filter(CsrfFilter.groovy:89)
+	at io.restassured.filter.Filter$filter.call(Unknown Source)
+	at org.codehaus.groovy.runtime.callsite.CallSiteArray.defaultCall(CallSiteArray.java:45)
+	at io.restassured.filter.Filter$filter.call(Unknown Source)
+	at io.restassured.internal.filter.FilterContextImpl.next(FilterContextImpl.groovy:72)
+	at io.restassured.filter.FilterContext$next.call(Unknown Source)
+	at io.restassured.internal.RequestSpecificationImpl.applyPathParamsAndSendRequest(RequestSpecificationImpl.groovy:1704)
+	at io.restassured.internal.RequestSpecificationImpl.this$2$applyPathParamsAndSendRequest(RequestSpecificationImpl.groovy)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.codehaus.groovy.reflection.CachedMethod.invoke(CachedMethod.java:343)
+	at groovy.lang.MetaMethod.doMethodInvoke(MetaMethod.java:328)
+	at groovy.lang.MetaClassImpl.doInvokeMethod(MetaClassImpl.java:1333)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1088)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1007)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:790)
+	at io.restassured.internal.RequestSpecificationImpl.invokeMethod(RequestSpecificationImpl.groovy)
+	at org.codehaus.groovy.runtime.callsite.PogoInterceptableSite.call(PogoInterceptableSite.java:46)
+	at org.codehaus.groovy.runtime.callsite.PogoInterceptableSite.callCurrent(PogoInterceptableSite.java:57)
+	at org.codehaus.groovy.runtime.callsite.AbstractCallSite.callCurrent(AbstractCallSite.java:203)
+	at io.restassured.internal.RequestSpecificationImpl.applyPathParamsAndSendRequest(RequestSpecificationImpl.groovy:1710)
+	at io.restassured.internal.RequestSpecificationImpl.this$2$applyPathParamsAndSendRequest(RequestSpecificationImpl.groovy)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.codehaus.groovy.reflection.CachedMethod.invoke(CachedMethod.java:343)
+	at groovy.lang.MetaMethod.doMethodInvoke(MetaMethod.java:328)
+	at groovy.lang.MetaClassImpl.doInvokeMethod(MetaClassImpl.java:1333)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1088)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:1007)
+	at groovy.lang.MetaClassImpl.invokeMethod(MetaClassImpl.java:790)
+	at io.restassured.internal.RequestSpecificationImpl.invokeMethod(RequestSpecificationImpl.groovy)
+	at org.codehaus.groovy.runtime.callsite.PogoInterceptableSite.call(PogoInterceptableSite.java:46)
+	at org.codehaus.groovy.runtime.callsite.PogoInterceptableSite.callCurrent(PogoInterceptableSite.java:57)
+	at org.codehaus.groovy.runtime.callsite.AbstractCallSite.callCurrent(AbstractCallSite.java:203)
+	at io.restassured.internal.RequestSpecificationImpl.post(RequestSpecificationImpl.groovy:176)
+	at io.restassured.internal.RequestSpecificationImpl.post(RequestSpecificationImpl.groovy)
+	at com.cpq.task261026crypto.Task261026CryptoFailureWriteBase.postEncryptedCommit(Task261026CryptoFailureWriteBase.java:67)
+	at com.cpq.task261026crypto.Task261026TimeoutFailureTest.ac9_slowInspectTimesOutAndCreatesNoBusinessRecord(Task261026TimeoutFailureTest.java:20)
+
+[INFO] Running com.cpq.task261026crypto.Task261026TwentyOperationRuntimeTest
+2026-10-26 23:33:33.477 INFO  [io.quarkus] (main) cpq-backend stopped in 0.014s
+2026-10-26 23:33:34.047 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:33:34.119 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:33:34.125 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:33:34.148 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:33:34.149 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:33:34.373 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:33:34.420 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:33:34.423 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:33:34.488 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:33:34.624 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:33:34.789 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:33:34.821 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:33:34.846 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:34.873 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:34.873 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:33:35.139 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:33:35.146 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.560s. Listening on: http://localhost:56879
+2026-10-26 23:33:35.146 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:33:35.146 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:33:35.178 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:33:35.614 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:33:35.681 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:33:35.699 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=f70c2fb9-1e0a-42ea-a4d7-b12aac837237 operation=inspect bytes=35 elapsedMs=3 status=200
+2026-10-26 23:33:35.746 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=f70c2fb9-1e0a-42ea-a4d7-b12aac837237 operation=decrypt bytes=35 elapsedMs=46 status=200
+2026-10-26 23:33:35.770 ERROR [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Unexpected error: java.lang.RuntimeException: 工序主数据解析失败: Can't open workbook - unsupported file type: UNKNOWN
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService.importProcesses(ProcessMasterImportService.java:147)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_Subclass.importProcesses$$superforward(Unknown Source)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.doIntercept(TransactionalInterceptorRequired.java:38)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.intercept(TransactionalInterceptorRequired.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_Subclass.importProcesses(Unknown Source)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_ClientProxy.importProcesses(Unknown Source)
+	at com.cpq.basicdata.v6.resource.ProcessMasterResource.importProcesses(ProcessMasterResource.java:107)
+	at com.cpq.basicdata.v6.resource.ProcessMasterResource$quarkusrestinvoker$importProcesses_acd19bef4fa5a8552166d0dff1b761c319c52fa7.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.io.IOException: Can't open workbook - unsupported file type: UNKNOWN
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:228)
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:185)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService.importProcesses(ProcessMasterImportService.java:74)
+	... 29 more
+
+2026-10-26 23:33:35.825 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=0a22dfec-876b-4854-a73b-6c421deb615f operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:35.873 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=0a22dfec-876b-4854-a73b-6c421deb615f operation=decrypt bytes=35 elapsedMs=46 status=200
+2026-10-26 23:33:35.874 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 元素文件解析失败: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:35.938 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=1ddece5d-12b0-4371-b7ee-3923ec7f2071 operation=inspect bytes=35 elapsedMs=49 status=200
+2026-10-26 23:33:35.982 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=1ddece5d-12b0-4371-b7ee-3923ec7f2071 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:35.983 ERROR [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Unexpected error: java.lang.RuntimeException: 材质库解析失败: Can't open workbook - unsupported file type: UNKNOWN
+	at com.cpq.configure.service.MaterialRecipeImportService.importLibrary(MaterialRecipeImportService.java:141)
+	at com.cpq.configure.service.MaterialRecipeImportService_Subclass.importLibrary$$superforward(Unknown Source)
+	at com.cpq.configure.service.MaterialRecipeImportService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.doIntercept(TransactionalInterceptorRequired.java:38)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.intercept(TransactionalInterceptorRequired.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.configure.service.MaterialRecipeImportService_Subclass.importLibrary(Unknown Source)
+	at com.cpq.configure.service.MaterialRecipeImportService_ClientProxy.importLibrary(Unknown Source)
+	at com.cpq.configure.resource.MaterialRecipeResource.importLibrary(MaterialRecipeResource.java:69)
+	at com.cpq.configure.resource.MaterialRecipeResource$quarkusrestinvoker$importLibrary_b45f2a2f3b46bc9758586d12c3ac666273d91f88.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.io.IOException: Can't open workbook - unsupported file type: UNKNOWN
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:228)
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:185)
+	at com.cpq.configure.service.MaterialRecipeImportService.importLibrary(MaterialRecipeImportService.java:113)
+	... 29 more
+
+2026-10-26 23:33:36.038 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=2d5e0c23-1296-4bd8-92c6-0545e7ec26d8 operation=inspect bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:36.082 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=2d5e0c23-1296-4bd8-92c6-0545e7ec26d8 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:36.083 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) WebApplicationException 400: 汇率文件格式无效: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:36.137 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=e9f8f7b9-ef06-418c-9bc4-468e212a3cb1 operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:33:36.186 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=e9f8f7b9-ef06-418c-9bc4-468e212a3cb1 operation=decrypt bytes=35 elapsedMs=47 status=200
+2026-10-26 23:33:36.186 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) WebApplicationException 400: 汇率文件格式无效: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:36.242 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=4d7605f4-04f3-4797-aafd-cc92a5967214 operation=inspect bytes=35 elapsedMs=46 status=200
+2026-10-26 23:33:36.286 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=4d7605f4-04f3-4797-aafd-cc92a5967214 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:36.287 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 请上传有效的 .xlsx 文件
+2026-10-26 23:33:36.330 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=b60bb15e-9ac8-48d7-94c6-5a6686e2eda3 operation=inspect bytes=35 elapsedMs=1 status=200
+2026-10-26 23:33:36.374 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=b60bb15e-9ac8-48d7-94c6-5a6686e2eda3 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:36.411 INFO  [com.cpq.dat.quo.QuotationImportResource] (executor-thread-1) [quotation-import] 受理 record=64df3361-d282-4954-93fa-2f3633391170 customer=T261026-CRYPTO-BE-MATRIX-CUST-952938c3 bytes=53
+2026-10-26 23:33:36.432 ERROR [com.cpq.dat.quo.QuotationImportService] (executor-thread-2) [quotation-import] Phase1 解析/校验异常 record=64df3361-d282-4954-93fa-2f3633391170: com.cpq.common.exception.BusinessException: Excel 解析失败：Cannot find zip signature within the file
+	at com.cpq.dataset.importer.DatasetImportService.parseAndValidate(DatasetImportService.java:173)
+	at com.cpq.dataset.importer.DatasetImportService_ClientProxy.parseAndValidate(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportService.processImport(QuotationImportService.java:122)
+	at com.cpq.dataset.quotation.QuotationImportService_Subclass.processImport$$superforward(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:124)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.dataset.quotation.QuotationImportService_Subclass.processImport(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportService_ClientProxy.processImport(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportResource.lambda$startImport$0(QuotationImportResource.java:128)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at org.jboss.threads.EnhancedViewExecutor$EnhancedViewExecutorRunnable.run(EnhancedViewExecutor.java:496)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
+2026-10-26 23:33:37.012 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=3f2da555-2b63-4b69-a622-52cf9de69ba7 operation=inspect bytes=35 elapsedMs=1 status=200
+2026-10-26 23:33:37.061 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=3f2da555-2b63-4b69-a622-52cf9de69ba7 operation=decrypt bytes=35 elapsedMs=48 status=200
+2026-10-26 23:33:37.062 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Excel 解析失败：Cannot find zip signature within the file
+2026-10-26 23:33:37.114 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=9785610e-0985-49c0-82a6-1a5637cabaac operation=inspect bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:37.161 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=9785610e-0985-49c0-82a6-1a5637cabaac operation=decrypt bytes=35 elapsedMs=47 status=200
+2026-10-26 23:33:37.271 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 文件格式无效或已损坏: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:37.283 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=100299cf-de65-438c-964d-95e6201210b8 operation=inspect bytes=35 elapsedMs=1 status=200
+2026-10-26 23:33:37.325 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=100299cf-de65-438c-964d-95e6201210b8 operation=decrypt bytes=35 elapsedMs=42 status=200
+2026-10-26 23:33:37.326 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Parse failed: Failed to parse Excel headers: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:37.381 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=b6f10153-8455-4c21-9551-8a12c5679f24 operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:33:37.426 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=b6f10153-8455-4c21-9551-8a12c5679f24 operation=decrypt bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:37.427 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: Import failed: Failed to parse Excel: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:37.509 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ff916c1c-f80a-434b-acfb-14a7af244c5f operation=inspect bytes=35 elapsedMs=48 status=200
+2026-10-26 23:33:37.557 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ff916c1c-f80a-434b-acfb-14a7af244c5f operation=decrypt bytes=35 elapsedMs=47 status=200
+2026-10-26 23:33:37.637 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Import processing failed: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:37.654 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=3bc9a805-448e-4e99-8876-b0e2cf2746fa operation=inspect bytes=35 elapsedMs=3 status=200
+2026-10-26 23:33:37.697 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=3bc9a805-448e-4e99-8876-b0e2cf2746fa operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:37.711 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: Template has no excel_view_config
+2026-10-26 23:33:37.770 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=8a8d7f19-043b-4ece-b167-e8836f60db0f operation=inspect bytes=35 elapsedMs=50 status=200
+2026-10-26 23:33:37.813 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=8a8d7f19-043b-4ece-b167-e8836f60db0f operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:37.814 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Import failed: Failed to parse Excel: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:37.870 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=78c5449f-4bdd-41b5-937d-d03533185d6e operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:33:37.914 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=78c5449f-4bdd-41b5-937d-d03533185d6e operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:37.961 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=6c6d615e-a4e0-4200-9617-4ef753ee54d4 operation=inspect bytes=35 elapsedMs=47 status=200
+2026-10-26 23:33:38.010 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=6c6d615e-a4e0-4200-9617-4ef753ee54d4 operation=decrypt bytes=35 elapsedMs=48 status=503
+2026-10-26 23:33:38.010 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 文件解密服务暂不可用，请稍后重试
+2026-10-26 23:33:38.062 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ca295d59-f0a7-4229-9a23-50e8bab4f71e operation=inspect bytes=35 elapsedMs=42 status=200
+2026-10-26 23:33:38.106 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=ca295d59-f0a7-4229-9a23-50e8bab4f71e operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:38.107 ERROR [com.cpq.pro.ser.ProductImportService] (executor-thread-2) Excel import failed: Cannot find zip signature within the file
+2026-10-26 23:33:38.107 INFO  [com.cpq.pro.ser.ProductImportService] (executor-thread-2) Excel import complete: added=0 skipped=0 failed=1
+2026-10-26 23:33:38.162 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=090f7374-ad01-4606-9162-e1bb27470113 operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:38.206 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=090f7374-ad01-4606-9162-e1bb27470113 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:38.207 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 请上传 .xlsx 文件
+2026-10-26 23:33:38.261 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=8f2ea0ab-5ed8-4c7b-b28d-fb005665667e operation=inspect bytes=35 elapsedMs=46 status=200
+2026-10-26 23:33:38.305 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=8f2ea0ab-5ed8-4c7b-b28d-fb005665667e operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:33:38.306 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Failed to parse Excel headers: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:33:38.361 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=f7f8b43e-2878-4033-a65c-4371c767fd92 operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:38.406 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=f7f8b43e-2878-4033-a65c-4371c767fd92 operation=decrypt bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:38.407 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 组件 Bundle JSON 格式无效
+2026-10-26 23:33:38.461 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=29366ed8-0406-4d21-9bbd-8f28203c5458 operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:38.506 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=29366ed8-0406-4d21-9bbd-8f28203c5458 operation=decrypt bytes=35 elapsedMs=44 status=200
+2026-10-26 23:33:38.506 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 组件 Bundle JSON 格式无效
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.251 s -- in com.cpq.task261026crypto.Task261026TwentyOperationRuntimeTest
+[INFO] Running com.cpq.task261026crypto.Task261026UpstreamWriteFailureTest
+2026-10-26 23:33:39.721 DEBUG [com.cpq.dat.quo.QuotationImportExecutorProducer] (main) [task-260907] QuotationImportExecutor 已随应用生命周期关闭
+2026-10-26 23:33:39.725 INFO  [io.quarkus] (main) cpq-backend stopped in 0.007s
+2026-10-26 23:33:40.179 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:33:40.248 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:33:40.253 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:33:40.269 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:33:40.269 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:33:40.478 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:33:40.532 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:33:40.534 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:33:40.594 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:33:40.660 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:33:40.835 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:33:40.851 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:33:40.875 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:40.896 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:33:40.896 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:33:41.111 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:33:41.116 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 1.295s. Listening on: http://localhost:56691
+2026-10-26 23:33:41.116 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:33:41.116 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:33:41.139 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (vert.x-worker-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:33:41.152 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=118d202f-d232-4e50-ab33-9bfd29b225ea operation=inspect bytes=45 elapsedMs=3 status=400
+2026-10-26 23:33:41.153 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 上传文件被加解密服务拒绝
+2026-10-26 23:33:41.233 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=b2e01016-04d2-445f-9a02-5c1696181baf operation=inspect bytes=45 elapsedMs=45 status=401
+2026-10-26 23:33:41.234 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 文件解密服务认证失败，请联系管理员
+2026-10-26 23:33:41.305 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=8829e81d-6cfa-40be-9231-d457093aa006 operation=inspect bytes=45 elapsedMs=43 status=413
+2026-10-26 23:33:41.306 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 上传文件超出加解密服务限制
+2026-10-26 23:33:41.350 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=52f6a82e-f783-4a68-a5da-cb04817f9e91 operation=inspect bytes=45 elapsedMs=2 status=422
+2026-10-26 23:33:41.350 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 上传文件无法解密
+2026-10-26 23:33:41.421 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=b7373875-3731-4889-9172-6ab4140d1086 operation=inspect bytes=45 elapsedMs=43 status=500
+2026-10-26 23:33:41.422 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Business error: 文件解密服务返回异常
+2026-10-26 23:33:41.494 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=7517b0de-011f-476d-b872-b4fd51aaf3ee operation=inspect bytes=45 elapsedMs=43 status=503
+2026-10-26 23:33:41.494 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 文件解密服务暂不可用，请稍后重试
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.849 s -- in com.cpq.task261026crypto.Task261026UpstreamWriteFailureTest
+[INFO] Running com.cpq.task261026crypto.Task261026UploadSurfaceGuardTest
+[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.040 s -- in com.cpq.task261026crypto.Task261026UploadSurfaceGuardTest
+2026-10-26 23:33:41.617 INFO  [io.quarkus] (main) cpq-backend stopped in 0.008s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Errors: 
+[ERROR]   Task261026TimeoutFailureTest.ac9_slowInspectTimesOutAndCreatesNoBusinessRecord:20->Task261026CryptoFailureWriteBase.postEncryptedCommit:67 » SocketTimeout Read timed out
+[INFO] 
+[ERROR] Tests run: 29, Failures: 0, Errors: 1, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  03:33 min
+[INFO] Finished at: 2026-10-26T23:33:42-07:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.apache.maven.plugins:maven-surefire-plugin:3.5.4:test (default-test) on project cpq-backend: 
+[ERROR] 
+[ERROR] See /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/target/surefire-reports for the individual test results.
+[ERROR] See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[ERROR] -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoFailureException

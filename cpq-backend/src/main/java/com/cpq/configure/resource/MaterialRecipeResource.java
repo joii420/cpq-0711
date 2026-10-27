@@ -1,6 +1,7 @@
 package com.cpq.configure.resource;
 
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.configure.dto.BindPartsRequest;
 import com.cpq.configure.dto.BindingSuggestionDTO;
@@ -31,8 +32,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -54,6 +53,9 @@ public class MaterialRecipeResource {
     @Inject
     MaterialRecipeExportService exportService;
 
+    @Inject
+    FileCryptoService fileCryptoService;
+
     /**
      * POST /material-recipes/import — 上传 xlsx 导入材质库。
      * task-260901：只接<b>新 4 列单表模板</b>（材质 / 组号 / 元素符号 / 含量），旧两 sheet 模板返 400；
@@ -64,14 +66,7 @@ public class MaterialRecipeResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @RoleAllowed({"SYSTEM_ADMIN"})
     public MaterialImportReportDTO importLibrary(@RestForm("file") FileUpload file) {
-        if (file == null) throw new IllegalArgumentException("file 不能为空");
-        byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            bytes = in.readAllBytes();   // 请求线程读完（上传临时文件请求结束后可能被回收）
-        } catch (Exception e) {
-            throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
-        }
-        return importService.importLibrary(bytes);
+        return importService.importLibrary(fileCryptoService.process(file).bytes());
     }
 
     /**

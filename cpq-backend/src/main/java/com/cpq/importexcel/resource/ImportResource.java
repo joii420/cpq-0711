@@ -3,6 +3,7 @@ package com.cpq.importexcel.resource;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.importexcel.dto.ConfirmImportRequest;
@@ -37,6 +38,9 @@ public class ImportResource {
     @Inject
     SessionHelper sessionHelper;
 
+    @Inject
+    FileCryptoService fileCryptoService;
+
     @POST
     @Path("/execute")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
@@ -48,13 +52,14 @@ public class ImportResource {
             @RestForm("mappingTemplateId") String mappingTemplateId,
             @Context HttpServerRequest httpRequest) {
         UUID userId = sessionHelper.getCurrentUserId(httpRequest);
-        try (java.io.InputStream is = file.uploadedFile().toFile().toURI().toURL().openStream()) {
+        var processed = fileCryptoService.process(file);
+        try (java.io.InputStream is = processed.openStream()) {
             ImportRecordDTO result = executionService.executeImport(
                     UUID.fromString(customerId),
                     UUID.fromString(excelTemplateId),
                     UUID.fromString(mappingTemplateId),
                     is,
-                    file.fileName(),
+                    processed.fileName(),
                     userId);
             return ApiResponse.success(result);
         } catch (BusinessException be) {
@@ -108,12 +113,13 @@ public class ImportResource {
         if (file == null) throw new BusinessException(400, "file is required");
         if (templateId == null || templateId.isBlank()) throw new BusinessException(400, "templateId is required");
         if (customerId == null || customerId.isBlank()) throw new BusinessException(400, "customerId is required");
-        try (java.io.InputStream is = file.uploadedFile().toFile().toURI().toURL().openStream()) {
+        var processed = fileCryptoService.process(file);
+        try (java.io.InputStream is = processed.openStream()) {
             ImportPreviewDTO preview = executionService.previewImport(
                     UUID.fromString(customerId),
                     UUID.fromString(templateId),
                     is,
-                    file.fileName());
+                    processed.fileName());
             return ApiResponse.success(preview);
         } catch (BusinessException be) {
             throw be;

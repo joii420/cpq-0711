@@ -1,0 +1,4 @@
+profile=crypto-contract
+serverOverride=<application.properties default>
+port=18471
+database=cpq_db_test

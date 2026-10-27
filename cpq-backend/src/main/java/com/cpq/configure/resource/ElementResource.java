@@ -1,6 +1,7 @@
 package com.cpq.configure.resource;
 
 import com.cpq.common.security.RoleAllowed;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.configure.dto.ElementDTO;
 import com.cpq.configure.dto.ElementImportReportDTO;
 import com.cpq.configure.dto.ElementUpsertRequest;
@@ -36,6 +37,9 @@ public class ElementResource {
     @Inject
     ElementBulkService bulkService;
 
+    @Inject
+    FileCryptoService fileCryptoService;
+
     @GET
     @Path("/import/template")
     @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -51,12 +55,7 @@ public class ElementResource {
     @RoleAllowed({"SYSTEM_ADMIN"})
     public ElementImportReportDTO importElements(@org.jboss.resteasy.reactive.RestForm("file")
                                                  org.jboss.resteasy.reactive.multipart.FileUpload file) {
-        if (file == null) throw new IllegalArgumentException("file 不能为空");
-        try (java.io.InputStream in = java.nio.file.Files.newInputStream(file.uploadedFile())) {
-            return bulkService.importElements(in.readAllBytes());
-        } catch (java.io.IOException e) {
-            throw new RuntimeException("读取上传文件失败: " + e.getMessage(), e);
-        }
+        return bulkService.importElements(fileCryptoService.process(file).bytes());
     }
 
     @GET

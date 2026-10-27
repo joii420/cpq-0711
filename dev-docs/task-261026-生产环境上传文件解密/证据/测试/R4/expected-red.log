@@ -1,0 +1,33 @@
+
+Running 1 test using 1 worker
+
+(node:171754) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:171754) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh (7.2s)
+
+
+  1) e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBeTruthy[2m()[22m
+
+    Received: [31mfalse[39m
+
+      130 |     await panel.getByRole('button', { name: /预\s*览/ }).click();
+      131 |     const previewSkipResponse = await previewSkip;
+    > 132 |     expect(previewSkipResponse.ok()).toBeTruthy();
+          |                                      ^
+      133 |     const previewSkipJson = await previewSkipResponse.json();
+      134 |     expect(previewSkipJson?.data?.conflictPolicy,
+      135 |       '第一次预览结果必须明确对应 SKIP 策略').toBe('SKIP');
+        at /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-frontend/e2e/task261026-file-crypto.spec.ts:132:38
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-261026-生产环境上传文件解密/证据/测试/R4/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-261026-生产环境上传文件解密/证据/测试/R4/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/error-context.md
+
+  1 failed
+    e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 

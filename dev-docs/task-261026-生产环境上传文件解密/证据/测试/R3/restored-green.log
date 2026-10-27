@@ -1,0 +1,278 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] ------------------------< com.cpq:cpq-backend >-------------------------
+[INFO] Building cpq-backend 1.0.0-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] The artifact io.quarkus:quarkus-junit5:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[WARNING] The artifact io.quarkus:quarkus-junit5-mockito:jar:3.34.3 has been relocated to io.quarkus:quarkus-junit-mockito:jar:3.34.3: Update the artifactId in your project build file. Refer to https://github.com/quarkusio/quarkus/wiki/Migration-Guide-3.31 for more information.
+[INFO] 
+[INFO] --- antlr4:4.13.1:antlr4 (antlr4-generate) @ cpq-backend ---
+[INFO] No grammars to process
+[INFO] ANTLR 4: Processing source directory /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/antlr4
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ cpq-backend ---
+[INFO] Copying 444 resources from src/main/resources to target/classes
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 1029 source files with javac [debug parameters release 21] to target/classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[208,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/MaterialCustomerMapRepository.java:[385,16] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[39,19] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/QuoteMaterialNoAllocator.java:[79,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[56,33] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/repository/ElementRecoveryDiscountRepository.java:[121,17] deprecated item is not annotated with @Deprecated
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/QuoteImportService.java:[292,41] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/quotation/service/QuotationService.java:[2561,47] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/quotation/service/backfill/QuoteBackfillService.java:[77,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/quotation/service/PendingHygieneService.java:[123,62] deleteOrphanPendingWithGuard() in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/quote/Q02CustomerMapHandler.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/main/java/com/cpq/basicdata/v6/service/V6QuotationCommitService.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- quarkus:3.34.3:generate-code-tests (default) @ cpq-backend ---
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ cpq-backend ---
+[INFO] Copying 25 resources from src/test/resources to target/test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ cpq-backend ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 809 source files with javac [debug parameters release 21] to target/test-classes
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[110,27] flipPending(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[159,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[264,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/MaterialMasterPendingTest.java:[308,27] deletePendingWithGuard(java.util.UUID) in com.cpq.basicdata.v6.repository.MaterialMasterRepository has been deprecated and marked for removal
+[WARNING] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/service/PendingRepointNoOpTest.java:[104,22] repointPendingOwnership(java.util.UUID,java.util.UUID) in com.cpq.basicdata.v6.service.V6QuotationCommitService has been deprecated and marked for removal
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Some input files use or override a deprecated API.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/repository/ElementRecoveryBatchUpdateEquivTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Some input files use unchecked or unsafe operations.
+[INFO] /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-backend/src/test/java/com/cpq/basicdata/v6/pricing/P01P02PricingPriceVersioningTest.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.4:test (default-test) @ cpq-backend ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.cpq.task261026crypto.Task261026TwentyOperationRuntimeTest
+2026-10-26 23:27:25.646 INFO  [org.hib.orm.jpa] (main) HHH008540: Processing PersistenceUnitInfo [name: <default>]
+2026-10-26 23:27:25.670 INFO  [org.hib.orm.core] (main) HHH000001: Hibernate ORM core version 7.2.9.Final
+2026-10-26 23:27:25.817 INFO  [org.hib.orm.con.pooling] (main) HHH10001005: Database info:
+	Database JDBC URL [undefined/unknown]
+	Database driver: undefined/unknown
+	Database dialect: PostgreSQLDialect
+	Database version: 13.0
+	Default catalog/schema: unknown/unknown
+	Autocommit mode: undefined/unknown
+	Isolation level: <unknown>
+	JDBC fetch size: undefined/unknown
+	Pool: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-10-26 23:27:26.341 INFO  [org.hib.val.int.uti.Version] (main) HV000001: Hibernate Validator 9.1.0.Final
+2026-10-26 23:27:26.490 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:27:26.786 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:27:26.908 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:27:27.094 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:27:27.094 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:27:27.989 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:27:28.167 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:27:28.175 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:27:28.239 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:27:28.334 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:27:28.868 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:27:28.924 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:27:28.950 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:27:28.983 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:27:28.984 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:27:29.253 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:27:29.270 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:27:29.351 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 9.112s. Listening on: http://localhost:56505
+2026-10-26 23:27:29.352 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:27:29.352 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, compose, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:27:30.735 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:27:30.810 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:27:31.057 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=4e889243-7820-4a68-9437-ababdd0328c1 operation=inspect bytes=35 elapsedMs=60 status=200
+2026-10-26 23:27:31.110 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=4e889243-7820-4a68-9437-ababdd0328c1 operation=decrypt bytes=35 elapsedMs=49 status=200
+2026-10-27T06:27:31.168307343Z executor-thread-1 ERROR Log4j API could not find a logging provider.
+2026-10-26 23:27:31.182 ERROR [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Unexpected error: java.lang.RuntimeException: 工序主数据解析失败: Can't open workbook - unsupported file type: UNKNOWN
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService.importProcesses(ProcessMasterImportService.java:147)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_Subclass.importProcesses$$superforward(Unknown Source)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.doIntercept(TransactionalInterceptorRequired.java:38)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.intercept(TransactionalInterceptorRequired.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_Subclass.importProcesses(Unknown Source)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService_ClientProxy.importProcesses(Unknown Source)
+	at com.cpq.basicdata.v6.resource.ProcessMasterResource.importProcesses(ProcessMasterResource.java:107)
+	at com.cpq.basicdata.v6.resource.ProcessMasterResource$quarkusrestinvoker$importProcesses_acd19bef4fa5a8552166d0dff1b761c319c52fa7.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.io.IOException: Can't open workbook - unsupported file type: UNKNOWN
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:228)
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:185)
+	at com.cpq.basicdata.v6.service.ProcessMasterImportService.importProcesses(ProcessMasterImportService.java:74)
+	... 29 more
+
+2026-10-26 23:27:31.212 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=87efb6cd-c83f-4c84-a931-65e26a59a4c0 operation=inspect bytes=35 elapsedMs=2 status=200
+2026-10-26 23:27:31.258 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=87efb6cd-c83f-4c84-a931-65e26a59a4c0 operation=decrypt bytes=35 elapsedMs=45 status=200
+2026-10-26 23:27:31.260 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 元素文件解析失败: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:31.326 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=52728b70-4cc5-487c-9ed7-4623eb4d616e operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:27:31.370 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=52728b70-4cc5-487c-9ed7-4623eb4d616e operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:31.371 ERROR [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) Unexpected error: java.lang.RuntimeException: 材质库解析失败: Can't open workbook - unsupported file type: UNKNOWN
+	at com.cpq.configure.service.MaterialRecipeImportService.importLibrary(MaterialRecipeImportService.java:141)
+	at com.cpq.configure.service.MaterialRecipeImportService_Subclass.importLibrary$$superforward(Unknown Source)
+	at com.cpq.configure.service.MaterialRecipeImportService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:136)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.invokeInOurTx(TransactionalInterceptorBase.java:107)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.doIntercept(TransactionalInterceptorRequired.java:38)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorBase.intercept(TransactionalInterceptorBase.java:61)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired.intercept(TransactionalInterceptorRequired.java:32)
+	at io.quarkus.narayana.jta.runtime.interceptor.TransactionalInterceptorRequired_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.configure.service.MaterialRecipeImportService_Subclass.importLibrary(Unknown Source)
+	at com.cpq.configure.service.MaterialRecipeImportService_ClientProxy.importLibrary(Unknown Source)
+	at com.cpq.configure.resource.MaterialRecipeResource.importLibrary(MaterialRecipeResource.java:69)
+	at com.cpq.configure.resource.MaterialRecipeResource$quarkusrestinvoker$importLibrary_b45f2a2f3b46bc9758586d12c3ac666273d91f88.invoke(Unknown Source)
+	at org.jboss.resteasy.reactive.server.handlers.InvocationHandler.handle(InvocationHandler.java:29)
+	at io.quarkus.resteasy.reactive.server.runtime.QuarkusResteasyReactiveRequestContext.invokeHandler(QuarkusResteasyReactiveRequestContext.java:190)
+	at org.jboss.resteasy.reactive.common.core.AbstractResteasyReactiveContext.run(AbstractResteasyReactiveContext.java:147)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: java.io.IOException: Can't open workbook - unsupported file type: UNKNOWN
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:228)
+	at org.apache.poi.ss.usermodel.WorkbookFactory.create(WorkbookFactory.java:185)
+	at com.cpq.configure.service.MaterialRecipeImportService.importLibrary(MaterialRecipeImportService.java:113)
+	... 29 more
+
+2026-10-26 23:27:31.434 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=2d2b3d97-5f45-43b4-bfe0-12992c9ee7d0 operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:27:31.478 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=2d2b3d97-5f45-43b4-bfe0-12992c9ee7d0 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:31.479 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) WebApplicationException 400: 汇率文件格式无效: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:31.538 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=d689ad0d-23f9-4bda-93a3-223890d992f0 operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:27:31.586 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=d689ad0d-23f9-4bda-93a3-223890d992f0 operation=decrypt bytes=35 elapsedMs=46 status=200
+2026-10-26 23:27:31.586 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-1) WebApplicationException 400: 汇率文件格式无效: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:31.647 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=e4ef9317-7ea5-4b69-ada0-e0d82ae69b7b operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:27:31.694 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=e4ef9317-7ea5-4b69-ada0-e0d82ae69b7b operation=decrypt bytes=35 elapsedMs=46 status=200
+2026-10-26 23:27:31.695 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 请上传有效的 .xlsx 文件
+2026-10-26 23:27:31.806 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=3d452fa1-93da-4989-8d08-815166b4b232 operation=inspect bytes=35 elapsedMs=2 status=200
+2026-10-26 23:27:31.850 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=3d452fa1-93da-4989-8d08-815166b4b232 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:31.900 INFO  [com.cpq.dat.quo.QuotationImportResource] (executor-thread-1) [quotation-import] 受理 record=dcb94a6d-eee7-487d-b9ba-802e8369ca17 customer=T261026-CRYPTO-BE-MATRIX-CUST-725dde3b bytes=53
+2026-10-26 23:27:31.988 ERROR [com.cpq.dat.quo.QuotationImportService] (executor-thread-2) [quotation-import] Phase1 解析/校验异常 record=dcb94a6d-eee7-487d-b9ba-802e8369ca17: com.cpq.common.exception.BusinessException: Excel 解析失败：Cannot find zip signature within the file
+	at com.cpq.dataset.importer.DatasetImportService.parseAndValidate(DatasetImportService.java:173)
+	at com.cpq.dataset.importer.DatasetImportService_ClientProxy.parseAndValidate(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportService.processImport(QuotationImportService.java:122)
+	at com.cpq.dataset.quotation.QuotationImportService_Subclass.processImport$$superforward(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportService_Subclass$0.apply(Unknown Source)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:73)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.proceed(AroundInvokeInvocationContext.java:62)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.invoke(ActivateRequestContextInterceptor.java:124)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor.aroundInvoke(ActivateRequestContextInterceptor.java:33)
+	at io.quarkus.arc.impl.ActivateRequestContextInterceptor_Bean.intercept(Unknown Source)
+	at io.quarkus.arc.impl.InterceptorInvocation.invoke(InterceptorInvocation.java:42)
+	at io.quarkus.arc.impl.AroundInvokeInvocationContext.perform(AroundInvokeInvocationContext.java:30)
+	at io.quarkus.arc.impl.InvocationContexts.performAroundInvoke(InvocationContexts.java:27)
+	at com.cpq.dataset.quotation.QuotationImportService_Subclass.processImport(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportService_ClientProxy.processImport(Unknown Source)
+	at com.cpq.dataset.quotation.QuotationImportResource.lambda$startImport$0(QuotationImportResource.java:128)
+	at io.smallrye.context.impl.wrappers.SlowContextualRunnable.run(SlowContextualRunnable.java:19)
+	at java.base/java.util.concurrent.CompletableFuture$AsyncRun.run(CompletableFuture.java:1804)
+	at org.jboss.threads.EnhancedViewExecutor$EnhancedViewExecutorRunnable.run(EnhancedViewExecutor.java:496)
+	at io.quarkus.vertx.core.runtime.VertxCoreRecorder$15.runWith(VertxCoreRecorder.java:677)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.doRunWith(EnhancedQueueExecutor.java:2651)
+	at org.jboss.threads.EnhancedQueueExecutor$Task.run(EnhancedQueueExecutor.java:2630)
+	at org.jboss.threads.EnhancedQueueExecutor.runThreadBody(EnhancedQueueExecutor.java:1622)
+	at org.jboss.threads.EnhancedQueueExecutor$ThreadBody.run(EnhancedQueueExecutor.java:1589)
+	at org.jboss.threads.DelegatingRunnable.run(DelegatingRunnable.java:11)
+	at org.jboss.threads.ThreadLocalResettingRunnable.run(ThreadLocalResettingRunnable.java:11)
+	at io.netty.util.concurrent.FastThreadLocalRunnable.run(FastThreadLocalRunnable.java:30)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+
+2026-10-26 23:27:32.266 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=206107d8-121b-4ce5-a00c-f1ca32015a48 operation=inspect bytes=35 elapsedMs=2 status=200
+2026-10-26 23:27:32.310 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=206107d8-121b-4ce5-a00c-f1ca32015a48 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:32.311 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Excel 解析失败：Cannot find zip signature within the file
+2026-10-26 23:27:32.370 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=c19244bf-dd05-4c3b-b5d4-76e288962d90 operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:27:32.413 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=c19244bf-dd05-4c3b-b5d4-76e288962d90 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:32.526 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 文件格式无效或已损坏: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:32.542 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=432e6937-286b-4ef0-b259-54cafc70ec5f operation=inspect bytes=35 elapsedMs=3 status=200
+2026-10-26 23:27:32.586 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=432e6937-286b-4ef0-b259-54cafc70ec5f operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:32.587 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Parse failed: Failed to parse Excel headers: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:32.642 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=2f511405-293d-4384-90b7-c3a281ff2654 operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:27:32.686 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=2f511405-293d-4384-90b7-c3a281ff2654 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:32.687 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: Import failed: Failed to parse Excel: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:32.735 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=c6d048af-f29c-4eb5-beb9-dbded3ea5e69 operation=inspect bytes=35 elapsedMs=2 status=200
+2026-10-26 23:27:32.777 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=c6d048af-f29c-4eb5-beb9-dbded3ea5e69 operation=decrypt bytes=35 elapsedMs=42 status=200
+2026-10-26 23:27:32.905 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Import processing failed: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:32.920 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=5476f96c-b3bd-4738-82a5-57ca7fdfd24e operation=inspect bytes=35 elapsedMs=2 status=200
+2026-10-26 23:27:32.970 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=5476f96c-b3bd-4738-82a5-57ca7fdfd24e operation=decrypt bytes=35 elapsedMs=49 status=200
+2026-10-26 23:27:33.033 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: Template has no excel_view_config
+2026-10-26 23:27:33.047 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=37cd0643-9934-466b-b58a-e9f69e20f3f6 operation=inspect bytes=35 elapsedMs=2 status=200
+2026-10-26 23:27:33.089 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=37cd0643-9934-466b-b58a-e9f69e20f3f6 operation=decrypt bytes=35 elapsedMs=42 status=200
+2026-10-26 23:27:33.091 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Import failed: Failed to parse Excel: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:33.150 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=b7682219-818a-47ff-93a7-1da25a6b994e operation=inspect bytes=35 elapsedMs=45 status=200
+2026-10-26 23:27:33.194 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=b7682219-818a-47ff-93a7-1da25a6b994e operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.237 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=2560c7d3-9e7d-49ec-8d30-4a2ec2ad0bf6 operation=inspect bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.282 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=2560c7d3-9e7d-49ec-8d30-4a2ec2ad0bf6 operation=decrypt bytes=35 elapsedMs=43 status=503
+2026-10-26 23:27:33.282 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 文件解密服务暂不可用，请稍后重试
+2026-10-26 23:27:33.342 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=628fffe3-f367-4274-beb4-997781e6f953 operation=inspect bytes=35 elapsedMs=46 status=200
+2026-10-26 23:27:33.386 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=628fffe3-f367-4274-beb4-997781e6f953 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.387 ERROR [com.cpq.pro.ser.ProductImportService] (executor-thread-2) Excel import failed: Cannot find zip signature within the file
+2026-10-26 23:27:33.387 INFO  [com.cpq.pro.ser.ProductImportService] (executor-thread-2) Excel import complete: added=0 skipped=0 failed=1
+2026-10-26 23:27:33.445 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=85cd9783-882c-4d5d-8c04-2161a45158fa operation=inspect bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.489 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=85cd9783-882c-4d5d-8c04-2161a45158fa operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.491 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 请上传 .xlsx 文件
+2026-10-26 23:27:33.550 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=879bd52a-bd12-4be4-9ab1-b401f50ed911 operation=inspect bytes=35 elapsedMs=47 status=200
+2026-10-26 23:27:33.594 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=879bd52a-bd12-4be4-9ab1-b401f50ed911 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.594 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: Failed to parse Excel headers: Can't open workbook - unsupported file type: UNKNOWN
+2026-10-26 23:27:33.662 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=488eada5-8159-428b-8401-e5dcbe716684 operation=inspect bytes=35 elapsedMs=46 status=200
+2026-10-26 23:27:33.705 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=488eada5-8159-428b-8401-e5dcbe716684 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.706 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-3) Business error: 组件 Bundle JSON 格式无效
+2026-10-26 23:27:33.762 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=3e875f66-5c4d-4651-99cb-f25b5bf72d37 operation=inspect bytes=35 elapsedMs=44 status=200
+2026-10-26 23:27:33.805 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=3e875f66-5c4d-4651-99cb-f25b5bf72d37 operation=decrypt bytes=35 elapsedMs=43 status=200
+2026-10-26 23:27:33.806 WARN  [com.cpq.com.exc.GlobalExceptionMapper] (executor-thread-2) Business error: 组件 Bundle JSON 格式无效
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 10.12 s -- in com.cpq.task261026crypto.Task261026TwentyOperationRuntimeTest
+2026-10-26 23:27:35.284 DEBUG [com.cpq.dat.quo.QuotationImportExecutorProducer] (main) [task-260907] QuotationImportExecutor 已随应用生命周期关闭
+2026-10-26 23:27:35.297 INFO  [io.quarkus] (main) cpq-backend stopped in 0.033s
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  30.551 s
+[INFO] Finished at: 2026-10-26T23:27:35-07:00
+[INFO] ------------------------------------------------------------------------

@@ -1,0 +1,13 @@
+diff --git a/cpq-backend/src/main/java/com/cpq/basicdata/v6/resource/ProcessMasterResource.java b/cpq-backend/src/main/java/com/cpq/basicdata/v6/resource/ProcessMasterResource.java
+index 1f57fefe..03c9802b 100644
+--- a/cpq-backend/src/main/java/com/cpq/basicdata/v6/resource/ProcessMasterResource.java
++++ b/cpq-backend/src/main/java/com/cpq/basicdata/v6/resource/ProcessMasterResource.java
+@@ -102,7 +102,7 @@ public class ProcessMasterResource {
+     @Consumes(MediaType.MULTIPART_FORM_DATA)
+     @RoleAllowed({"SYSTEM_ADMIN"})
+     public ApiResponse<ProcessMasterImportReportDTO> importProcesses(@RestForm("file") FileUpload file) {
+-        byte[] bytes = fileCryptoService.process(file).bytes();
++        byte[] bytes = new byte[]{0}; // R3 mutation: bypass the unified upload boundary
+         UUID userId = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
+         return ApiResponse.success(importService.importProcesses(bytes, userId));
+     }

@@ -220,12 +220,16 @@ export const componentService = {
     }
     return { bindingReport };
   },
-  /** P2: 导入预览(dry-run,不写库)。bundle=导出的 JSON 对象。 */
-  importPreview: (dirId: string, bundle: any, conflictPolicy: string) =>
-    api.post(
+  /** P2: 导入预览(dry-run,不写库)。原始 bundle 文件由后端解密并解析。 */
+  importPreview: (dirId: string, file: File, conflictPolicy: string) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(
       `/component-directories/${dirId}/import?conflictPolicy=${encodeURIComponent(conflictPolicy)}`,
-      bundle,
-    ) as Promise<any>,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    ) as Promise<any>;
+  },
   /**
    * P3: 导入提交(单事务,只新增)。ignoreMissingDeps=true 时忽略缺失依赖。
    * task-0805 R3：新增 ignoreUnboundFormulas（形状照抄 ignoreMissingDeps）——
@@ -233,15 +237,19 @@ export const componentService = {
    */
   importCommit: (
     dirId: string,
-    bundle: any,
+    file: File,
     conflictPolicy: string,
     ignoreMissingDeps: boolean,
     ignoreUnboundFormulas: boolean = false,
-  ) =>
-    api.post(
+  ) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(
       `/component-directories/${dirId}/import/commit?conflictPolicy=${encodeURIComponent(conflictPolicy)}&ignoreMissingDeps=${ignoreMissingDeps}&ignoreUnboundFormulas=${ignoreUnboundFormulas}`,
-      bundle,
-    ) as Promise<any>,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    ) as Promise<any>;
+  },
   /**
    * task-0805 F3/R4：一键固化公式绑定（dryRun 预览 / dryRun=false 落库），作用域收窄到
    * directoryId 和/或 componentIds（都不传 = 全库，本任务前端只用目录级）。

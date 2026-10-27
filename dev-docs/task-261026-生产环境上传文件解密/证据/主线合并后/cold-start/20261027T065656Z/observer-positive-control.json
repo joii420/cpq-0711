@@ -1,0 +1,1 @@
+{"instanceId":"T261026-CRYPTO-FAKE-3162671f-b2c4-4a1e-9ed9-a557be75a46f","requests":[{"method":"POST","path":"/v1/inspect","size":8,"sha256":"afa6e9ab3ac6574d50e6b5674d5e76cc95833823a314b397fd6c499dc673ec9c","contentType":"application/octet-stream","encodedFileName":"positive.xlsx","requestId":"T261026-positive-control","authorizationMatched":true}]}

@@ -124,8 +124,8 @@ public class QuotationImportService {
         } catch (DatasetValidationException ve) {
             // 整份拒收：一行未写，回全部错误（不是第一条）
             List<DsValidationError> errors = ve.getErrors();
-            LOG.infof("[quotation-import] record=%s file=%s Phase1 拒收 errors=%d",
-                    recordId, fileName, errors.size());
+            LOG.infof("[quotation-import] record=%s Phase1 拒收 errors=%d",
+                    recordId, errors.size());
             recordWriter.finalizeFailed(recordId, 0, ve.getMessage(), errors);
             return;
         } catch (Exception e) {
@@ -161,8 +161,8 @@ public class QuotationImportService {
         //    见 QuotationImportRecordWriter#finalizeSuccess 的 batchParts javadoc。
         recordWriter.finalizeSuccess(recordId, totalRows, summary, durationMs,
                 collectBatchParts(prepared.sheets()));
-        LOG.infof("[quotation-import] record=%s customer=%s file=%s sheets=%d rows=%d durationMs=%d SUCCESS",
-                recordId, customerNo, fileName, summary.size(), totalRows, durationMs);
+        LOG.infof("[quotation-import] record=%s customer=%s sheets=%d rows=%d durationMs=%d SUCCESS",
+                recordId, customerNo, summary.size(), totalRows, durationMs);
     }
 
     /**

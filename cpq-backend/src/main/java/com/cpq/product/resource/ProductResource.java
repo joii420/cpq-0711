@@ -2,6 +2,7 @@ package com.cpq.product.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.product.dto.CreateProductRequest;
 import com.cpq.product.dto.ImportResult;
@@ -29,6 +30,9 @@ public class ProductResource {
 
     @Inject
     ProductImportService productImportService;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     public ApiResponse<PageResult<ProductDTO>> list(
@@ -67,7 +71,8 @@ public class ProductResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<ImportResult> importExcel(@RestForm("file") FileUpload file) throws IOException {
-        ImportResult result = productImportService.importFromExcel(file.uploadedFile().toFile().toURI().toURL().openStream());
-        return ApiResponse.success(result);
+        try (var input = fileCryptoService.process(file).openStream()) {
+            return ApiResponse.success(productImportService.importFromExcel(input));
+        }
     }
 }

@@ -1,0 +1,13 @@
+diff --git a/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java b/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java
+index c27553e3..fc86b92d 100644
+--- a/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java
++++ b/cpq-backend/src/main/java/com/cpq/common/filecrypto/FileCryptoService.java
+@@ -81,7 +81,7 @@ public class FileCryptoService {
+         }
+ 
+         String fileName = normalizedFileName(upload.fileName());
+-        if (!isExactProdProfile()) {
++        if (false && !isExactProdProfile()) { // R1 mutation: force non-prod through inspect
+             return new ProcessedUpload(fileName, original, false, null);
+         }
+ 

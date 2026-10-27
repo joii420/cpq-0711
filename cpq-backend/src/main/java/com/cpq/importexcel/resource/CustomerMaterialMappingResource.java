@@ -2,6 +2,7 @@ package com.cpq.importexcel.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.importexcel.dto.CustomerMaterialMappingDTO;
 import com.cpq.importexcel.dto.InternalMaterialDTO;
@@ -22,6 +23,9 @@ public class CustomerMaterialMappingResource {
 
     @Inject
     CustomerMaterialMappingService service;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
@@ -73,7 +77,8 @@ public class CustomerMaterialMappingResource {
     public ApiResponse<Map<String, Integer>> batchImport(
             @PathParam("customerId") UUID customerId,
             @RestForm("file") FileUpload file) {
-        try (java.io.InputStream fis = file.uploadedFile().toFile().toURI().toURL().openStream()) {
+        var processed = fileCryptoService.process(file);
+        try (java.io.InputStream fis = processed.openStream()) {
             int count = service.batchImport(customerId, fis);
             return ApiResponse.success(Map.of("imported", count));
         } catch (Exception e) {

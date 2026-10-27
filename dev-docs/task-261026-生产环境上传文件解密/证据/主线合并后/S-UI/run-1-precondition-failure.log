@@ -1,0 +1,43 @@
+
+Running 1 test using 1 worker
+
+(node:202480) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:202480) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh (1.1m)
+
+
+  1) e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 
+
+    Error: [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator:  locator('input[placeholder*="搜索"]').first()
+    Expected: visible
+    Received: hidden
+    Timeout:  60000ms
+
+    Call log:
+    [2m  - Expect "toBeVisible" with timeout 60000ms[22m
+    [2m  - waiting for locator('input[placeholder*="搜索"]').first()[22m
+    [2m    61 × locator resolved to <input value="" type="text" placeholder="🔍 搜索组件名 / 编码" class="ant-input ant-input-sm css-dev-only-do-not-override-ch9ese"/>[22m
+    [2m       - unexpected value "hidden"[22m
+
+
+      66 |   // Pre-warm the newly started Vite stack before the timed sequence assertions.
+      67 |   await page.goto('/components');
+    > 68 |   await expect(page.locator('input[placeholder*="搜索"]').first()).toBeVisible({ timeout: 60_000 });
+         |                                                                  ^
+      69 |
+      70 |   const createDirectory = await page.request.post('/api/cpq/component-directories', {
+      71 |     data: { name: DIR_NAME, parentId: null },
+        at /home/joii/project/cpq/cpq-frontend/e2e/task261026-file-crypto.spec.ts:68:66
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-261026-生产环境上传文件解密/证据/主线合并后/S-UI/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-261026-生产环境上传文件解密/证据/主线合并后/S-UI/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/error-context.md
+
+  1 failed
+    e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 

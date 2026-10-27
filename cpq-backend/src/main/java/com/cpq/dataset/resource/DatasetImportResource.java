@@ -2,6 +2,7 @@ package com.cpq.dataset.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.dataset.dto.DatasetImportErrorsDTO;
@@ -23,8 +24,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.UUID;
 
 /**
@@ -51,6 +50,7 @@ public class DatasetImportResource {
     @Inject DatasetImportService importService;
     @Inject DatasetRegistries registries;
     @Inject SessionHelper sessionHelper;
+    @Inject FileCryptoService fileCryptoService;
 
     @Context HttpServerRequest httpRequest;
 
@@ -75,23 +75,17 @@ public class DatasetImportResource {
                                 @RestForm("customerNo") String customerNo) {
         DatasetRegistry reg = registries.byKey(dataset);
         if (reg == null) throw new BusinessException(404, "数据集不存在: " + dataset);
-        if (file == null) throw new BusinessException(400, "file 不能为空");
 
         UUID userId = sessionHelper.getCurrentUserId(httpRequest);
         if (userId == null) throw new BusinessException(401, "未登录");
         String operator = String.valueOf(userId);
 
-        final byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            // 必须在请求线程读完：上传临时文件在请求结束后可能被回收（与既有 V6 导入同一约定）
-            bytes = in.readAllBytes();
-        } catch (Exception e) {
-            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
-        }
+        var processed = fileCryptoService.process(file);
+        final byte[] bytes = processed.bytes();
 
         try {
             DatasetImportResultDTO result =
-                    importService.importExcel(reg, file.fileName(), bytes, userId, operator, customerNo);
+                    importService.importExcel(reg, processed.fileName(), bytes, userId, operator, customerNo);
             return Response.ok(ApiResponse.success(result)).build();
         } catch (DatasetValidationException ve) {
             // Phase 1 拒收：一行未写，返回全部错误（AC-6/7/8/9/10/34/40/45/46）
