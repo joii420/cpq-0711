@@ -1,6 +1,27 @@
 # 测试报告
 
-> 2026-10-27 验收期扩围结果：新增“报价单产品卡片利润快照”AC-14~AC-20 已完成实现与自动化验证；最终证据见文末“扩围主线复验”。当前只因主工作区存在 5 个重叠未提交文件而未合并，状态为挂起；不得据此宣称已合并或已部署。
+> 2026-10-27 验收期扩围结果：新增“报价单产品卡片利润快照”AC-14~AC-20 已完成实现、合并、部署与远端亲验；代码已进入 `master@cb361d08`，测试环境地址为 `http://10.177.152.12:5173`，当前状态为待用户验收。
+
+## 报价卡片扩围合并、部署与远端亲验（2026-10-27）
+
+- 合并：`feat/task-261026-quote-profit-card` 已安全快进到 `master@cb361d081b6e25c3c3ce0bc4db99a80c4a8442a9`。主工作区既有 24 个暂存路径与 204 个未暂存路径在 stash 恢复后路径集合完全一致；唯一文档冲突 `docs/RECORD.md` 取并集，安全 stash `0f00abc9` 保留未删除。
+- 干净构建：从独立部署 worktree 的上述 master 基线执行 `npx tsc -b --clean && npx tsc -b --pretty false`（0 错误）、`npm run build`（3440 modules）和 `./mvnw -B -ntp -DskipTests clean package`（`BUILD SUCCESS`）；fast-jar 四件套齐全。
+- 交付包：新增 `deploy/2026102701/`，从上一包 `deploy/2026102601` 的 V454 基线补齐唯一增量 `update-261027-quotation-profit-snapshot.sql`，目标 V455；Dockerfile 使用 `eclipse-temurin:21-jre`，并固化远端全部 JVM / Quarkus 参数。
+- SQL 验证：一次性库 `cpq_tmp_deploy_261027_profit_0039` 先恢复到 V454，再连续执行 V455 脚本两遍；两遍自检均为 `1 / 0 / 0 / 455`，3920 条历史行均保持 `profit_snapshot IS NULL`。`cpq_db_test` 实查已漂移到 V451，未对其做写入；另一次性库 `cpq_tmp_deploy_261027_profit_0038` 用于发现并确认该漂移，均进入待回收清单。
+- 远端切换：前端 `/home/hf/project/cpq-page/` 与后端 `/home/hf/project/cpq-server/` 的上传前后相对路径 hash-of-hashes 分别一致为 `92f5ea34...`、`3513465d...`；旧目录、Dockerfile 与镜像保留 `backup-20261027154057`。
+- 冷启动：Flyway 日志显示从 V454 成功应用 `455 - task261026 quotation line profit snapshot`；共享测试库字段为 `numeric(26,12) NULL` 且无默认值，部署当时 5325 条历史报价行非空快照数为 0。Registry↔DDL 为 97 表 / 1784 列，语义图为 58 节点 / 90 边 / 48 tabViews，启动日志 `ERROR` 数为 0。[冷启动✓]
+- 探针：前端 `/` 返回 200；后端 `/api/cpq/components` 返回 401 `{"code":401,"message":"未登录"}`；后端容器为 Temurin OpenJDK 21.0.11，`restart=always`、host 网络、4 GiB 上限及日志挂载均与原部署一致。
+- 浏览器工具降级：Browser 插件不可用，按前端调试技能使用仓库 Playwright + system Chrome 对 `http://10.177.152.12:5173` 执行 4 个专项用例，结果 `4 passed (36.3s)`。覆盖页面身份、非空渲染、无错误遮罩、产品列表利润列与编辑，以及报价卡片编辑/只读态的值、NULL、历史缺字段、HALF_UP、极值布局和删除按钮；私有报价夹具已删除，残留为 0。
+- 截图人工目视：报价卡片利润框紧跟 VAT；有值显示 `利润: 1.234567892`，NULL/历史缺字段显示 `利润: -`，未覆盖右侧产品名与销售料号。产品列表截图归档于 `/tmp/task261026-remote-profit-card-20261027/`。
+
+### 本次新增待回收清单
+
+| 库名 | 创建日期 | 用途 | 状态 | 回收命令 |
+|---|---|---|---|---|
+| `cpq_tmp_deploy_261027_profit_0038` | 2026-10-27 | 首轮部署 SQL 幂等验证 / 识别测试库基线漂移 | V455，自检通过；未回收 | `DROP DATABASE cpq_tmp_deploy_261027_profit_0038;` |
+| `cpq_tmp_deploy_261027_profit_0039` | 2026-10-27 | 严格 V454 → V455 部署 SQL 双跑验证 | V455，自检通过；未回收 | `DROP DATABASE cpq_tmp_deploy_261027_profit_0039;` |
+
+上述 `DROP DATABASE` 属不可逆操作，本次不自动执行。
 
 ## 测试服务器部署与远端亲验（2026-10-26 PDT / 2026-10-27 CST）
 

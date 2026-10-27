@@ -18,8 +18,8 @@
 | **源库** | `cpq_db_0724`（schema-only + 系统配置种子） |
 | **内容** | **251 表 · 29 视图 · 106 序列 · 6 函数 · 703 行种子 · 1 个 admin 用户** |
 | **文件 md5** | `cd311bdf54d87dd9c93ba5464c94c7fd` |
-| **已应用的增量** | `update-260913-v440-v443-record-batch-and-price.sql`（V440~V443）· `update-260916-lookup-name-recipe-fallback.sql`（V444）· `update-260916-element-price-scale9.sql`（V445） |
-| 🎯 **全部执行后的基线** | **V445** |
+| **已应用的增量** | `update-260913-v440-v443-record-batch-and-price.sql`（V440~V443）· `update-260916-lookup-name-recipe-fallback.sql`（V444）· `update-260916-element-price-scale9.sql`（V445）· `update-261013-v446-v449-material-config.sql`（V446 / V447 / V449）· `update-261013-v448-unit-management.sql`（V448）· `update-261013-template-customer-many.sql`（V450）· `update-261015-template-soft-delete.sql`（V451）· `update-261023-self-process-name-lookup.sql`（V452）· `update-261026-material-profit.sql`（V454；V453 不属于当前代码基线）· `update-261027-quotation-profit-snapshot.sql`（V455） |
+| 🎯 **全部执行后的基线** | **V455** |
 
 ### 增量清单（按顺序执行）
 
@@ -28,6 +28,13 @@
 | 1 | `update-260913-v440-v443-record-batch-and-price.sql` | V440 / V441 / V442 / V443 | 核价取价改客户级单键 · 语义图加 `ROW_SCOPE` 角色 · 13 张 `ds_quote_*_record` 加 `import_batch_id` 且 `quotation_id` 放开可空 · 取价函数补 `_record` 分支 | `5339712c91327ba92bfb2aae6035610a` |
 | 2 | `update-260916-lookup-name-recipe-fallback.sql` | V444 | 语义图：来料类 11 个数据源（报价 5 + 基础核价 3 + 明细核价 3）的「材料名」改为两段查 —— 既有物料表查名边归入 `PART_NAME` 组顺序 1，新增材质表查名边顺序 2（连接键 `<锚点料号列> = code`，不带客户键）。**只改配置种子，零 DDL** | `ec01295e1274086eb80ed16fcac45e83` |
 | 3 | `update-260916-element-price-scale9.sql` | V445 | 客户元素单价取价函数 `f_customer_element_price(text, date)` 的结果由保留 4 位小数改为 **9 位**（`task-260916`）。函数体只改 `ROUND` 位数这一个数字，签名 / 返回列不变；**不回写任何数据** | `64be8a8ee95cc41bf0c7aa68ec1dfe20` |
+| 4 | `update-261013-v446-v449-material-config.sql` | V446 / V447 / V449 | 补齐税务分类与报价税率快照、币种与汇率快照表/字段，以及材质含量配置 `group_no`；历史配置按 `seq` 回填，其他材质/元素业务数据不改 | `730e740beb753730b75452169cf9b0de` |
+| 5 | `update-261013-v448-unit-management.sql` | V448 | 新增单位定义与有向换算关系；客户产品结算单位、基础/详细核价物料计价单位；种子 7 个单位与 18 条换算关系 | `a5b5597ff417c272b17dc94b95c95bef` |
+| 6 | `update-261013-template-customer-many.sql` | V450 | 模板客户适用范围由单客户扩展为 `template_customer` 多对多关联，并回填历史客户关系 | `3fcbdbf75248c1b5065941521e6df963` |
+| 7 | `update-261015-template-soft-delete.sql` | V451 | 为模板状态约束增加 `DELETED`，保留历史引用和快照 | `f058c72190efd31906d183497daccec6` |
+| 8 | `update-261023-self-process-name-lookup.sql` | V452 | 自制加工费字段树增加可选“工序名称”；按 `operation_no = process_no` 声明 `process_master` LEFT JOIN 查名节点/边，不修改业务表结构或存量组件 | `b2c8b118f6eedea6b12db3484a41651e` |
+| 9 | `update-261026-material-profit.sql` | V454 | 报价物料增加可空 `profit numeric(26,12)`，并为 `QUOTE/MATERIAL` 语义节点增加“利润”字段；V453 为未合并并发任务占号，不属于本基线 | `d7a2ab369cdb73485e36ca1882bb4b5f` |
+| 10 | `update-261027-quotation-profit-snapshot.sql` | V455 | 报价行增加可空 `profit_snapshot numeric(26,12)`；历史报价保持 `NULL`，新报价冻结销售产品利润 | `a881fcab2851197941d05c3b80b17337` |
 
 ### 这份全量脚本刻意**不含**什么
 
@@ -233,6 +240,12 @@ bash deploy/db/refresh-test-db.sh --yes    # 跳过确认（明确授权时）
 | 2026-09-13 | 首份增量脚本 | `update-260913-v440-v443-record-batch-and-price.sql`，基线 V439 → **V443**。覆盖 V440~V443 四个迁移。**V442 的 `DO` 块已按 §③ 展开为 13 组静态 DDL，V443 的函数体已去中文 + 改单引号并移至文件末尾**（见 §⑨ 验证足迹）|
 | 2026-09-16 | 第二份增量 | `update-260916-lookup-name-recipe-fallback.sql`，基线 V443 → **V444**（`repair-260916`）。只改 `semantic_edge` / `semantic_edge_key` 种子；迁移里的临时规格表 + `DO` 块自检已改为内联 `VALUES` + 只读 `SELECT` 自检（Navicat 自动提交下 `ON COMMIT DROP` 临时表会立即消失，且 `DO` 需要美元引用）。临时库 `cpq_upd_verify_260916` 验证：全量 + 两份增量 `ON_ERROR_STOP=1` 全部 exit 0 / stderr 0 字节；本增量二次执行幂等（自检输出逐字相同，影响行数 11→0）；六维签名执行前后 0 行差异；与 `cpq_db_0724` 的六维差异条数执行前后完全相同（表 10 / 列 261 / 索引 1 / 约束 29 / 函数 4 / 视图 3，均为基线自带）；还原实验两处干预均被自检抓到；GUI 切分 10 片段 / 非法开头 0 / 全文 0 个 `$` |
 | 2026-09-16 | 第三份增量 | `update-260916-element-price-scale9.sql`，基线 V444 → **V445**（`task-260916`）。只重定义 `f_customer_element_price(text, date)`（`ROUND` 4 → 9），函数体取自库内现行定义、单引号包裹、体内单引号成对转义、0 非 ASCII、0 TAB，函数区置于基线上调之后、自检之前。验证：GUI 切分 7 片段 / 非法开头 0 / 引号全闭合 / 全文 0 个 `$`；在 `cpq_db_test` 上 `BEGIN; 脚本; 自检; ROLLBACK;` 实跑（未建临时库） |
+| 2026-10-13 | 第四份增量 | `update-261013-v446-v449-material-config.sql`，基线 V445 → **V449**。补齐 V446/V447 漏记的税务、币种、汇率表及字段，并加入 V449 `material_recipe_config.group_no`（历史行按 `seq` 回填）；DDL 和种子均可重复执行，文件末尾含基线与结构自检 |
+| 2026-10-15 | 第五份增量 | `update-261013-template-customer-many.sql`，基线 V449 → **V450**。模板客户关系表与历史回填，脚本可重复执行 |
+| 2026-10-15 | 第六份增量 | `update-261015-template-soft-delete.sql`，基线 V450 → **V451**。模板状态约束增加 `DELETED`，脚本可重复执行 |
+| 2026-10-23 | 第七份增量 | `update-261023-self-process-name-lookup.sql`，基线 V451 → **V452**。新增 `PROCESS_NAME_LK` 薄查名节点、`process_name` 字段及 `SELF_PROCESS_FEE.operation_no → process_master.process_no` LOOKUP 边；零业务表 DDL。临时库从 V439 全量脚本按清单升至 V452 成功，V452 连续执行两遍均为 exit 0 / stderr 0 字节，节点/字段/边/连接键均保持 1 条；GUI 模拟切分 10 片段、非法开头 0、引号闭合、无美元引用 / psql 元命令。 |
+| 2026-10-26 | 第八份增量 | `update-261026-material-profit.sql`，基线 V452 → **V454**。新增报价物料利润物理列和语义列；V453 不属于当前代码基线。脚本使用静态 DDL / INSERT、无 psql 元命令或美元引用，末尾包含结构、核价边界、语义字段和基线四项自检。 |
+| 2026-10-27 | 第九份增量 | `update-261027-quotation-profit-snapshot.sql`，基线 V454 → **V455**。新增报价行利润快照列；脚本为静态幂等 DDL，无 psql 元命令或美元引用，末尾包含列定义、默认值、历史行和基线四项自检。 |
 
 ---
 
