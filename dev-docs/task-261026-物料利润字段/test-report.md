@@ -1,5 +1,18 @@
 # 测试报告
 
+> 2026-10-26 验收期扩围说明：本报告现有证据只覆盖首批 AC-1~AC-13。新增“报价单产品卡片利润快照”AC-14~AC-20 尚未开工、尚未执行；闸门 A 放行后必须追加独立执行章节，未追加前不得用本报告宣称扩围完成。
+
+## 测试服务器部署与远端亲验（2026-10-26 PDT / 2026-10-27 CST）
+
+- 本地 5174 / 8081 服务均已关闭；部署前后复核本机无对应监听。
+- 从干净 detached worktree 的 `master@b54b62a65ec01291312036959af1bed9af613000` 构建，未带入主工作区现有未提交改动。前端 `npm run build` 通过（3439 modules），后端 `./mvnw -B -ntp -DskipTests clean package` 为 `BUILD SUCCESS`。
+- 新部署包：`deploy/2026102601/`；上次 SQL 基线 V452，本次携带 `update-261026-material-profit.sql` 升至 V454。该脚本在 `cpq_db_test` 的同一事务内连续执行两遍，两遍自检均为 `1 / 0 / 1 / 454`，随后回滚；回滚后库仍为 V452 且 `profit` 列为 0。
+- 远端前端目录 `/home/hf/project/cpq-page/`、后端目录 `/home/hf/project/cpq-server/` 已原子切换；上传前后产物 hash-of-hashes 一致。旧目录、Dockerfile 与镜像均保留 `backup-20261027132835` 备份。
+- 后端 Dockerfile 使用用户指定的 `eclipse-temurin:21-jre`；容器实测 OpenJDK `21.0.11`。新增共享库保护参数 `-Dcpq.price-adjust.startup-recovery.enabled=false` 已固化进 Dockerfile，重启日志明确显示跳过启动收尾与预算续跑。
+- 远端启动证据：前端 `http://10.177.152.12:5173/` 返回 200；后端 `/api/cpq/components` 返回 401 `{"code":401,"message":"未登录"}`；Flyway `V454 success=true`；Registry↔DDL 为 97 表 / 1784 列；语义图为 58 节点 / 90 边 / 48 tabViews；最终重启后无 ERROR 日志。
+- Browser 插件未安装，按前端调试技能改用仓库 Playwright。远端专项用例 `T261026_UI_01~03` 为 `3 passed (22.4s)`：页面身份、非空渲染、无框架遮罩、浏览器 console error=0、利润紧跟增值税、右对齐、空值/极值、双击/图标编辑、Enter/失焦、Esc、非数字、清空 null 和失败回滚均通过。
+- 截图已人工目视：`/tmp/task261026-remote-20261026/01-default-null-extreme-horizontal-scroll.png`、`02-editing-by-icon.png`、`02-saved-negative-zero-decimal.png`、`03-save-failure-rollback.png`；均来自本次远端地址，不写入仓库临时产物。
+
 ## 验收调整：利润列改为紧跟增值税（2026-10-26）
 
 - 用户验收反馈：“位置紧跟增值税吧”。列序已调整为「税务分类 → 增值税 → 利润 → 产品分类」，利润的右对齐、空值、精度和行内编辑交互不变。

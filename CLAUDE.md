@@ -139,6 +139,14 @@ curl -s --noproxy '*' -o /dev/null -w '%{http_code}\n' http://localhost:8081/api
 ```
 - 后端连库确认（可选）：`SELECT state,count(*) FROM pg_stat_activity WHERE datname='cpq_db' GROUP BY state;` 有一批 idle 连接 = 连接池已建。
 
+## 测试服务器部署与验收
+
+- **固定测试服务器**：`hf@10.177.152.12`。用户明确要求部署时，先关闭本地前后端服务，再从已提交的干净 `master` 构建，禁止把主工作区未提交改动带入测试环境。
+- **前端**：远端目录 `/home/hf/project/cpq-page/`；将 `cpq-frontend` 的生产构建产物 `dist/` 部署到该目录并以 Docker 启动，对外端口固定为 `5173`。
+- **后端**：远端目录 `/home/hf/project/cpq-server/`；将 `cpq-backend/target/quarkus-app/` 部署到该目录并以 Docker 启动，对外端口固定为 `8201`。新增或变更 JVM / Quarkus 启动参数时，必须落在远端 `Dockerfile`（并同步进当次部署包），不得只写在临时命令里。
+- **验收入口**：后续闸门 B 的用户真机验收统一使用 `http://10.177.152.12:5173`；主线亲验也必须针对该地址完成页面身份、非空渲染、错误遮罩、控制台健康和目标交互检查。
+- **部署纪律**：仍以仓库根 `AGENTS.md` 的部署打包纪律为准；只有用户明确要求“打包”或“部署”时才更新 `deploy/`，每次使用新的日期流水目录，并从上次部署 SQL 基线补齐全部增量。
+
 
 ### 架构
 
