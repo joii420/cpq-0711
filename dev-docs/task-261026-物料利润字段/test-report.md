@@ -1,6 +1,6 @@
 # 测试报告
 
-> 2026-10-26 验收期扩围说明：本报告现有证据只覆盖首批 AC-1~AC-13。新增“报价单产品卡片利润快照”AC-14~AC-20 尚未开工、尚未执行；闸门 A 放行后必须追加独立执行章节，未追加前不得用本报告宣称扩围完成。
+> 2026-10-27 验收期扩围结果：新增“报价单产品卡片利润快照”AC-14~AC-20 已完成实现与自动化验证；最终证据见文末“扩围主线复验”。当前只因主工作区存在 4 个重叠未提交文件而未合并，状态为挂起；不得据此宣称已合并或已部署。
 
 ## 测试服务器部署与远端亲验（2026-10-26 PDT / 2026-10-27 CST）
 
@@ -615,3 +615,115 @@ S-UI 第三轮异步同步问题已修正（仅测试文件，未启动服务）
 > S-QBE/S-QUI 已仅按授权读完 AC-14~20、test.md、api.md。现被契约信息阻塞，按“信息不足即停，不许翻实现补齐”暂停，尚未改文件：1) api.md 只给 draft 语义，缺 PUT /quotations/{id}/draft 的完整请求 schema（added/modified 行身份字段）、创建报价/复制报价/刷新基础数据/重算的 URL 与请求响应；无法覆盖 saveDraft、导入物化、已有产品、选配/绑定、复制、不漂移序列。2) 缺隔离夹具建立/鉴权契约（如何创建客户、ds_quote_material、quotation/line item，哪些测试 profile/环境变量；禁止共享库下不能猜）。3) “利润查询不随行数增长”缺可观测计数接口/统计方式和允许的基线条数。4) S-QUI 缺报价编辑页/只读页 URL、登录方式与单位/VAT/利润/删除按钮稳定 DOM 标识；也缺页面依赖的最小 Mock API 响应全集，无法在不读现有测试/实现的前提下编写可执行 Playwright。5) 当前读取权限又明确限制为三份文档，连既有测试基建/fixture/helper/pom/package 配置也不能读，因此无法确定 JUnit/Quarkus/Playwright 收集入口。请补充上述测试契约，或明确扩大只读范围到相关现有测试基建（仍不读 src/main/src）后我继续。未验证：等待实现完成后按片解锁。
 
 处置：主线补充现有接口、夹具、SQL 观测与 DOM 选择器的测试基建契约后，测试工程师仍只从任务文档取数，不开放业务实现目录。
+
+## 验收期扩围 · S-QBE 首次执行失败证据（2026-10-26 PDT）
+
+执行命令：
+
+```text
+DB_HOST=10.177.152.12 DB_PORT=5432 DB_NAME=cpq_tmp_t261026_profit_2320 \
+DB_USERNAME=postgres DB_PASSWORD=<redacted> \
+./mvnw -Dtest=T261026_QBE_QuotationProfitSnapshotTest test
+```
+
+结果：`Tests run: 7, Failures: 7, Errors: 0, Skipped: 0`，`BUILD FAILURE`（48.202s）。七条用例均在第一个受保护 HTTP 请求处返回 `401 {"code":401,"message":"未登录"}`；未进入利润快照业务断言。
+
+环境证据：Quarkus 成功启动于随机端口；Flyway 验证 437 个迁移，当前 V455；Registry↔DDL 自检为 97 表 / 1784 列。
+
+判定：这是独立测试夹具未携带仓库既有 `CPQ_SESSION` 登录态的量具问题，不是被测利润实现失败。修正前保留本轮原始失败事实，不将 401 误报为业务回归。
+
+## 验收期扩围 · S-QBE 第二次执行失败证据（2026-10-26 PDT）
+
+修正私有管理员会话后，以同一命令重跑。结果：`Tests run: 7, Failures: 2, Errors: 0, Skipped: 0`，`BUILD FAILURE`（1:12）；其余 5 条通过。
+
+两个失败点：
+
+1. `T261026_QBE_22_importMaterializationFreezesProfit`：正式模板的客户料号样例行仍带 `客户编号=CUST-0004`，与本轮私有客户 `T261026_QBE_*` 不同，Phase1 正确拒收：“一份 Excel 只能属于一个客户”。属于测试 workbook 夹具遗漏。
+2. `T261026_QBE_19_candidateAndExistingProductContractsHaveNoProfitNPlusOne`：一次性库从 `cpq_db_test` 克隆，两者均缺少既有视图 `v_compat_material_master`；“已有产品”旧查询先于利润断言报 `relation does not exist` / HTTP 500。只读对照确认 `cpq_db_0724` 存在该视图，属于固有测试库 schema 基线不完整，不是本次利润 JOIN 新增的对象。
+
+已观测的有效证据：`saveDraft` 2 行与 6 行的利润查询均为 1；`customer-part-candidates` 2 行与 6 行的利润查询均为 1；本轮收尾后 `T261026_QBE_` 用户、客户、物料、报价和导入记录残留均为 0。
+
+## 验收期扩围 · S-QBE 第三次执行失败证据（2026-10-26 PDT）
+
+一次性库已补入与 `cpq_db_0724` 定义 MD5 同为 `aaf2464d9df839c8cf6aabac88a071fc` 的 `v_compat_material_master`，并合入客户编号夹具修正后重跑。结果：`Tests run: 7, Failures: 1, Errors: 0, Skipped: 0`，`BUILD FAILURE`（1:03）；其余 6 条通过。
+
+- 已有产品端点通过，2 行与 6 行的利润查询均为 1；快照历史空值、精度、不漂移、选配/绑定、复制、金额/导出边界全部通过。
+- 唯一失败仍是导入 workbook 中的 `客户编号=CUST-0004`；第二轮测试修正代码未让实际上传字节发生变化。下一轮必须在发请求前重新解析生成的 XLSX，对客户编号、销售料号和利润做阳性断言，防止再次假修复。
+
+## 验收期扩围 · S-QBE 导入单测清理失败证据（2026-10-26 PDT）
+
+将模板 `inlineStr` 客户编号改为“先 `setBlank()` 再写入”，并在上传前重新解析 bytes 做三个阳性断言后，定向运行 `T261026_QBE_22_importMaterializationFreezesProfit`。
+
+业务链路已通过：导入日志为 `sheets=16 rows=2 ... SUCCESS`；导入建单物化 1 条报价明细，并执行到利润快照断言之后。
+
+最终结果仍为 `Tests run: 1, Failures: 0, Errors: 1`，错误发生在 `@AfterEach`：测试清理先删 `quotation`，但 `import_record.quotation_id` 仍引用它，同一事务随即回滚；导入记录因此又阻止删除私有用户（`import_record.imported_by_fkey`）。判定为 teardown 外键顺序问题，修正为先解除/删除本轮 `import_record`，再删报价和私有用户。
+
+## 验收期扩围 · S-QBE 最终通过（2026-10-26 PDT）
+
+按外键顺序分事务清理导入记录、报价、客户夹具和私有管理员后，在同一次性库执行：
+
+```text
+DB_HOST=10.177.152.12 DB_PORT=5432 DB_NAME=cpq_tmp_t261026_profit_2320 \
+DB_USERNAME=postgres DB_PASSWORD=<redacted> \
+./mvnw -Dtest=T261026_QBE_QuotationProfitSnapshotTest test
+```
+
+结果：`Tests run: 7, Failures: 0, Errors: 0, Skipped: 0`，`BUILD SUCCESS`（1:03）。
+
+- V455 可空 `numeric(26,12)`、历史 `NULL` 不回查、GET 恒含 `profit` 键通过。
+- 正数、零、负数、12 位精度与 `NULL` 冻结，旧 payload 兼容通过。
+- 基础利润 `1.25 → 9.5` 后，旧行修改/重算/刷新仍为 `1.25`，新行为 `9.5`。
+- 选配新产品 `NULL`、绑定已有产品 `3.75`、复制非空/空快照、金额指纹和导出边界通过。
+- 正式 16 Sheet 导入成功，2 条数据行物化为 1 条报价明细，利润保留 `1.234567891500`。
+- N+1 观测：`saveDraft`、`customer-part-candidates`、`existing-products` 均为 2 行 1 次 / 6 行 1 次利润查询。
+- 收尾后 `T261026_QBE_` 的 import/user/customer/material/quotation 五类残留均为 0。
+
+## 验收期扩围 · 主线复验（2026-10-27 PDT）
+
+### 交付行为
+
+- 报价单编辑态和只读产品卡片均在 VAT 提示框的右侧直接相邻显示利润提示框。
+- 新报价行从当前报价客户、销售料号对应的销售产品利润冻结 `profit_snapshot`；保存、重算、刷新基础数据和后续修改销售产品利润均不改旧行快照。
+- 历史报价行不回填；`profit` 为 `null` 或旧后端缺失该字段时均显示精确文案 `利润: -`。
+- 数值接口全程使用十进制字符串；卡片按既有 `DISPLAY_SCALE=9`、`HALF_UP`、去尾零规则显示。利润不参与金额、税额、折扣、公式或导出。
+
+### 后端与数据库
+
+- `./mvnw -Dtest=T261026_QBE_QuotationProfitSnapshotTest test`：`Tests run: 7, Failures: 0, Errors: 0, Skipped: 0`，`BUILD SUCCESS`（1:03）。覆盖 V455/历史空值、正负零与 12 位精度、旧 payload、不漂移序列、候选/已有产品/草稿 N+1、选配/绑定/复制、计算/导出边界和正式 16 Sheet 导入物化。
+- 相关回归 `Task261026ProfitApiTest,Task261026ProfitTemplateTest,PlainTableWriterTest,RegistryTypeCoherenceAcTest`：`Tests run: 19, Failures: 0, Errors: 0, Skipped: 0`，`BUILD SUCCESS`（43.327s）。
+- 编译/打包：`./mvnw -DskipTests compile`、`./mvnw -DskipTests test-compile`、`./mvnw -DskipTests package` 均成功；package 总耗时 19.080s。
+- 一次性库冷启动：Flyway 成功校验 437 条迁移并处于 V455；`DatasetSchemaSelfCheck` 为 97 表 / 1784 列，语义图 58 节点 / 90 边 / 48 tabViews；业务接口未登录返回 401。
+- 物理列为 `quotation_line_item.profit_snapshot numeric(26,12) NULL`；迁移后 3920 条历史报价行中非空快照为 0，证明无历史回填。
+- `cpq_db_test` 固有基线缺少 `v_compat_material_master`；只在一次性库补入开发库同定义视图，两端 `pg_get_viewdef` MD5 均为 `aaf2464d9df839c8cf6aabac88a071fc`，未修改共享库。
+- 最终测试清理后 `T261026_QBE_` 的 import/user/customer/material/quotation 五类残留均为 0。
+
+### 前端与浏览器
+
+- `npx tsc -b --pretty false`：通过；4 个相关 Vitest 文件共 48 项通过；`npm run build`：3440 modules 构建成功，仅有既存大 chunk 警告。
+- Vite 实际模块探针：`QuotationStep2.tsx`、`ReadonlyProductCard.tsx`、`QuotationWizard.tsx`、`profitBadge.ts`、`quotation.css` 及报价页路由均返回 HTTP 200。
+- Playwright 专用配置最终运行旧销售产品利润 3 条 + 新报价卡片 1 条，共 `4 passed (48.3s)`；无非预期 console error 或 pageerror。Browser 插件不可用，按前端调试规范使用仓库 Playwright 与系统 Chrome。
+- 报价卡片用例覆盖：只读数值；`null` 与字段缺失；`1.234567891500 → 利润: 1.234567892`；最长值布局；单位可选、VAT 与利润相邻；编辑态删除按钮可用；只读态无删除按钮。
+- 首五轮失败均为 E2E 量具修正：单位错误强制存在、编辑按钮 accessible name、编辑页 `ensure-card-values` 覆盖响应、预热响应缺少 `lineItems`、既存开发警告未按精确文本列入基线。修正后同一业务实现通过，未借由放宽业务断言掩盖失败。
+
+最终截图已由主线逐张目视：
+
+- [`01-readonly-value.png`](证据/S-QUI/20261027-main-final/01-readonly-value.png)：VAT 后显示 `利润: 12.5`。
+- [`02-readonly-null-and-legacy-missing.png`](证据/S-QUI/20261027-main-final/02-readonly-null-and-legacy-missing.png)：`null` 与旧字段缺失均显示 `利润: -`。
+- [`03-readonly-max-value-layout.png`](证据/S-QUI/20261027-main-final/03-readonly-max-value-layout.png)：极值不与右侧料号区域重叠。
+- [`04-edit-half-up-and-delete-button.png`](证据/S-QUI/20261027-main-final/04-edit-half-up-and-delete-button.png)：编辑态 HALF_UP 显示正确，删除按钮仍可用。
+
+### 合并与环境收尾
+
+- `git merge-tree --write-tree master feat/task-261026-quote-profit-card` 退出码 0，证明已提交分支与当前 `master` 可自动合并。
+- 实际合并仍被主工作区既有未提交改动阻塞：`QuotationStep2.tsx`、`QuotationWizard.tsx`、`ReadonlyProductCard.tsx`、`dev-docs/INDEX.md` 与本分支重叠。为避免覆盖用户改动，未 stash、未 reset、未执行合并；等待用户决定如何处置。
+- 临时前后端服务已关闭，15173 / 18091 均无监听；本次未生成或更新部署包，也未部署到测试服务器。
+
+### 待回收清单（需用户批准后执行）
+
+| 库名 | 创建日期 | 归属片 | 状态 | 回收命令 |
+|---|---|---|---|---|
+| `cpq_tmp_t261026_profit_2320` | 2026-10-26 | S-QBE / S-QUI / 主线 | V455 冷启动、7/7 专项、19/19 回归和 UI 4/4 均已通过；测试前缀残留为 0，可回收 | `DROP DATABASE cpq_tmp_t261026_profit_2320;` |
+
+`DROP DATABASE` 属不可逆操作，本任务未自动执行。
+
+已自检：AC-14~AC-20 的实现、接口契约、迁移、历史零回填、创建路径、精度、N+1、计算/导出边界、前端双视图、浏览器控制台、冷启动、测试残留、端口与部署目录均已核对；代码和自动化已通过，唯一未完成项是受主工作区既有重叠改动保护而暂停的合并。
