@@ -42,6 +42,8 @@ interface CustomerPartCandidate {
   basicPricingUnit?: string | null;
   detailPricingUnit?: string | null;
   baseCurrency?: string;
+  /** 销售产品利润；创建报价内存行时作为只读快照透传。 */
+  profit?: DecimalString | null;
   /** 生产料号详情。task-260910(B-4/F-5)：换源到
    *  ds_quote_material.production_no → ds_cost_basic_material ∪ ds_cost_detail_material，
    *  字段集与 QuotationDTO.HfPartInfo 对齐（删 statusCode、加 oldMaterialNo）。 */
@@ -226,6 +228,7 @@ export function buildLineItemFromTemplate(tmpl: any, part: CustomerPartCandidate
     pricingUnit: part.pricingUnit ?? null,
     basicPricingUnit: part.basicPricingUnit ?? part.hfPartInfo?.basicPricingUnit ?? null,
     detailPricingUnit: part.detailPricingUnit ?? part.hfPartInfo?.detailPricingUnit ?? null,
+    profit: part.profit ?? null,
     // 生产料号管理 视角详情（卡片右侧 popover 用）—— 候选 API 已 LEFT JOIN internal_material 返回
     hfPartInfo: part.hfPartInfo,
     templateId: tmpl.id,

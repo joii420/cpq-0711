@@ -113,8 +113,13 @@ export interface ReusedProductInfo {
   lastQuotedPrice?: DecimalString | null;
 }
 
+export interface ConfigureProductLineItemResponse extends Record<string, unknown> {
+  /** 选配完成时返回的销售产品利润，供新报价行立即展示快照。 */
+  profit?: DecimalString | null;
+}
+
 export interface ConfigureProductResponse {
-  lineItems: Array<Record<string, any>>;
+  lineItems: ConfigureProductLineItemResponse[];
   fingerprintMatched: boolean;
   reusedHfPartNos: string[];
   /** 🆕 命中复用时带出销售产品信息（可空 —— 未命中或后端未回填时为 undefined）。 */

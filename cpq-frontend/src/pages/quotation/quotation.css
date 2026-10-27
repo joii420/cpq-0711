@@ -61,6 +61,21 @@
   white-space: nowrap;
 }
 
+/* Profit is an immutable quotation-row snapshot and is display-only. */
+.qt-profit-badge {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ⚠️ .qt-template-badge 仍在服役：报价单编辑页的「模板: xxx」徽标已于 task-260910(F-6) 删除，
    但详情页 ReadonlyProductCard 的「产品分类」徽标复用同一个类。🚫 不要删这条规则。 */
 .qt-template-badge {

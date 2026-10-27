@@ -61,6 +61,7 @@ import { noteUserDataVersion } from './userDataVersion';
 import { usePagedSearch } from './usePagedSearch';
 import { highlightText } from './highlightText';
 import PagingBar from './PagingBar';
+import { formatProfitBadgeText } from './profitBadge';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -308,6 +309,8 @@ export interface LineItem {
   vatSource?: string;
   vatEffectiveFrom?: string;
   vatResolvedAt?: string;
+  /** 报价行创建时冻结的销售产品利润；历史行允许为空，且不参与报价计算。 */
+  profit?: DecimalString | null;
 }
 
 export type LineItemUpdater = Partial<LineItem> | ((prev: LineItem) => Partial<LineItem>);
@@ -3279,9 +3282,8 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     <div className="qt-product-card">
       {/* Card Header — task-260910(F-1)：左 [客户料号名称][客户产品编号]，右 [产品名][销售料号][删除] */}
       <div className="qt-card-header">
-        {/* 左侧客户视角区：两者皆空则整块不渲染（不留空徽标、不显示「—」，原型图状态 5）。
-            容器 div 保留 —— .qt-card-header 是 justify-content: space-between，
-            去掉它右侧整块会滑到左边。 */}
+        {/* 左侧客户视角区：客户字段仍按原条件渲染；利润快照徽标始终存在，缺失时显示「利润: -」。
+            容器 div 保留 —— .qt-card-header 是 justify-content: space-between。 */}
         <div className="qt-card-header-left qt-card-header-left--edit">
           {item.customerPartName && (
             <span className="qt-cust-part-name" title={item.customerPartName}>
@@ -3306,6 +3308,12 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               VAT {formatNumber(item.vatRate)}% · {vatSourceLabel(item.vatSource)}
             </span>
           )}
+          <span
+            className="qt-profit-badge"
+            title="报价行利润快照；未冻结时显示 -，且不从当前销售产品回填"
+          >
+            {formatProfitBadgeText(item.profit)}
+          </span>
         </div>
         <div className="qt-card-header-right">
           <span

@@ -7,6 +7,8 @@
 //    旧写入方 mcm（其写入端点 Q02 恒 410）/ sel_product_no 均已停写，
 //    导入与选配今天都只落 ds_quote_customer_part。
 
+import type { DecimalString } from '../utils/precision';
+
 /**
  * 分页包络（真实后端类 com.cpq.common.dto.PageResult）：content/totalElements/page/size/totalPages，
  * 不是 items/total。与 modelConfig.ts 的同名类型结构一致但独立声明（见该文件注释，两个 domain 各自 self-contained）。
@@ -68,6 +70,8 @@ export interface ExistingProductDTO {
   source?: 'EXISTING' | 'CONFIGURED' | string | null;
   /** 选配产品类型：SIMPLE | COMPOSITE（仅 source=CONFIGURED 有值）。 */
   configProductType?: string | null;
+  /** 加入报价单时冻结到报价行的销售产品利润。 */
+  profit?: DecimalString | null;
 }
 
 /** `GET /quotations/{quotationId}/existing-products` 查询参数（全部可选，服务端 AND 组合、模糊匹配）。 */

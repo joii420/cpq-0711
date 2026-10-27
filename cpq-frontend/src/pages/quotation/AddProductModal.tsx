@@ -169,6 +169,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
           partName: p.productName || p.customerMaterialName || p.materialNo,
           customerProductNo: p.customerProductNo || undefined,
           customerPartName: p.customerMaterialName || undefined,
+          profit: p.profit ?? null,
           customerSpecific: false,
         }),
       );

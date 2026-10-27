@@ -682,6 +682,7 @@ const QuotationWizard: React.FC = () => {
         vatSource: li.vatSource,
         vatEffectiveFrom: li.vatEffectiveFrom,
         vatResolvedAt: li.vatResolvedAt,
+        profit: isDecimalString(li.profit) ? normalizeDecimalString(li.profit) : null,
         componentData: li.componentData || [],
         subtotal: isDecimalString(li.subtotal) ? normalizeDecimalString(li.subtotal) : '0',
         // 工序回读:从 GET 的 processes 填 processNos,使 saveDraft 能回写 quotation_line_process
@@ -1935,6 +1936,7 @@ const QuotationWizard: React.FC = () => {
         vatSource: li.vatSource,
         vatEffectiveFrom: li.vatEffectiveFrom,
         vatResolvedAt: li.vatResolvedAt,
+        profit: isDecimalString(li.profit) ? normalizeDecimalString(li.profit) : null,
         componentData: li.componentData || [],
         subtotal: li.subtotal || 0,
         partVersionLocked: li.partVersionLocked,

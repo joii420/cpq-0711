@@ -37,6 +37,7 @@ import {
   buildReadonlySnapshotIndex,
   materializeReadonlySnapshotInputs,
 } from './readonlySnapshotRows';
+import { formatProfitBadgeText } from './profitBadge';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -622,9 +623,8 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
           左 [客户料号名称][客户产品编号][产品分类]，右 [产品名][销售料号]。
           🚫 右块不放「删除」或任何按钮 —— 详情页是只读页（E-7）。 */}
       <div className="qt-card-header">
-        {/* 左侧客户视角区：两者皆空则整块零子元素（不留空徽标、不显示「—」，原型图状态 4）。
-            容器 div 保留 —— .qt-card-header 是 justify-content: space-between，
-            去掉它右侧整块会滑到左边。 */}
+        {/* 左侧客户视角区：客户字段仍按原条件渲染；利润快照徽标始终存在，缺失时显示「利润: -」。
+            容器 div 保留 —— .qt-card-header 是 justify-content: space-between。 */}
         <div className="qt-card-header-left">
           {lineItem.customerPartName && (
             <span className="qt-cust-part-name" title={lineItem.customerPartName}>
@@ -647,6 +647,12 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               VAT {lineItem.vatRate}% · {vatSourceLabel(lineItem.vatSource)}
             </span>
           )}
+          <span
+            className="qt-profit-badge"
+            title="报价行利润快照；历史报价不从当前销售产品回填"
+          >
+            {formatProfitBadgeText(lineItem.profit)}
+          </span>
           {/* 🚫 产品分类徽标不许删（AC-R6，原型图状态 5）。它在现网恒不显示
               —— 实测全库 quotation_line_item_snapshot.product_category 零行非空 ——
               「页面上看不到」不是删它的理由，判据只能是源码级。 */}
