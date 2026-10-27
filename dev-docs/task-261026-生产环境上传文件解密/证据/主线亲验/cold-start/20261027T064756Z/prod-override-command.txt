@@ -1,0 +1,4 @@
+profile=prod
+serverOverride=http://127.0.0.1:19521/
+port=18471
+database=cpq_db_test

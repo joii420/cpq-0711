@@ -1,0 +1,36 @@
+
+Running 1 test using 1 worker
+
+(node:172038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:172038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh (7.1s)
+
+
+  1) e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 
+
+    Error: 第一次预览必须以 multipart file 发送
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"multipart/form-data; boundary="[39m
+    Received string:    [31m"application/json"[39m
+
+      132 |       { message: '第一次预览必须发出浏览器请求' }).toBe(1);
+      133 |     expect(browserRequests[0].contentType,
+    > 134 |       '第一次预览必须以 multipart file 发送').toContain('multipart/form-data; boundary=');
+          |                                     ^
+      135 |     const previewSkipResponse = await previewSkip;
+      136 |     expect(previewSkipResponse.ok()).toBeTruthy();
+      137 |     const previewSkipJson = await previewSkipResponse.json();
+        at /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-frontend/e2e/task261026-file-crypto.spec.ts:134:37
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-261026-生产环境上传文件解密/证据/测试/R4/network-assert/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-261026-生产环境上传文件解密/证据/测试/R4/network-assert/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/error-context.md
+
+  1 failed
+    e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 

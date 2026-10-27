@@ -1,0 +1,4 @@
+measurement=static direct assertion call sites (runtime loop iterations excluded)
+java_assertion_call_sites=154
+playwright_expect_call_sites=39
+total_static_assertion_call_sites=193

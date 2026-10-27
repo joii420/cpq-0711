@@ -1,0 +1,6 @@
+CHECK=task ports
+TASK_PORT_LISTENERS=0
+CHECK=worktree processes
+WORKTREE_PROCESSES=0
+CHECK=task-specific temp storage
+TASK_TEMP_ENTRIES=0

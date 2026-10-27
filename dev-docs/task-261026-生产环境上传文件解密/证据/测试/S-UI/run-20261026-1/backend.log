@@ -1,0 +1,49 @@
+__  ____  __  _____   ___  __ ____  ______ 
+ --/ __ \/ / / / _ | / _ \/ //_/ / / / __/ 
+ -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \   
+--\___\_\____/_/ |_/_/|_/_/|_|\____/___/   
+2026-10-26 23:14:28.630 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-26 23:14:29.009 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-26 23:14:29.065 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-26 23:14:29.338 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-26 23:14:29.339 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-26 23:14:30.137 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-26 23:14:30.305 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-26 23:14:30.312 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-26 23:14:30.420 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-26 23:14:30.553 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-26 23:14:31.057 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-26 23:14:31.086 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-26 23:14:31.104 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:14:31.139 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-26 23:14:31.140 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-26 23:14:31.189 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-1) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:14:31.429 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-26 23:14:31.506 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.807s. Listening on: http://0.0.0.0:18452
+2026-10-26 23:14:31.506 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-26 23:14:31.507 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-26 23:14:43.824 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-1) User logged in: admin role=SYSTEM_ADMIN
+2026-10-26 23:14:43.864 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-1) Session created for user: admin
+2026-10-26 23:14:47.427 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-3) Created component directory id=d99ae667-2279-4efd-8626-e58f992ac160 name=T261026-CRYPTO-UI-DIR-1793081681437-157328
+2026-10-26 23:14:47.467 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 5 root directories
+2026-10-26 23:14:47.579 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:14:47.708 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:14:49.143 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:14:49.305 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:14:49.449 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-26 23:14:50.488 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=564a7be1-bf4a-442c-a066-f0854b8ba3d8 operation=inspect bytes=45 elapsedMs=45 status=200
+2026-10-26 23:14:50.492 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=564a7be1-bf4a-442c-a066-f0854b8ba3d8 operation=decrypt bytes=45 elapsedMs=3 status=200
+2026-10-26 23:14:50.638 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-26 23:14:51.302 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=93fb3932-9272-408e-bd8f-cb80e90773f4 operation=inspect bytes=45 elapsedMs=2 status=200
+2026-10-26 23:14:51.304 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-3) [file-crypto] requestId=93fb3932-9272-408e-bd8f-cb80e90773f4 operation=decrypt bytes=45 elapsedMs=1 status=200
+2026-10-26 23:14:51.363 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-3) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-26 23:14:51.513 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=c44b391b-902d-4a56-8e77-90ec721dcb25 operation=inspect bytes=45 elapsedMs=3 status=200
+2026-10-26 23:14:51.517 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=c44b391b-902d-4a56-8e77-90ec721dcb25 operation=decrypt bytes=45 elapsedMs=3 status=200
+2026-10-26 23:14:51.562 WARN  [com.cpq.com.ser.ComponentImportService] (executor-thread-2) 导入 bundle 含老格式 Item(id=null)，UUID 类跨组件引用(cross_tab_ref.source)未重映射；component_subtotal.component_code 仍通过 codeMap 映射
+2026-10-26 23:14:51.770 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-2) Deleted component id=463f245d-4982-496f-a762-24d34345db07 code=T261026-CRYPTO-UI-COMP-1793081681437-157328
+2026-10-26 23:14:51.811 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-3) listTree: 6 root directories
+2026-10-26 23:14:51.875 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) Deleted component directory id=d99ae667-2279-4efd-8626-e58f992ac160
+2026-10-26 23:15:31.125 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-2) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:16:31.153 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-2) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:17:31.104 INFO  [com.cpq.pri.ser.PriceAdjustScheduledScanService] (executor-thread-2) [price-adjust-scan] customer=CUST-0004 skip（E14-10）: 客户 CUST-0004 的调价策略参与元素为空，或勾选元素全部既无本期价也无历史价，不生成版本
+2026-10-26 23:18:12.583 INFO  [io.quarkus] (Shutdown thread) cpq-backend stopped in 0.072s
