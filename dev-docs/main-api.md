@@ -3032,6 +3032,9 @@
 
 - **响应内容**: `ApiResponse<QuotationDTO>`（详情视图，填充 lineItems / approvalHistory / 4 份结构快照 / 漂移字段）
 
+`data.lineItems[].profit` 为报价行创建时冻结的销售产品利润，类型恒为十进制字符串或 JSON `null`；
+历史行保持 `null`，GET 不实时回查销售产品。该字段不参与公式、金额、折扣、VAT 或导出。
+
 #### 4.1.3 创建报价单
 - **功能**: 新建报价单（DRAFT），销售代表由当前会话推断
 - **方法**: POST
@@ -3085,6 +3088,7 @@
 | quoteCurrency | String | 报价货币 |
 | customerSpecific | boolean | 是否客户专属（true=有 mapping） |
 | currentVersion | Integer | 客户映射当前版本，透传到 line_item.part_version_locked |
+| profit | String/null | 当前客户销售产品利润，保留 `numeric(26,12)` 精度；空利润也显式返回 `profit:null`，供新报价行冻结 |
 | hfPartInfo | HfPartInfo | 生产料号详情（partNo/partName/specification/sizeInfo/**oldMaterialNo**），未绑定生产料号时为 null |
 
 > 🔄 **task-260910 换源**：`partNo` 现在是**生产料号**（`ds_quote_material.production_no`），不再是销售料号；明细取自 `ds_cost_basic_material ∪ ds_cost_detail_material`（basic 优先 + 逐列 COALESCE）。**删 `statusCode`、加 `oldMaterialNo`** —— 两张核价表都没有状态列。旧源 `internal_material`（全表 0 行）与 `material_master` 兜底已停用。
@@ -3748,11 +3752,13 @@
 | `customerMaterialName` | String? | `customer_part_name`（与代表编号**同行**） |
 | `productName` | String? | `COALESCE(NULLIF(v_compat_material_master.material_name,''), material_no)` |
 | `spec` | String? | `COALESCE(NULLIF(specification,''), dimension)` |
+| `profit` | String/null | 当前报价客户的 `ds_quote_material.profit`，保留 `numeric(26,12)` 精度，供加入报价时冻结 |
 | `source` | String | `IMPORT`→`"EXISTING"`；其余→`"CONFIGURED"`（**按来源列判定**） |
 | `configProductType` | String? | `SIMPLE`/`COMPOSITE`，取自 `sel_part_signature` 最近一条；非选配为 null |
 
-**数据来源**：单表 `ds_quote_customer_part` + `LEFT JOIN v_compat_material_master`（取品名/规格）。
-🚫 **不直连 `ds_quote_material`**：该兼容视图是「老表遮蔽新表」语义，绕过会让 42 个料号走老表值、6 个料号消失。
+**数据来源**：`ds_quote_customer_part` + `LEFT JOIN v_compat_material_master`（取品名/规格）；利润按
+`(customer_no, material_no)` 额外 `LEFT JOIN ds_quote_material`。品名/规格仍严禁绕过兼容视图，避免让
+42 个料号走老表值、6 个料号消失。
 
 **错误码**：404 报价单不存在；400 报价单未绑定客户；401 未认证；403 角色不在白名单。
 
@@ -8709,9 +8715,12 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| lineItems | Map<String,Object>[] | 落库的报价行：SIMPLE=1 行；COMPOSITE=1 父 + N 子（元素含 `id` 等）|
+| lineItems | Map<String,Object>[] | 落库的报价行：SIMPLE=1 行；COMPOSITE=1 父 + N 子；每项含 `id`、`profit` 等，`profit` 为本次已落库的报价行利润快照十进制字符串或 null |
 | fingerprintMatched | boolean | 是否至少 1 个料号为复用 |
 | reusedHfPartNos | String[] | 被复用的料号列表 |
+
+新增行在落库时按报价客户与销售料号冻结 `profit_snapshot`。选配新铸且尚未维护利润的产品为 null；
+绑定已有销售产品冻结当前利润。后续保存、重算和刷新基础快照均不改该值。
 
 #### 从基础数据刷新快照
 - **功能**: 基础数据更新后，用户主动将报价单各行快照从当前基础数据重新冻结（重跑 snapshot_rows），保留用户编辑层 row_data（UPSERT）；并递归重算核价卡片（存量核价单刷出整棵 BOM 树，仅 COSTING，不碰报价侧，尽力而为）。
