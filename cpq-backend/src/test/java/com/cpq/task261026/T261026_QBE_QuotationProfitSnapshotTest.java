@@ -5,6 +5,7 @@ import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.RestAssured;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
+import io.restassured.specification.RequestSpecification;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import org.apache.poi.ss.usermodel.Cell;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mindrot.jbcrypt.BCrypt;
 
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
@@ -56,6 +58,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class T261026_QBE_QuotationProfitSnapshotTest {
 
     private static final String PREFIX = "T261026_QBE_";
+    private static final String ADMIN_PASSWORD = "T261026@QbeProfit";
     private static final String XLSX_MIME =
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -68,86 +71,98 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     private final Set<String> materialNos = new LinkedHashSet<>();
     private final Set<String> generatedMaterialNos = new LinkedHashSet<>();
     private final Set<UUID> importRecordIds = new LinkedHashSet<>();
+    private String adminUsername;
+    private String sessionCookie;
     private CustomerRef customer;
 
     @BeforeEach
     void T261026_QBE_setUp() {
+        seedPrivateAdminAndLogin();
         customer = createCustomer("PRIMARY");
     }
 
     @AfterEach
     void T261026_QBE_cleanup() {
-        QuarkusTransaction.requiringNew().run(() -> {
-            for (UUID quotationId : quotationIds) {
-                if (tableExists("costing_order_version_override") && tableExists("costing_order")) {
-                    em.createNativeQuery("DELETE FROM costing_order_version_override WHERE costing_order_id IN "
-                                    + "(SELECT id FROM costing_order WHERE quotation_id=:qid)")
-                            .setParameter("qid", quotationId).executeUpdate();
-                }
-                if (tableExists("costing_order")) {
-                    em.createNativeQuery("DELETE FROM costing_order WHERE quotation_id=:qid")
-                            .setParameter("qid", quotationId).executeUpdate();
-                }
-                em.createNativeQuery("DELETE FROM quotation WHERE id=:qid")
-                        .setParameter("qid", quotationId).executeUpdate();
-            }
-
-            for (UUID recordId : importRecordIds) {
-                em.createNativeQuery("UPDATE import_record SET quotation_id=NULL WHERE id=:id")
-                        .setParameter("id", recordId).executeUpdate();
-                em.createNativeQuery("DELETE FROM import_record WHERE id=:id")
-                        .setParameter("id", recordId).executeUpdate();
-            }
-
-            for (String customerNo : customerNos) {
-                for (String table : List.of(
-                        "sel_product_no", "sel_part_signature", "unit_price", "element_bom_item",
-                        "material_bom_item", "ds_quote_material_bom", "ds_quote_element_bom",
-                        "ds_quote_process", "ds_quote_customer_part", "material_customer_map")) {
-                    if (tableExists(table) && columnExists(table, "customer_no")) {
-                        em.createNativeQuery("DELETE FROM " + table + " WHERE customer_no=:cn")
-                                .setParameter("cn", customerNo).executeUpdate();
+        try {
+            QuarkusTransaction.requiringNew().run(() -> {
+                for (UUID quotationId : quotationIds) {
+                    if (tableExists("costing_order_version_override") && tableExists("costing_order")) {
+                        em.createNativeQuery("DELETE FROM costing_order_version_override WHERE costing_order_id IN "
+                                        + "(SELECT id FROM costing_order WHERE quotation_id=:qid)")
+                                .setParameter("qid", quotationId).executeUpdate();
                     }
+                    if (tableExists("costing_order")) {
+                        em.createNativeQuery("DELETE FROM costing_order WHERE quotation_id=:qid")
+                                .setParameter("qid", quotationId).executeUpdate();
+                    }
+                    em.createNativeQuery("DELETE FROM quotation WHERE id=:qid")
+                            .setParameter("qid", quotationId).executeUpdate();
                 }
-                if (tableExists("ds_quote_material")) {
-                    em.createNativeQuery("DELETE FROM ds_quote_material WHERE customer_no=:cn "
-                                    + "OR material_no LIKE :prefix")
-                            .setParameter("cn", customerNo)
-                            .setParameter("prefix", PREFIX + "%").executeUpdate();
-                }
-            }
 
-            Set<String> allMaterials = new LinkedHashSet<>(materialNos);
-            allMaterials.addAll(generatedMaterialNos);
-            if (!allMaterials.isEmpty()) {
-                for (String table : List.of("ds_quote_material_bom", "ds_quote_element_bom")) {
-                    if (tableExists(table) && columnExists(table, "material_no")) {
-                        em.createNativeQuery("DELETE FROM " + table
-                                        + " WHERE material_no IN (:nos) OR material_no LIKE :prefix")
-                                .setParameter("nos", allMaterials)
+                for (UUID recordId : importRecordIds) {
+                    em.createNativeQuery("UPDATE import_record SET quotation_id=NULL WHERE id=:id")
+                            .setParameter("id", recordId).executeUpdate();
+                    em.createNativeQuery("DELETE FROM import_record WHERE id=:id")
+                            .setParameter("id", recordId).executeUpdate();
+                }
+
+                for (String customerNo : customerNos) {
+                    for (String table : List.of(
+                            "sel_product_no", "sel_part_signature", "unit_price", "element_bom_item",
+                            "material_bom_item", "ds_quote_material_bom", "ds_quote_element_bom",
+                            "ds_quote_process", "ds_quote_customer_part", "material_customer_map")) {
+                        if (tableExists(table) && columnExists(table, "customer_no")) {
+                            em.createNativeQuery("DELETE FROM " + table + " WHERE customer_no=:cn")
+                                    .setParameter("cn", customerNo).executeUpdate();
+                        }
+                    }
+                    if (tableExists("ds_quote_material")) {
+                        em.createNativeQuery("DELETE FROM ds_quote_material WHERE customer_no=:cn "
+                                        + "OR material_no LIKE :prefix")
+                                .setParameter("cn", customerNo)
                                 .setParameter("prefix", PREFIX + "%").executeUpdate();
                     }
                 }
+
+                Set<String> allMaterials = new LinkedHashSet<>(materialNos);
+                allMaterials.addAll(generatedMaterialNos);
+                if (!allMaterials.isEmpty()) {
+                    for (String table : List.of("ds_quote_material_bom", "ds_quote_element_bom")) {
+                        if (tableExists(table) && columnExists(table, "material_no")) {
+                            em.createNativeQuery("DELETE FROM " + table
+                                            + " WHERE material_no IN (:nos) OR material_no LIKE :prefix")
+                                    .setParameter("nos", allMaterials)
+                                    .setParameter("prefix", PREFIX + "%").executeUpdate();
+                        }
+                    }
+                }
+                if (!allMaterials.isEmpty() && tableExists("material_master")) {
+                    em.createNativeQuery("DELETE FROM material_master WHERE material_no IN (:nos) "
+                                    + "OR material_no LIKE :prefix")
+                            .setParameter("nos", allMaterials)
+                            .setParameter("prefix", PREFIX + "%").executeUpdate();
+                }
+                for (UUID customerId : customerIds) {
+                    em.createNativeQuery("DELETE FROM customer_contact WHERE customer_id=:id")
+                            .setParameter("id", customerId).executeUpdate();
+                    em.createNativeQuery("DELETE FROM customer WHERE id=:id")
+                            .setParameter("id", customerId).executeUpdate();
+                }
+            });
+        } finally {
+            try {
+                cleanupPrivateAdmin();
+            } finally {
+                quotationIds.clear();
+                customerIds.clear();
+                customerNos.clear();
+                materialNos.clear();
+                generatedMaterialNos.clear();
+                importRecordIds.clear();
+                sessionCookie = null;
+                adminUsername = null;
             }
-            if (!allMaterials.isEmpty() && tableExists("material_master")) {
-                em.createNativeQuery("DELETE FROM material_master WHERE material_no IN (:nos) "
-                                + "OR material_no LIKE :prefix")
-                        .setParameter("nos", allMaterials)
-                        .setParameter("prefix", PREFIX + "%").executeUpdate();
-            }
-            for (UUID customerId : customerIds) {
-                em.createNativeQuery("DELETE FROM customer_contact WHERE customer_id=:id")
-                        .setParameter("id", customerId).executeUpdate();
-                em.createNativeQuery("DELETE FROM customer WHERE id=:id")
-                        .setParameter("id", customerId).executeUpdate();
-            }
-        });
-        quotationIds.clear();
-        customerIds.clear();
-        customerNos.clear();
-        materialNos.clear();
-        generatedMaterialNos.clear();
-        importRecordIds.clear();
+        }
     }
 
     @Test
@@ -353,7 +368,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         bindBody.put("bindExistingMaterialNo", bindNo);
         Statistics bindStatistics = statistics();
         bindStatistics.clear();
-        Response bound = RestAssured.given().contentType(ContentType.JSON).body(bindBody)
+        Response bound = request().contentType(ContentType.JSON).body(bindBody)
                 .post("/api/cpq/configure-product/quotations/" + bindQuotation);
         assertEquals(200, bound.statusCode(), "AC-18：绑定已有产品失败：" + bound.asString());
         long bindProfitQueries = profitQueryCount(bindStatistics);
@@ -381,7 +396,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
                         "ratio", "100", "elements", List.of())),
                 "processNos", List.of("Z100"),
                 "quantity", 1)));
-        Response configured = RestAssured.given().contentType(ContentType.JSON).body(configuredBody)
+        Response configured = request().contentType(ContentType.JSON).body(configuredBody)
                 .post("/api/cpq/configure-product/quotations/" + configuredQuotation);
         assertEquals(200, configured.statusCode(), "AC-18：选配新铸产品失败：" + configured.asString());
         List<Map<String, Object>> configuredLines = configured.jsonPath().getList("lineItems");
@@ -403,7 +418,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         assertEquals(2, lines(sourceBefore).size(), "复制前源单必须有 2 行");
         Map<String, Object> amountFingerprint = amountFingerprint(sourceBefore);
 
-        Response copied = RestAssured.given().contentType(ContentType.JSON).body(Map.of())
+        Response copied = request().contentType(ContentType.JSON).body(Map.of())
                 .post("/api/cpq/quotations/" + source + "/copy");
         assertEquals(200, copied.statusCode(), "AC-18：复制失败：" + copied.asString());
         UUID copyId = UUID.fromString(copied.jsonPath().getString("data.id"));
@@ -418,7 +433,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         assertEquals(amountFingerprint, amountFingerprint(sourceAfter),
                 "AC-18：利润不得参与小计、VAT、折扣或总额");
 
-        Response exportView = RestAssured.given().get(
+        Response exportView = request().get(
                 "/api/cpq/quotations/" + source + "/export-excel-view");
         assertEquals(200, exportView.statusCode(), "AC-18：导出视图失败：" + exportView.asString());
         assertFalse(exportView.asString().contains("profit") || exportView.asString().contains("利润"),
@@ -430,7 +445,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     void T261026_QBE_22_importMaterializationFreezesProfit() throws Exception {
         String materialNo = PREFIX + "IMPORT_MAT";
         byte[] workbook = quotationImportWorkbook(materialNo, "1.234567891500");
-        Response imported = RestAssured.given()
+        Response imported = request()
                 .multiPart("customerId", customer.id().toString())
                 .multiPart("file", PREFIX + "quotation-import.xlsx", workbook, XLSX_MIME)
                 .post("/api/cpq/dataset/quote/quotation-import");
@@ -452,7 +467,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         createBody.put("categoryId", null);
         createBody.put("customerTemplateId", null);
         createBody.put("costingTemplateId", null);
-        Response created = RestAssured.given().contentType(ContentType.JSON).body(createBody)
+        Response created = request().contentType(ContentType.JSON).body(createBody)
                 .post("/api/cpq/dataset/quote/create-quotation");
         assertEquals(200, created.statusCode(), "导入建单失败：" + created.asString());
         UUID quotationId = UUID.fromString(created.jsonPath().getString("data.quotationId"));
@@ -469,8 +484,52 @@ class T261026_QBE_QuotationProfitSnapshotTest {
 
     // ────── HTTP contract helpers ──────
 
+    private void seedPrivateAdminAndLogin() {
+        adminUsername = PREFIX + "ADMIN_" + suffix();
+        assertTrue(adminUsername.length() <= 32, "私有管理员用户名不得超过 32 字符");
+        String passwordHash = BCrypt.hashpw(ADMIN_PASSWORD, BCrypt.gensalt(10));
+        QuarkusTransaction.requiringNew().run(() -> em.createNativeQuery("""
+                INSERT INTO "user"
+                  (username,full_name,email,password_hash,role,status,is_first_login,failed_login_attempts)
+                VALUES (:username,:fullName,:email,:passwordHash,'SYSTEM_ADMIN','ACTIVE',false,0)
+                """).setParameter("username", adminUsername)
+                .setParameter("fullName", PREFIX + "私有管理员")
+                .setParameter("email", adminUsername.toLowerCase() + "@example.invalid")
+                .setParameter("passwordHash", passwordHash)
+                .executeUpdate());
+
+        Response login = RestAssured.given().contentType(ContentType.JSON)
+                .body(Map.of("username", adminUsername, "password", ADMIN_PASSWORD))
+                .post("/api/cpq/auth/login");
+        assertEquals(200, login.statusCode(), "私有 SYSTEM_ADMIN 登录失败：" + login.asString());
+        assertEquals("SYSTEM_ADMIN", login.jsonPath().getString("data.role"),
+                "私有测试用户必须以 SYSTEM_ADMIN 身份登录");
+        sessionCookie = login.cookie("CPQ_SESSION");
+        assertTrue(sessionCookie != null && !sessionCookie.isBlank(),
+                "私有 SYSTEM_ADMIN 登录 200 但未返回 CPQ_SESSION");
+    }
+
+    private void cleanupPrivateAdmin() {
+        if (adminUsername == null) return;
+        String username = adminUsername;
+        QuarkusTransaction.requiringNew().run(() -> {
+            em.createNativeQuery("DELETE FROM \"user\" WHERE username=:username")
+                    .setParameter("username", username).executeUpdate();
+            long remaining = ((Number) em.createNativeQuery(
+                            "SELECT count(*) FROM \"user\" WHERE username=:username")
+                    .setParameter("username", username).getSingleResult()).longValue();
+            assertEquals(0L, remaining, "私有 SYSTEM_ADMIN 测试用户未清理干净：" + username);
+        });
+    }
+
+    private RequestSpecification request() {
+        assertTrue(sessionCookie != null && !sessionCookie.isBlank(),
+                "HTTP 请求前必须建立私有 SYSTEM_ADMIN CPQ_SESSION");
+        return RestAssured.given().cookie("CPQ_SESSION", sessionCookie);
+    }
+
     private UUID createQuotation(CustomerRef owner, String label) {
-        Response response = RestAssured.given().contentType(ContentType.JSON)
+        Response response = request().contentType(ContentType.JSON)
                 .body(Map.of("customerId", owner.id().toString(),
                         "name", PREFIX + label + "_" + suffix()))
                 .post("/api/cpq/quotations");
@@ -483,7 +542,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     }
 
     private Response getQuotation(UUID quotationId) {
-        Response response = RestAssured.given().get("/api/cpq/quotations/" + quotationId);
+        Response response = request().get("/api/cpq/quotations/" + quotationId);
         assertEquals(200, response.statusCode(), "GET quotation 失败：" + response.asString());
         List<Map<String, Object>> rows = response.jsonPath().getList("data.lineItems");
         assertNotNull(rows, "GET 必须含 data.lineItems[]：" + response.asString());
@@ -507,7 +566,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         body.put("added", added);
         body.put("modified", modified);
         body.put("removed", List.of());
-        return RestAssured.given().contentType(ContentType.JSON).body(body)
+        return request().contentType(ContentType.JSON).body(body)
                 .put("/api/cpq/quotations/" + quotationId + "/draft");
     }
 
@@ -533,8 +592,8 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         return line;
     }
 
-    private static Response postEmpty(String path) {
-        return RestAssured.given().contentType(ContentType.JSON).body(Map.of()).post(path);
+    private Response postEmpty(String path) {
+        return request().contentType(ContentType.JSON).body(Map.of()).post(path);
     }
 
     private static long version(Response quotation) {
@@ -596,7 +655,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     // ────── candidate/existing + SQL count ──────
 
     private Response candidateResponse(CustomerRef owner) {
-        Response response = RestAssured.given().queryParam("customerId", owner.id())
+        Response response = request().queryParam("customerId", owner.id())
                 .get("/api/cpq/quotations/customer-part-candidates");
         assertEquals(200, response.statusCode(), "候选接口失败：" + response.asString());
         assertNotNull(response.jsonPath().getList("data"), "候选接口缺 data[]");
@@ -610,7 +669,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     }
 
     private Response existingResponse(UUID quotationId, String salesPartNo) {
-        Response response = RestAssured.given().queryParam("page", 0).queryParam("size", 20)
+        Response response = request().queryParam("page", 0).queryParam("size", 20)
                 .queryParam("salesPartNo", salesPartNo)
                 .get("/api/cpq/quotations/" + quotationId + "/existing-products");
         assertEquals(200, response.statusCode(), "已有产品接口失败：" + response.asString());
@@ -763,7 +822,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         long deadline = System.nanoTime() + Duration.ofMinutes(3).toNanos();
         Response last = null;
         while (System.nanoTime() < deadline) {
-            last = RestAssured.given().get(
+            last = request().get(
                     "/api/cpq/dataset/quote/quotation-import/" + recordId);
             assertEquals(200, last.statusCode(), "导入轮询失败：" + last.asString());
             Map<String, Object> data = last.jsonPath().getMap("data");
@@ -780,7 +839,7 @@ class T261026_QBE_QuotationProfitSnapshotTest {
         long deadline = System.nanoTime() + Duration.ofMinutes(3).toNanos();
         Response last = null;
         while (System.nanoTime() < deadline) {
-            last = RestAssured.given().get(
+            last = request().get(
                     "/api/cpq/quotations/" + quotationId + "/materialize-status");
             assertEquals(200, last.statusCode(), "物化轮询失败：" + last.asString());
             Boolean done = last.jsonPath().getBoolean("data.done");
