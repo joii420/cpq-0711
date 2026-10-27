@@ -714,9 +714,12 @@ DB_USERNAME=postgres DB_PASSWORD=<redacted> \
 
 ### 合并与环境收尾
 
+- 特性分支以合并提交 `5d20d17d` 吸收最新 `master@e35e3e1f`；唯一冲突为 `dev-docs/INDEX.md`，按并集保留文件解密任务的已合并状态与本任务挂起状态，业务代码均自动合并。
+- 吸收最新主线后的复验：前端 `npx tsc -b --pretty false` 通过，4 个精度/草稿相关 Vitest 文件 `40/40`；后端将专项与相关回归合并执行，`Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`，`BUILD SUCCESS`（1:28）。
 - `git merge-tree --write-tree master feat/task-261026-quote-profit-card` 退出码 0，证明已提交分支与当前 `master` 可自动合并。
 - 实际合并仍被主工作区既有未提交改动阻塞：`QuotationStep2.tsx`、`QuotationWizard.tsx`、`ReadonlyProductCard.tsx`、`dev-docs/INDEX.md` 与本分支重叠。为避免覆盖用户改动，未 stash、未 reset、未执行合并；等待用户决定如何处置。
 - 临时前后端服务已关闭，15173 / 18091 均无监听；本次未生成或更新部署包，也未部署到测试服务器。
+- 最终只读残留扫描：`T261026_BE_` / `T261026_QBE_` 的 import、user、customer、material、quotation line item 五类计数均为 0。
 
 ### 待回收清单（需用户批准后执行）
 
