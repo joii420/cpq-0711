@@ -27,7 +27,7 @@ type Fixture = {
 
 type ProfitOverlay = {
   setProfit: (next: ProfitMode) => void;
-  getCounts: () => { detailGets: number; ensurePosts: number };
+  getCounts: () => { detailGets: number; ensureCalls: number; ensureFullResponses: number };
   dispose: () => Promise<void>;
 };
 
@@ -145,7 +145,8 @@ function withProfitOverlay(
 async function installProfitOverlay(page: Page, fixture: Fixture): Promise<ProfitOverlay> {
   let mode: ProfitMode = null;
   let detailGets = 0;
-  let ensurePosts = 0;
+  let ensureCalls = 0;
+  let ensureFullResponses = 0;
   const detailPathname = `/api/cpq/quotations/${fixture.quotationId}`;
   const ensurePathname = `${detailPathname}/ensure-card-values`;
   const detailPattern = `**${detailPathname}`;
@@ -170,22 +171,33 @@ async function installProfitOverlay(page: Page, fixture: Fixture): Promise<Profi
     }
     // 先让真实 ensure mutation 完整执行，再只改其完整响应 DTO 中的利润字段。
     const upstream = await route.fetch();
+    ensureCalls++;
     if (!upstream.ok()) {
       await route.fulfill({ response: upstream });
       return;
     }
     const fullResponse = await upstream.json() as QuotationResponse;
+    const lines = fullResponse?.data?.lineItems;
+    // 未取得单飞锁时后端合法返回 { cardValuesWarming: true, lineItems: null }。
+    // 该轻量响应必须原样交给 QuotationWizard 触发退避轮询，不能伪造成完整 DTO。
+    if (!Array.isArray(lines)) {
+      await route.fulfill({ response: upstream });
+      return;
+    }
     const body = withProfitOverlay(fullResponse, fixture, mode, 'ensure-card-values POST');
-    ensurePosts++;
+    ensureFullResponses++;
     await route.fulfill({ response: upstream, body: JSON.stringify(body) });
   });
 
   return {
     setProfit: (next: ProfitMode) => { mode = next; },
-    getCounts: () => ({ detailGets, ensurePosts }),
+    getCounts: () => ({ detailGets, ensureCalls, ensureFullResponses }),
     dispose: async () => {
-      await page.unroute(detailPattern);
-      await page.unroute(ensurePattern);
+      // 等待在途轮询 handler 收敛，避免用例结束后 route.fetch/fulfill 再抛噪音。
+      await page.unrouteAll({ behavior: 'wait' });
+      if (!page.isClosed()) {
+        await page.goto('about:blank');
+      }
     },
   };
 }
@@ -217,8 +229,10 @@ async function openEditStep2(page: Page, fixture: Fixture, overlay: ProfitOverla
   const afterEditLoad = overlay.getCounts();
   expect(afterEditLoad.detailGets, '进入编辑向导后必须重新消费目标 quotation GET 响应')
     .toBeGreaterThan(beforeEditLoad.detailGets);
-  expect(afterEditLoad.ensurePosts, '进入编辑向导后必须消费真实 ensure-card-values 完整响应')
-    .toBeGreaterThan(beforeEditLoad.ensurePosts);
+  expect(afterEditLoad.ensureCalls, '进入编辑向导后必须实际调用 ensure-card-values')
+    .toBeGreaterThan(beforeEditLoad.ensureCalls);
+  expect(afterEditLoad.ensureFullResponses, 'ensure 轮询最终必须至少返回一次带 lineItems 的完整 DTO')
+    .toBeGreaterThan(beforeEditLoad.ensureFullResponses);
 }
 
 async function assertHeaderContract(
