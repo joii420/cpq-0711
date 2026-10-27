@@ -1,1 +1,50 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>增值税税率模块原型 · 当前基准</title><link rel="stylesheet" href="antd-like.css"></head><body><main class="shell"><div class="crumb">原型图 / 路径 A 前置产物</div><div class="topbar"><div><div class="brand">📌 当前基准：增值税税率模块</div><div class="muted small">本目录用于原型评审；未进入数据库、接口和业务代码实现。</div></div><span class="tag tag-orange">待用户定稿</span></div><div class="card"><div class="card-head"><div class="card-title">原型导航（按真实页面入口）</div><span class="small muted">2026-09-27</span></div><div style="padding:20px;display:grid;gap:12px"><a class="btn" href="公式配置-增值税标签.html">1. 组件管理 → 公式：插入「增值税」标签</a><a class="btn" href="报价单管理-从基础数据导入.html">2. 报价单管理 → 从基础数据导入：默认税务分类</a><a class="btn" href="产品管理-客户产品与销售产品.html">3. 产品管理 → 客户产品 / 销售产品：税务分类展示</a><a class="btn" href="组件管理-物料与元素BOM.html">4. 组件管理 → 物料与元素BOM：含税单价字段</a><a class="btn" href="报价编辑-Step2-税率快照.html">5. 报价单管理 → 打开报价单 → Step2：税率快照</a><a class="btn" href="税务分类与税率管理.html">6. 系统配置中心 → 税务分类与 VAT 税率</a><a class="btn" href="客户管理-默认VAT.html">7. 客户管理 → 客户编辑抽屉：默认 VAT</a><a class="btn" href="产品管理-销售产品税务分类.html">8. 产品管理 → 销售产品抽屉：税务分类补绑</a><a class="btn" href="报价创建-默认VAT与快照.html">9. 报价创建 Step1：默认 VAT</a></div></div><div class="section grid grid-3"><div class="card" style="padding:16px"><div class="state-label">已确认规则</div><div>产品有效税率优先于报价单税率；没有产品税率才使用报价单税率。</div></div><div class="card" style="padding:16px"><div class="state-label">快照规则</div><div>报价行保存 VAT 快照，修改价格重新计算仍使用快照，系统税率变更不回溯。</div></div><div class="card" style="padding:16px"><div class="state-label">计算规则</div><div>含税单价 = 元素单价 × (1 + [增值税])，结果写入现有 BOM 含税单价列。</div></div></div></main></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>增值税税率模块原型 · 复合基准</title>
+  <link rel="stylesheet" href="antd-like.css">
+</head>
+<body>
+<main class="shell">
+  <div class="crumb">原型图 / 路径 A 前置产物</div>
+  <div class="topbar">
+    <div>
+      <div class="brand">📌 当前基准：增值税税率模块（销售产品利润列除外）</div>
+      <div class="muted small">本目录用于原型评审；未进入数据库、接口和业务代码实现。</div>
+    </div>
+    <span class="tag tag-orange">待用户定稿</span>
+  </div>
+  <div class="card" style="padding:14px 18px;border-color:#ffd591;background:#fffbe6">
+    <div class="small" style="color:#874d00">
+      🕰️ <b>2026-10-26 局部移交：</b>第 3 份「产品管理 → 客户产品 / 销售产品」中，
+      销售产品表格的列集合与行内编辑已由
+      <code>task-261026-物料利润字段/原型图/</code> 接管：在「生产料号」后增加「利润」数字编辑列。
+      本目录中的税务分类、VAT、客户产品及其他页面仍是当前基准。
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head">
+      <div class="card-title">原型导航（按真实页面入口）</div>
+      <span class="small muted">2026-09-27</span>
+    </div>
+    <div style="padding:20px;display:grid;gap:12px">
+      <a class="btn" href="公式配置-增值税标签.html">1. 组件管理 → 公式：插入「增值税」标签</a>
+      <a class="btn" href="报价单管理-从基础数据导入.html">2. 报价单管理 → 从基础数据导入：默认税务分类</a>
+      <a class="btn" href="产品管理-客户产品与销售产品.html">3. 🕰️ 局部历史｜产品管理 → 客户产品 / 销售产品：税务分类展示（利润列以 task-261026 为准）</a>
+      <a class="btn" href="组件管理-物料与元素BOM.html">4. 组件管理 → 物料与元素BOM：含税单价字段</a>
+      <a class="btn" href="报价编辑-Step2-税率快照.html">5. 报价单管理 → 打开报价单 → Step2：税率快照</a>
+      <a class="btn" href="税务分类与税率管理.html">6. 系统配置中心 → 税务分类与 VAT 税率</a>
+      <a class="btn" href="客户管理-默认VAT.html">7. 客户管理 → 客户编辑抽屉：默认 VAT</a>
+      <a class="btn" href="产品管理-销售产品税务分类.html">8. 产品管理 → 销售产品抽屉：税务分类补绑</a>
+      <a class="btn" href="报价创建-默认VAT与快照.html">9. 报价创建 Step1：默认 VAT</a>
+    </div>
+  </div>
+  <div class="section grid grid-3">
+    <div class="card" style="padding:16px"><div class="state-label">已确认规则</div><div>产品有效税率优先于报价单税率；没有产品税率才使用报价单税率。</div></div>
+    <div class="card" style="padding:16px"><div class="state-label">快照规则</div><div>报价行保存 VAT 快照，修改价格重新计算仍使用快照，系统税率变更不回溯。</div></div>
+    <div class="card" style="padding:16px"><div class="state-label">计算规则</div><div>含税单价 = 元素单价 × (1 + [增值税])，结果写入现有 BOM 含税单价列。</div></div>
+  </div>
+</main>
+</body>
+</html>
