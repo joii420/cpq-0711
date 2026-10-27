@@ -58,6 +58,16 @@ public final class DsPartsPage {
         }
 
         /**
+         * 报价物料利润（task-261026）。{@code numeric(26,12)} 以字符串回传避免 JS 精度丢失。
+         *
+         * <p>只有物料表真实声明 {@code profit} 时才调用：报价 items 恒含该键
+         * （值可为 {@code null}），基础/详细核价 items 整个省略。
+         */
+        public void putProfit(String value) {
+            dynamic.put("profit", value);
+        }
+
+        /**
          * 料号类型（api.md §3，D-26 / R-1.6，2026-09-03）—— 取值域 {@code 零件} / {@code 外购件}。
          *
          * <p>与 {@link #putProductionNo} 同一套「键的有无由数据集决定」口径：三套数据集的物料表

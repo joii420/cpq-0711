@@ -82,7 +82,11 @@ public class QuoteRegistry extends AbstractDatasetRegistry {
                 // 🚫 不是靠 DB 列 DEFAULT（全列 INSERT 下永不触发，R-1.7 实证）。
                 // 只有报价侧这一张表有；核价两套的物料表【不加】。
                 col("category_code", "产品分类", "VALUE", "STRING", "varchar(128)", false, false)
-                        .categoryRef()
+                        .categoryRef(),
+                // task-261026：利润是报价物料的可空基础属性。页面可单列维护，
+                // 因此导入空格必须保留已维护值；页面显式 null 仍由 PUT 清空。
+                col("profit", "利润", "VALUE", "DECIMAL", "numeric(26,12)", false, false)
+                        .partEditable().preserveOnNull()
         )));
 
         // ── 02 · sheet「客户料号」 → ds_quote_customer_part（免版本）
