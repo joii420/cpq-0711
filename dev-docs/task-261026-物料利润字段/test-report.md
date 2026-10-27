@@ -1,6 +1,6 @@
 # 测试报告
 
-> 2026-10-27 验收期扩围结果：新增“报价单产品卡片利润快照”AC-14~AC-20 已完成实现与自动化验证；最终证据见文末“扩围主线复验”。当前只因主工作区存在 4 个重叠未提交文件而未合并，状态为挂起；不得据此宣称已合并或已部署。
+> 2026-10-27 验收期扩围结果：新增“报价单产品卡片利润快照”AC-14~AC-20 已完成实现与自动化验证；最终证据见文末“扩围主线复验”。当前只因主工作区存在 5 个重叠未提交文件而未合并，状态为挂起；不得据此宣称已合并或已部署。
 
 ## 测试服务器部署与远端亲验（2026-10-26 PDT / 2026-10-27 CST）
 
@@ -714,10 +714,10 @@ DB_USERNAME=postgres DB_PASSWORD=<redacted> \
 
 ### 合并与环境收尾
 
-- 特性分支以合并提交 `5d20d17d` 吸收最新 `master@e35e3e1f`；唯一冲突为 `dev-docs/INDEX.md`，按并集保留文件解密任务的已合并状态与本任务挂起状态，业务代码均自动合并。
+- 特性分支以合并提交 `5d20d17d` 吸收 `master@e35e3e1f`；唯一冲突为 `dev-docs/INDEX.md`，按并集保留文件解密任务的已合并状态与本任务挂起状态，业务代码均自动合并。随后继续无冲突吸收纯文档提交 `master@cf758a3c`。
 - 吸收最新主线后的复验：前端 `npx tsc -b --pretty false` 通过，4 个精度/草稿相关 Vitest 文件 `40/40`；后端将专项与相关回归合并执行，`Tests run: 26, Failures: 0, Errors: 0, Skipped: 0`，`BUILD SUCCESS`（1:28）。
 - `git merge-tree --write-tree master feat/task-261026-quote-profit-card` 退出码 0，证明已提交分支与当前 `master` 可自动合并。
-- 实际合并仍被主工作区既有未提交改动阻塞：`QuotationStep2.tsx`、`QuotationWizard.tsx`、`ReadonlyProductCard.tsx`、`dev-docs/INDEX.md` 与本分支重叠。为避免覆盖用户改动，未 stash、未 reset、未执行合并；等待用户决定如何处置。
+- 实际合并仍被主工作区既有未提交改动阻塞：`QuotationStep2.tsx`、`QuotationWizard.tsx`、`ReadonlyProductCard.tsx`、`dev-docs/INDEX.md`、`docs/RECORD.md` 与本分支重叠。为避免覆盖用户改动，未 stash、未 reset、未执行合并；等待用户决定如何处置。
 - 临时前后端服务已关闭，15173 / 18091 均无监听；本次未生成或更新部署包，也未部署到测试服务器。
 - 最终只读残留扫描：`T261026_BE_` / `T261026_QBE_` 的 import、user、customer、material、quotation line item 五类计数均为 0。
 
