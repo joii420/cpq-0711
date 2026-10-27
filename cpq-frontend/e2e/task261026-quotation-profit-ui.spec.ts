@@ -37,8 +37,10 @@ function isKnownBaselineConsoleError(text: string): boolean {
     || /^Warning: \[antd: Space\] [`']?direction[`']? is deprecated\b/.test(value)
     || /^Warning: \[antd: Alert\] [`']?message[`']? is deprecated\b/.test(value)
     || /^Warning: \[antd: message\] Static function can not consume context like dynamic theme\./.test(value)
-    || /^(?:Warning:\s*)?In HTML, (?:<form>|%s) cannot be a descendant of (?:<form>|%s)\./.test(value)
-    || /^(?:Warning:\s*)?<form> cannot contain a nested <form>\./.test(value)
+    || /^Warning: Instance created by `useForm` is not connected to any Form element\. Forget to pass `form` prop\?$/.test(value)
+    || /^Warning: \[antd: Spin\] `tip` is deprecated\. Please use `description` instead\.$/.test(value)
+    || /^(?:Warning:\s*)?In HTML, (?:<form>|%s|<%s>) cannot be a descendant of (?:<form>|%s|<%s>)\.(?:\s|$)/.test(value)
+    || /^(?:Warning:\s*)?(?:<form>|<%s>) cannot contain a nested (?:<form>|%s)\.(?:\s|$)/.test(value)
     || /^Warning: validateDOMNesting\(\.\.\.\): <form> cannot appear as a descendant of <form>\./.test(value);
 }
 
