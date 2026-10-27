@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>报价单编辑态 · 利润提示框</title><link rel="stylesheet" href="prototype.css"></head>
+<body><main class="page">
+  <section class="card pad">
+    <h1>📌 当前基准 · 报价单编辑态产品卡片</h1>
+    <div class="muted">局部接管：在 VAT 提示框右侧增加利润提示框；其余布局与交互保持现状。</div>
+    <span class="tag">AC-14 / AC-15 / AC-16</span><span class="tag gray">编辑态</span>
+    <div class="alert warn"><b>精确规则：</b>有值按现行最多 9 位小数、HALF_UP、去尾零规则显示 <code>利润: xx</code>，无快照（含历史报价）显示 <code>利润: -</code>。利润不是百分比或金额，不追加符号；本提示框不可编辑。</div>
+  </section>
+
+  <section class="card pad">
+    <h2>默认态 · 当前产品未维护利润</h2>
+    <div class="quote-canvas">
+      <div class="quote-card">
+        <div class="quote-head">
+          <div class="quote-head-left">
+            <span class="quote-sku">客户产品编号: W003374021711</span>
+            <span class="quote-sku">单位: g</span>
+            <span class="quote-vat">VAT 13% · 产品税务分类</span>
+            <span class="quote-profit" title="该报价行未冻结利润">利润: -</span><span class="callout">← 紧跟 VAT</span>
+          </div>
+          <div class="quote-head-right"><span class="quote-product-name">料号1</span><span class="quote-part">销售料号: S3120011203</span><span class="quote-delete" title="删除产品">⌫</span></div>
+        </div>
+        <div class="quote-tabs"><span class="quote-tab active">产品</span><span class="quote-tab">物料</span><span class="quote-tab">材料成本</span><span class="quote-tab">来料固定加工费</span><span class="quote-tab">其他费用</span></div>
+        <table class="quote-table"><thead><tr><th>销售料号</th><th>品名</th><th>规格</th><th>单位</th><th>税率</th></tr></thead><tbody><tr><td>S3120011203</td><td>料号1</td><td>Φ50</td><td>g</td><td>13%</td></tr></tbody></table>
+        <div class="quote-summary">产品小计&nbsp; 217.910601614 USD</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card pad">
+    <h2>数值与边界状态</h2>
+    <div class="state-row">
+      <div class="mini-state"><b>已冻结利润</b><div class="muted small">数据库值 12.500000000000</div><span class="quote-profit">利润: 12.5</span></div>
+      <div class="mini-state"><b>历史报价 / 空利润</b><div class="muted small">profit_snapshot = NULL</div><span class="quote-profit">利润: -</span></div>
+      <div class="mini-state"><b>最长合法值</b><div class="muted small">原始快照 12 位；显示最多 9 位且不得挤乱右侧</div><span class="quote-profit" title="原始快照: -99999999999999.999999999999">利润: -99999999999999.999999999</span></div>
+    </div>
+    <div class="alert"><b>禁用/错误态不适用：</b>该提示框是只读快照展示，不提供点击、编辑、禁用或错误交互；异常/缺失统一降级为 <code>利润: -</code>，页面不得出现错误遮罩。</div>
+  </section>
+</main></body></html>
