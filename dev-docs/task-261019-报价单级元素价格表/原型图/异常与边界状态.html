@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>元素价格表 · 异常与边界状态</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f5f5;
+        color: #202124;
+        font:
+          14px/1.55 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          sans-serif;
+      }
+      .page {
+        max-width: 1180px;
+        margin: 30px auto;
+        padding: 0 18px;
+      }
+      h1 {
+        font-size: 22px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e5e7eb;
+        border-radius: 9px;
+        padding: 17px;
+      }
+      .title {
+        font-weight: 650;
+        margin-bottom: 8px;
+      }
+      .muted {
+        font-size: 12px;
+        color: #667085;
+      }
+      .alert {
+        padding: 11px;
+        border-radius: 6px;
+        margin-top: 10px;
+      }
+      .red {
+        background: #fff2f0;
+        border: 1px solid #ffccc7;
+        color: #a8071a;
+      }
+      .gold {
+        background: #fffbe6;
+        border: 1px solid #ffe58f;
+        color: #874d00;
+      }
+      .blue {
+        background: #e6f4ff;
+        border: 1px solid #91caff;
+        color: #0958d9;
+      }
+      .gray {
+        background: #fafafa;
+        border: 1px solid #d9d9d9;
+        color: #666;
+      }
+      .btn {
+        height: 34px;
+        border: 1px solid #d0d5dd;
+        border-radius: 6px;
+        background: #fff;
+        padding: 0 13px;
+        margin-top: 10px;
+      }
+      .primary {
+        background: #1677ff;
+        border-color: #1677ff;
+        color: #fff;
+      }
+      .btn:disabled {
+        background: #f5f5f5;
+        color: #aaa;
+      }
+      .diff {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 9px;
+      }
+      .diff th,
+      .diff td {
+        padding: 8px;
+        border-bottom: 1px solid #eee;
+        text-align: left;
+      }
+      .long {
+        overflow-wrap: anywhere;
+      }
+      .empty {
+        text-align: center;
+        padding: 28px;
+        color: #98a2b3;
+      }
+      @media (max-width: 750px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .page {
+          margin: 15px auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1>报价单级元素价格表 · 异常与边界状态基准</h1>
+      <p class="muted">
+        这些状态与主流程原型共同构成前端验收基准；正式动作以后端门禁为准。
+      </p>
+      <section class="grid">
+        <div class="card">
+          <div class="title">空元素集合</div>
+          <div class="empty">
+            当前报价尚未添加产品<br />添加产品后，系统才会建立元素价格修订。
+          </div>
+          <button class="btn" disabled>提交审批</button>
+        </div>
+        <div class="card">
+          <div class="title">无编辑权限 / 已提交</div>
+          <div class="alert gray">
+            报价已提交，价格修订 R3 只读。你可以查看价格来源与历史，但不能改价。
+          </div>
+          <button class="btn" disabled>保存价格</button>
+        </div>
+        <div class="card">
+          <div class="title">前后端结果不一致</div>
+          <div class="alert red">
+            <b>校验不通过 · 1 处差异</b
+            ><br />请按后端返回的输入/引擎版本重新加载并计算；不能忽略后提交。
+          </div>
+          <table class="diff">
+            <tr>
+              <th>位置</th>
+              <th>前端预览</th>
+              <th>后端结果</th>
+            </tr>
+            <tr>
+              <td>S0001 / 材质 / 小计</td>
+              <td>123.450000000</td>
+              <td>123.440000000</td>
+            </tr>
+          </table>
+          <button class="btn primary">重新同步并计算</button>
+          <button class="btn" disabled>提交审批</button>
+        </div>
+        <div class="card">
+          <div class="title">后端计算失败</div>
+          <div class="alert gold">
+            <b>目标投影 P4 构建失败</b><br />错误码
+            PROJECTION_ENGINE_TIMEOUT。旧活动投影 P3
+            仍可查看，但不代表当前输入。
+          </div>
+          <button class="btn primary">重试 P4</button>
+          <button class="btn" disabled>提交审批</button>
+        </div>
+        <div class="card">
+          <div class="title">过期任务</div>
+          <div class="alert blue">
+            P4 完成前已产生更新的 P5，P4 已淘汰且不会成为正式结果。页面正在等待
+            P5。
+          </div>
+          <button class="btn" disabled>计算中…</button>
+        </div>
+        <div class="card">
+          <div class="title">长文本与缺价</div>
+          <div class="long">
+            <b>超长元素名称：</b
+            >客户定制高纯复合镀层用特殊合金元素（仅用于验证换行与可读性）
+          </div>
+          <div class="alert gold">
+            <b>缺少 CNY 单价</b><br />客户规则 v18 / 自定义交易日历 2026
+            年第四季度临时休市修订版 / 全部目标日均无有效样本。空值不会按 0
+            计算。
+          </div>
+          <button class="btn primary">人工补价</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

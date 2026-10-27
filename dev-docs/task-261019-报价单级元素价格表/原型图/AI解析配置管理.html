@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>AI 解析配置管理</title>
+    <style>
+      :root {
+        --b: #1677ff;
+        --bd: #e5e7eb;
+        --m: #667085;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f5f5f5;
+        color: #202124;
+        font:
+          14px/1.55 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          sans-serif;
+      }
+      .page {
+        max-width: 1220px;
+        margin: 30px auto;
+        padding: 0 18px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--bd);
+        border-radius: 9px;
+        margin-bottom: 15px;
+      }
+      .head {
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--bd);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .body {
+        padding: 18px;
+      }
+      .title {
+        font-size: 19px;
+        font-weight: 650;
+      }
+      .muted {
+        color: var(--m);
+        font-size: 12px;
+      }
+      .tabs {
+        display: flex;
+        gap: 22px;
+        border-bottom: 1px solid var(--bd);
+        overflow: auto;
+      }
+      .tab {
+        padding: 11px 2px;
+        white-space: nowrap;
+      }
+      .on {
+        color: var(--b);
+        border-bottom: 2px solid var(--b);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 9px;
+      }
+      .meta {
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        padding: 10px;
+      }
+      .meta label {
+        display: block;
+        color: var(--m);
+        font-size: 12px;
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid;
+        padding: 1px 7px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .green {
+        color: #237804;
+        background: #f6ffed;
+        border-color: #b7eb8f;
+      }
+      .blue {
+        color: #0958d9;
+        background: #e6f4ff;
+        border-color: #91caff;
+      }
+      .gold {
+        color: #874d00;
+        background: #fffbe6;
+        border-color: #ffe58f;
+      }
+      .btn {
+        height: 34px;
+        border: 1px solid #d0d5dd;
+        border-radius: 6px;
+        background: #fff;
+        padding: 0 13px;
+      }
+      .primary {
+        background: var(--b);
+        border-color: var(--b);
+        color: #fff;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .alert {
+        margin-top: 13px;
+        padding: 11px;
+        border-radius: 6px;
+        background: #e6f4ff;
+        border: 1px solid #91caff;
+      }
+      .release {
+        border: 1px solid #91caff;
+        background: #f7fbff;
+        border-radius: 8px;
+        padding: 14px;
+        margin-top: 14px;
+      }
+      .checks {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 9px;
+        margin-top: 12px;
+      }
+      .check {
+        border: 1px solid #b7eb8f;
+        background: #f6ffed;
+        border-radius: 6px;
+        padding: 10px;
+      }
+      .secret {
+        font-family: monospace;
+        letter-spacing: 1px;
+      }
+      @media (max-width: 720px) {
+        .grid,
+        .checks {
+          grid-template-columns: 1fr;
+        }
+        .page {
+          margin: 14px auto;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="card">
+        <div class="head">
+          <div>
+            <div class="title">AI 解析配置</div>
+            <div class="muted">
+              仅用于把客户价格策略自然语言转换为候选 DSL；正式取价不调用 AI
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn">连通性测试</button
+            ><button class="btn primary">新建解析 Release</button>
+          </div>
+        </div>
+        <div class="body">
+          <div class="tabs">
+            <span class="tab on">当前发布</span><span class="tab">Provider</span
+            ><span class="tab">Prompt 版本</span
+            ><span class="tab">Schema 版本</span
+            ><span class="tab">金标用例</span>
+          </div>
+          <div class="release">
+            <div class="head" style="padding: 0 0 12px; border: 0">
+              <div>
+                <b>Parser Release R5</b>
+                <span class="tag green">已发布并启用</span>
+                <div class="muted">发布后不可编辑；禁用只关闭自然语言入口</div>
+              </div>
+              <button class="btn">禁用</button>
+            </div>
+            <div class="grid">
+              <div class="meta">
+                <label>Provider / 模型</label><b>企业模型网关 · model-v3</b>
+              </div>
+              <div class="meta">
+                <label>Secret</label
+                ><b class="secret">已配置 · cpq/ai/pricing</b>
+              </div>
+              <div class="meta">
+                <label>Prompt / Schema</label><b>P8 / S4</b>
+              </div>
+              <div class="meta">
+                <label>连通状态</label><b>成功 · 842 ms</b>
+              </div>
+            </div>
+            <div class="checks">
+              <div class="check">
+                <b>金标 128 / 128</b><br /><span class="muted">全部通过</span>
+              </div>
+              <div class="check">
+                <b>歧义阻断 24 / 24</b><br /><span class="muted">全部通过</span>
+              </div>
+              <div class="check">
+                <b>Schema 非法 31 / 31</b><br /><span class="muted"
+                  >全部拒绝</span
+                >
+              </div>
+            </div>
+          </div>
+          <div class="alert">
+            <b>安全边界：</b>数据库只保存 Secret
+            引用；页面、普通系统配置接口、日志和导出不返回密钥。每次解析记录实际
+            Release、模型、Prompt 和 Schema 版本。
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="head">
+          <div>
+            <b>待发布 Release R6</b>
+            <div class="muted">Provider model-v4 · Prompt P9 · Schema S4</div>
+          </div>
+          <button class="btn" disabled title="金标存在失败">发布</button>
+        </div>
+        <div class="body">
+          <span class="tag gold">金标 126 / 128 · 2 条失败</span>
+          <p>
+            “上一完整自然月”被解析为滚动 30
+            天；“无价暂停确认”被错误转换为跳过。修正 Prompt
+            后必须重新运行全部金标，不允许豁免发布。
+          </p>
+        </div>
+      </div>
+    </main>
+  </body>
+</html>

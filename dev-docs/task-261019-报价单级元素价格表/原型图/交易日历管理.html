@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="icon" href="data:," />
+    <title>交易日历管理</title>
+    <style>
+      :root {
+        --b: #1677ff;
+        --bd: #e5e7eb;
+        --muted: #667085;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #f5f5f5;
+        color: #202124;
+        font:
+          14px/1.55 -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          "PingFang SC",
+          sans-serif;
+      }
+      .layout {
+        display: flex;
+        min-height: 100vh;
+      }
+      .nav {
+        width: 220px;
+        background: #001529;
+        color: #c7d0da;
+        padding: 18px;
+      }
+      .nav b {
+        color: #fff;
+        font-size: 16px;
+      }
+      .nav div {
+        padding: 11px 8px;
+      }
+      .nav .on {
+        margin: 8px -18px;
+        background: #1677ff;
+        color: #fff;
+        padding-left: 26px;
+      }
+      .main {
+        flex: 1;
+        min-width: 0;
+      }
+      .top {
+        height: 64px;
+        background: #fff;
+        border-bottom: 1px solid var(--bd);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 24px;
+      }
+      .page {
+        padding: 24px;
+        max-width: 1460px;
+        margin: auto;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid var(--bd);
+        border-radius: 9px;
+        margin-bottom: 16px;
+      }
+      .head {
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--bd);
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .title {
+        font-size: 18px;
+        font-weight: 650;
+      }
+      .muted {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .btn {
+        height: 34px;
+        border: 1px solid #d0d5dd;
+        border-radius: 6px;
+        background: #fff;
+        padding: 0 13px;
+      }
+      .primary {
+        background: var(--b);
+        border-color: var(--b);
+        color: #fff;
+      }
+      .body {
+        padding: 18px;
+      }
+      .filters {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 14px;
+        flex-wrap: wrap;
+      }
+      select,
+      input {
+        height: 34px;
+        border: 1px solid #d0d5dd;
+        border-radius: 6px;
+        padding: 0 9px;
+        background: #fff;
+      }
+      .table-wrap {
+        overflow: auto;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 900px;
+      }
+      th,
+      td {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        text-align: left;
+      }
+      th {
+        background: #fafafa;
+      }
+      .tag {
+        display: inline-block;
+        border: 1px solid;
+        padding: 1px 7px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .green {
+        color: #237804;
+        background: #f6ffed;
+        border-color: #b7eb8f;
+      }
+      .blue {
+        color: #0958d9;
+        background: #e6f4ff;
+        border-color: #91caff;
+      }
+      .gold {
+        color: #874d00;
+        background: #fffbe6;
+        border-color: #ffe58f;
+      }
+      .drawer {
+        position: fixed;
+        right: 0;
+        top: 0;
+        width: min(650px, 100vw);
+        height: 100vh;
+        background: #fff;
+        box-shadow: -7px 0 20px #0002;
+        display: flex;
+        flex-direction: column;
+      }
+      .dh,
+      .df {
+        padding: 16px 20px;
+        border-bottom: 1px solid var(--bd);
+      }
+      .df {
+        border-top: 1px solid var(--bd);
+        border-bottom: 0;
+        text-align: right;
+      }
+      .db {
+        padding: 18px 20px;
+        overflow: auto;
+        flex: 1;
+      }
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .meta {
+        border: 1px solid var(--bd);
+        border-radius: 6px;
+        padding: 9px;
+      }
+      .meta label {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .alert {
+        padding: 10px 12px;
+        border-radius: 6px;
+        margin: 12px 0;
+        background: #fffbe6;
+        border: 1px solid #ffe58f;
+        color: #874d00;
+      }
+      .days {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 5px;
+      }
+      .day {
+        border: 1px solid var(--bd);
+        border-radius: 5px;
+        padding: 7px;
+        min-height: 55px;
+      }
+      .closed {
+        background: #fff2f0;
+        border-color: #ffccc7;
+      }
+      .open {
+        background: #f6ffed;
+        border-color: #b7eb8f;
+      }
+      .tabs {
+        display: flex;
+        gap: 20px;
+        border-bottom: 1px solid var(--bd);
+        margin: 14px 0;
+      }
+      .tab {
+        padding: 9px 0;
+      }
+      .tab.on {
+        color: var(--b);
+        border-bottom: 2px solid var(--b);
+      }
+      @media (max-width: 800px) {
+        .nav {
+          display: none;
+        }
+        .page {
+          padding: 12px;
+        }
+        .drawer {
+          position: static;
+          width: 100%;
+          height: auto;
+        }
+        .summary {
+          grid-template-columns: 1fr;
+        }
+        .days {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="nav">
+        <b>CPQ 报价系统</b>
+        <div>定价策略</div>
+        <div class="on">交易日历</div>
+        <div>元素管理</div>
+        <div>系统管理</div>
+      </aside>
+      <main class="main">
+        <header class="top">
+          <span>定价管理 / 交易日历</span><span>定价经理</span>
+        </header>
+        <section class="page">
+          <div class="card">
+            <div class="head">
+              <div>
+                <div class="title">交易日历</div>
+                <div class="muted">
+                  管理市场、国家和客户日历；发布版本不可修改
+                </div>
+              </div>
+              <div class="actions">
+                <button class="btn">下载导入模板</button
+                ><button class="btn primary">新建日历</button>
+              </div>
+            </div>
+            <div class="body">
+              <div class="filters">
+                <input placeholder="日历编码 / 名称" /><select>
+                  <option>全部类型</option>
+                  <option>市场日历</option>
+                  <option>国家日历</option>
+                  <option>客户日历</option></select
+                ><select>
+                  <option>全部状态</option>
+                  <option>启用</option>
+                  <option>停用</option></select
+                ><button class="btn primary">查询</button>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>编码 / 名称</th>
+                      <th>类型</th>
+                      <th>时区</th>
+                      <th>当前发布版</th>
+                      <th>覆盖区间</th>
+                      <th>绑定</th>
+                      <th>状态</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>
+                        <b>SSE-CN</b><br /><span class="muted"
+                          >中国市场交易日历</span
+                        >
+                      </td>
+                      <td>MARKET</td>
+                      <td>Asia/Shanghai</td>
+                      <td><span class="tag blue">V3</span></td>
+                      <td>2026-01-01 ～ 2027-12-31</td>
+                      <td>3 个价格源</td>
+                      <td><span class="tag green">启用</span></td>
+                      <td>版本管理　编辑</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <b>CN-PUBLIC</b><br /><span class="muted"
+                          >中国法定节假日</span
+                        >
+                      </td>
+                      <td>COUNTRY</td>
+                      <td>Asia/Shanghai</td>
+                      <td><span class="tag blue">V2</span></td>
+                      <td>2026-01-01 ～ 2026-12-31</td>
+                      <td>1 条策略</td>
+                      <td><span class="tag gold">未来覆盖不足</span></td>
+                      <td>版本管理　编辑</td>
+                    </tr>
+                    <tr>
+                      <td>
+                        <b>CUST-SCHNEIDER</b><br /><span class="muted"
+                          >施耐德客户工作日历</span
+                        >
+                      </td>
+                      <td>CUSTOMER</td>
+                      <td>Asia/Shanghai</td>
+                      <td>—</td>
+                      <td>—</td>
+                      <td>0</td>
+                      <td><span class="tag green">启用</span></td>
+                      <td>创建首个版本</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+    <aside class="drawer">
+      <div class="dh">
+        <div class="title">中国市场交易日历 · 版本管理</div>
+        <div class="muted">SSE-CN · 最新发布 V3 · 绑定 3 个价格源</div>
+      </div>
+      <div class="db">
+        <div class="summary">
+          <div class="meta"><label>编辑版本</label><b>V4 草稿</b></div>
+          <div class="meta">
+            <label>覆盖区间</label><b>2027-01-01 ～ 2027-12-31</b>
+          </div>
+          <div class="meta"><label>完整性</label><b>365 / 365 天</b></div>
+        </div>
+        <div class="tabs">
+          <span class="tab on">月历维护</span><span class="tab">列表</span
+          ><span class="tab">导入/导出</span><span class="tab">版本差异</span>
+        </div>
+        <div class="alert">
+          <b>发布检查：</b>日期完整；0 个重复；OPEN 243 天、CLOSED 122
+          天。发布后不可修改。
+        </div>
+        <h4>2027 年 1 月</h4>
+        <div class="days">
+          <div class="day closed">
+            <b>1</b><br /><span class="muted">元旦</span>
+          </div>
+          <div class="day closed">
+            <b>2</b><br /><span class="muted">周末</span>
+          </div>
+          <div class="day closed">
+            <b>3</b><br /><span class="muted">周末</span>
+          </div>
+          <div class="day open">
+            <b>4</b><br /><span class="muted">正常交易</span>
+          </div>
+          <div class="day open">
+            <b>5</b><br /><span class="muted">正常交易</span>
+          </div>
+          <div class="day closed">
+            <b>6</b><br /><span class="muted">临时休市</span>
+          </div>
+          <div class="day open">
+            <b>7</b><br /><span class="muted">正常交易</span>
+          </div>
+        </div>
+        <p class="muted">
+          每一天都必须具有明确状态；未维护日期不能默认开市。日历状态不替代实际价格数据。
+        </p>
+      </div>
+      <div class="df">
+        <button class="btn">导入 Excel</button>
+        <button class="btn">保存草稿</button>
+        <button class="btn primary">校验并发布</button>
+      </div>
+    </aside>
+  </body>
+</html>
