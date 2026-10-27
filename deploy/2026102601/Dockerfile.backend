@@ -1,0 +1,24 @@
+FROM eclipse-temurin:21-jre
+
+WORKDIR /deployments
+
+COPY quarkus-app/lib/ /deployments/lib/
+COPY quarkus-app/quarkus-run.jar /deployments/cpq-server.jar
+COPY quarkus-app/app/ /deployments/app/
+COPY quarkus-app/quarkus/ /deployments/quarkus/
+
+EXPOSE 8201
+
+CMD ["java", \
+     "-XX:+UseG1GC", \
+     "-XX:MaxRAMPercentage=75.0", \
+     "-Duser.timezone=Asia/Shanghai", \
+     "-Dfile.encoding=UTF-8", \
+     "-Djava.util.logging.manager=org.jboss.logmanager.LogManager", \
+     "-Dquarkus.http.host=0.0.0.0", \
+     "-Dquarkus.http.port=8201", \
+     "-Dquarkus.profile=webtest", \
+     "-Dcpq.price-adjust.startup-recovery.enabled=false", \
+     "-Dquarkus.log.file.path=/logs/cpq-server.log", \
+     "-Dquarkus.http.limits.max-body-size=163840K", \
+     "-jar", "/deployments/cpq-server.jar"]
