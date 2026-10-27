@@ -1,0 +1,34 @@
+
+Running 1 test using 1 worker
+
+(node:208360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:208360) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh (34.1s)
+
+
+  1) e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 
+
+    TimeoutError: locator.click: Timeout 20000ms exceeded.
+    Call log:
+    [2m  - waiting for locator('.cmm-dir').filter({ hasText: 'T261026-CRYPTO-UI-DIR-1793085041480-208360' }).first().locator('.cmm-sec').filter({ hasText: '页签组件' }).first().getByText('页签组件', { exact: true }).first()[22m
+
+
+      208 |     const reopenedComponent = normalSection.locator('.cmm-c-name').filter({ hasText: COMPONENT_CODE }).first();
+      209 |     if (!await reopenedComponent.isVisible()) {
+    > 210 |       await normalSection.getByText('页签组件', { exact: true }).first().click();
+          |                                                                      ^
+      211 |     }
+      212 |     await expect(reopenedComponent,
+      213 |       'Commit result must survive drawer close, route switch and refresh').toBeVisible();
+        at /home/joii/project/cpq/.claude/worktrees/task-261026-file-decryption/cpq-frontend/e2e/task261026-file-crypto.spec.ts:210:70
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../../../../../../../tmp/T261026-POSTMERGE-E2E-ALXhab/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../../../../../../../tmp/T261026-POSTMERGE-E2E-ALXhab/playwright-output/task261026-file-crypto-T-U-c3f96-mmit---close-reopen-refresh/error-context.md
+
+  1 failed
+    e2e/task261026-file-crypto.spec.ts:62:1 › T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> close/reopen/refresh 

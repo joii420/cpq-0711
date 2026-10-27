@@ -1,0 +1,45 @@
+__  ____  __  _____   ___  __ ____  ______ 
+ --/ __ \/ / / / _ | / _ \/ //_/ / / / __/ 
+ -/ /_/ / /_/ / __ |/ , _/ ,< / /_/ /\ \   
+--\___\_\____/_/ |_/_/|_/_/|_|\____/___/   
+2026-10-27 00:13:54.868 WARN  [org.hib.val.int.met.agg.CascadingMetaDataBuilder] (main) HV000271: Using `@Valid` on a container (java.util.List) is deprecated. You should apply the annotation on the type argument(s). Affected element: params
+2026-10-27 00:13:55.127 WARN  [io.qua.config] (main) Unrecognized configuration key "quarkus.http.cors" was provided; it will be ignored; verify that the dependency extension for this configuration is set or that you did not make a typo
+2026-10-27 00:13:55.169 WARN  [io.qua.config] (main) The "quarkus.hibernate-orm.database.generation" config property is deprecated and should not be used anymore.
+2026-10-27 00:13:55.398 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties. These properties may not work correctly, and even if they do, that may change when upgrading to a newer version of Quarkus (even just a micro/patch version). Consider using a supported configuration property before falling back to unsupported ones. If there is no supported equivalent, make sure to file a feature request so that a supported configuration property can be added to Quarkus, and more importantly so that the configuration property is tested regularly. Unsupported properties being set: [hibernate.order_updates, hibernate.order_inserts]
+2026-10-27 00:13:55.399 WARN  [io.qua.hib.orm.run.FastBootHibernatePersistenceProvider] (JPA Startup Thread) Persistence-unit [<default>] sets unsupported properties that override Quarkus' own settings. These properties may break assumptions in Quarkus code and cause malfunctions. If this override is absolutely necessary, make sure to file a feature request or bug report so that a solution can be implemented in Quarkus. Unsupported properties that override Quarkus' own settings: [hibernate.order_updates]
+2026-10-27 00:13:56.246 INFO  [org.hib.orm.jdb.batch] (JPA Startup Thread) HHH100501: Automatic JDBC statement batching enabled (maximum batch size 100)
+2026-10-27 00:13:56.509 INFO  [com.cpq.dat.sql.BnfTableMetaSyncer] (main) [BnfTableMetaSyncer] startup sync OK: 49 entries upserted
+2026-10-27 00:13:56.515 INFO  [com.cpq.pri.ser.PriceAdjustStartupRecovery] (main) [price-adjust-recovery] cpq.price-adjust.startup-recovery.enabled=false，跳过启动收尾与预算续跑
+2026-10-27 00:13:56.663 INFO  [com.cpq.bui.sel.CostAllVersionViewSelfCheck] (main) [builder] 全版本视图自检通过：26 张 v_<主表>_all，逐列与主表双向一致（+is_current）
+2026-10-27 00:13:56.728 INFO  [com.cpq.dat.reg.DatasetSchemaSelfCheck] (main) [dataset] Registry↔DDL 自检通过：97 张表 / 1784 列（3 套数据集）
+2026-10-27 00:13:57.216 INFO  [com.cpq.sem.ser.SemanticGraphLoader] (main) Semantic graph reloaded: version=1 nodes=58 edges=90 tabViews=48
+2026-10-27 00:13:57.255 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.tab_type：48 行 / 6 种取值 [BOM, 主件, 外购件, 材质元素, 费用类, 零件]
+2026-10-27 00:13:57.280 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_tab_view.dialect：48 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-27 00:13:57.307 DEBUG [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] semantic_node.dialect：58 行 / 3 种取值 [COST_BASIC, COST_DETAIL, QUOTE]
+2026-10-27 00:13:57.308 INFO  [com.cpq.sem.ser.SemanticGraphKeyValueSelfCheck] (main) [semantic-graph] 键值列自检通过：3 条规则 / 共扫描 154 行（semantic_tab_view.tab_type, semantic_tab_view.dialect, semantic_node.dialect）
+2026-10-27 00:13:57.932 INFO  [com.cpq.dat.sql.QuoteViewValidationService] (main) [QuoteViewValidationService] 校验通过 total=0 ok=0（未命中白名单表的视图不计入统计范围外，已跳过）
+2026-10-27 00:13:58.006 INFO  [io.quarkus] (main) cpq-backend 1.0.0-SNAPSHOT on JVM (powered by Quarkus 3.34.3) started in 4.605s. Listening on: http://0.0.0.0:18456
+2026-10-27 00:13:58.006 INFO  [io.quarkus] (main) Profile prod activated. 
+2026-10-27 00:13:58.006 INFO  [io.quarkus] (main) Installed features: [agroal, cache, cdi, flyway, hibernate-orm, hibernate-orm-panache, hibernate-validator, jdbc-postgresql, mailer, narayana-jta, qute, reactive-routes, redis-client, rest, rest-jackson, scheduler, security, smallrye-context-propagation, vertx]
+2026-10-27 00:14:01.793 INFO  [com.cpq.aut.ser.AuthService] (executor-thread-2) User logged in: admin role=SYSTEM_ADMIN
+2026-10-27 00:14:01.830 INFO  [com.cpq.aut.res.AuthResource] (executor-thread-2) Session created for user: admin
+2026-10-27 00:14:04.019 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-3) Created component directory id=5222f3cc-14f4-4933-8853-437cefe2f22f name=T261026-CRYPTO-UI-DIR-1793085240157-210823
+2026-10-27 00:14:04.195 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 5 root directories
+2026-10-27 00:14:06.008 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-27 00:14:06.126 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-27 00:14:06.290 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-2) listTree: 6 root directories
+2026-10-27 00:14:07.478 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=da9ee8e7-4dd1-4a5d-a5e5-a8e064594852 operation=inspect bytes=45 elapsedMs=39 status=200
+2026-10-27 00:14:07.482 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=da9ee8e7-4dd1-4a5d-a5e5-a8e064594852 operation=decrypt bytes=45 elapsedMs=3 status=200
+2026-10-27 00:14:07.560 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-2) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-27 00:14:08.226 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=052ad910-683c-43b6-a702-bc883f790105 operation=inspect bytes=45 elapsedMs=2 status=200
+2026-10-27 00:14:08.228 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-1) [file-crypto] requestId=052ad910-683c-43b6-a702-bc883f790105 operation=decrypt bytes=45 elapsedMs=1 status=200
+2026-10-27 00:14:08.312 WARN  [com.cpq.com.ser.TabSemanticResolver] (executor-thread-1) [tab-semantic] comp=null builder_version 非空但 builder_config 为空
+2026-10-27 00:14:08.453 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=865e5e5b-f190-41f5-8ed3-744f51016290 operation=inspect bytes=45 elapsedMs=3 status=200
+2026-10-27 00:14:08.456 INFO  [com.cpq.com.fil.FileCryptoService] (executor-thread-2) [file-crypto] requestId=865e5e5b-f190-41f5-8ed3-744f51016290 operation=decrypt bytes=45 elapsedMs=2 status=200
+2026-10-27 00:14:08.488 WARN  [com.cpq.com.ser.ComponentImportService] (executor-thread-2) 导入 bundle 含老格式 Item(id=null)，UUID 类跨组件引用(cross_tab_ref.source)未重映射；component_subtotal.component_code 仍通过 codeMap 映射
+2026-10-27 00:14:08.727 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-27 00:14:12.031 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-27 00:14:12.179 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-27 00:14:12.324 DEBUG [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) listTree: 6 root directories
+2026-10-27 00:14:13.026 INFO  [com.cpq.com.ser.ComponentService] (executor-thread-1) Deleted component id=e0547ae4-686b-4f25-8dca-7498751301cf code=T261026-CRYPTO-UI-COMP-1793085240157-210823
+2026-10-27 00:14:13.109 INFO  [com.cpq.com.ser.ComponentDirectoryService] (executor-thread-1) Deleted component directory id=5222f3cc-14f4-4933-8853-437cefe2f22f

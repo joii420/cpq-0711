@@ -65,7 +65,8 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
 
   // Pre-warm the newly started Vite stack before the timed sequence assertions.
   await page.goto('/components');
-  await expect(page.locator('input[placeholder*="搜索"]').first()).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('组件管理', { exact: true }).first(),
+    '组件管理页标题应可见').toBeVisible({ timeout: 60_000 });
 
   const createDirectory = await page.request.post('/api/cpq/component-directories', {
     data: { name: DIR_NAME, parentId: null },
@@ -197,12 +198,18 @@ test('T-U01 / AC-4: encrypted Bundle preview -> policy re-preview -> commit -> c
     await page.goto('/dashboard');
     await page.goto('/components');
     await page.reload();
-    const search = page.locator('input[placeholder*="搜索"]').first();
-    await search.fill(COMPONENT_CODE);
     const reopenedDirectory = page.locator('.cmm-dir').filter({ hasText: DIR_NAME }).first();
     await expect(reopenedDirectory).toBeVisible();
-    await reopenedDirectory.locator('.cmm-dir-head').click();
-    await expect(reopenedDirectory.locator('.cmm-c-name').filter({ hasText: COMPONENT_CODE }).first(),
+    if (!await reopenedDirectory.evaluate(element => element.classList.contains('open'))) {
+      await reopenedDirectory.locator('.cmm-dir-head').click();
+    }
+    const normalSection = reopenedDirectory.locator('.cmm-sec').filter({ hasText: '页签组件' }).first();
+    await expect(normalSection, '私有目录内应有“页签组件”分组').toBeVisible();
+    const reopenedComponent = normalSection.locator('.cmm-c-name').filter({ hasText: COMPONENT_CODE }).first();
+    if (!await reopenedComponent.isVisible()) {
+      await normalSection.locator('.cmm-sec-title').click();
+    }
+    await expect(reopenedComponent,
       'Commit result must survive drawer close, route switch and refresh').toBeVisible();
 
     await page.screenshot({ path: path.join(EVIDENCE, 'AC-4-final-component.png'), fullPage: true });
