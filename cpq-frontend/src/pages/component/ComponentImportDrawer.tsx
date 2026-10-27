@@ -97,7 +97,7 @@ const BUILDER_COORD_TAG: Record<'RESOLVED' | 'UNRESOLVABLE', { color: string; te
 type BindingRow = FormulaBindingItem & { componentCode: string; componentName: string; action: string };
 
 const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirName, onClose, onImported }) => {
-  const [bundle, setBundle] = useState<any>(null);
+  const [bundleFile, setBundleFile] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string>('');
   const [policy, setPolicy] = useState<ConflictPolicy>('RENAME');
   const [loading, setLoading] = useState(false);
@@ -110,42 +110,28 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
   const [committing, setCommitting] = useState(false);
 
   const reset = () => {
-    setBundle(null); setFileName(''); setPreview(null); setPolicy('RENAME');
+    setBundleFile(null); setFileName(''); setPreview(null); setPolicy('RENAME');
     setIgnoreMissing(false); setIgnoreUnboundFormulas(false); setShowAllBindings(false);
   };
 
   const handleClose = () => { reset(); onClose(); };
 
-  // 读取上传的 JSON 文件(不真正上传, 前端解析后作为预览请求 body)
+  // 保留原始文件，预览和提交时均交由后端解密、校验并解析。
   const beforeUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const parsed = JSON.parse(String(reader.result));
-        if (!parsed || !Array.isArray(parsed.components)) {
-          message.error('文件不是有效的组件导出 bundle(缺 components)');
-          return;
-        }
-        setBundle(parsed);
-        setFileName(file.name);
-        setPreview(null);
-        message.success(`已载入 bundle:${parsed.components.length} 个组件`);
-      } catch {
-        message.error('JSON 解析失败,请确认是导出的 bundle 文件');
-      }
-    };
-    reader.readAsText(file);
+    setBundleFile(file);
+    setFileName(file.name);
+    setPreview(null);
     return false; // 阻止 antd 自动上传
   };
 
   const doPreview = async () => {
     if (!targetDirId) return message.warning('未指定目标目录');
-    if (!bundle) return message.warning('请先上传 bundle 文件');
+    if (!bundleFile) return message.warning('请先上传 bundle 文件');
     setLoading(true);
     setIgnoreMissing(false);
     setIgnoreUnboundFormulas(false);
     try {
-      const resp: any = await componentService.importPreview(targetDirId, bundle, policy);
+      const resp: any = await componentService.importPreview(targetDirId, bundleFile, policy);
       setPreview((resp?.data?.data ?? resp?.data) as PreviewResult);
     } catch (e: any) {
       message.error(e?.message ?? '预览失败');
@@ -180,10 +166,10 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
   );
 
   const doCommit = async () => {
-    if (!targetDirId || !bundle || !preview) return;
+    if (!targetDirId || !bundleFile || !preview) return;
     setCommitting(true);
     try {
-      const resp: any = await componentService.importCommit(targetDirId, bundle, policy, ignoreMissing, ignoreUnboundFormulas);
+      const resp: any = await componentService.importCommit(targetDirId, bundleFile, policy, ignoreMissing, ignoreUnboundFormulas);
       const r = (resp?.data?.data ?? resp?.data);
       if (r.unboundCount > 0) {
         notification.warning({
@@ -302,7 +288,7 @@ const ComponentImportDrawer: React.FC<Props> = ({ open, targetDirId, targetDirNa
               { value: 'ABORT', label: '中止(任一冲突即整体中止)' },
             ]}
           />
-          <Button type="primary" icon={<EyeOutlined />} loading={loading} disabled={!bundle} onClick={doPreview}>
+          <Button type="primary" icon={<EyeOutlined />} loading={loading} disabled={!bundleFile} onClick={doPreview}>
             预览
           </Button>
         </Space>

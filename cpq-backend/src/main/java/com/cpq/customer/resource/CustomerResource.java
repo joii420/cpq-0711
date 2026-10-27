@@ -2,6 +2,7 @@ package com.cpq.customer.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.customer.dto.CreateCustomerRequest;
 import com.cpq.customer.dto.CustomerDTO;
 import com.cpq.customer.service.CustomerService;
@@ -19,8 +20,6 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -39,6 +38,9 @@ public class CustomerResource {
 
     @Inject
     SessionHelper sessionHelper;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     public ApiResponse<PageResult<CustomerDTO>> list(
@@ -82,16 +84,8 @@ public class CustomerResource {
     @Path("/import")
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     public ApiResponse<CustomerImportReportDTO> importCustomers(@RestForm("file") FileUpload file) {
-        if (file == null) throw new BadRequestException("请上传 .xlsx 文件");
-        byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            bytes = in.readAllBytes();
-        } catch (BadRequestException e) {
-            throw e;
-        } catch (Exception e) {
-            throw new BadRequestException("读取上传文件失败");
-        }
-        return ApiResponse.success(customerImportService.importCustomers(bytes));
+        return ApiResponse.success(customerImportService.importCustomers(
+                fileCryptoService.process(file).bytes()));
     }
 
     @DELETE

@@ -5,13 +5,12 @@ import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.UUID;
@@ -53,25 +52,24 @@ public class ModelFileStorageService {
     /**
      * 把上传的 multipart 文件落盘为 {@code {fileId}{ext}}，ext 取原始文件名后缀（未知则空）。
      */
-    public StoredFile store(UUID fileId, FileUpload upload) {
-        if (upload == null) {
+    public StoredFile store(UUID fileId, String fileName, byte[] bytes) {
+        if (bytes == null) {
             throw new BusinessException("文件不能为空");
         }
-        String ext = extractExtension(upload.fileName());
+        String ext = extractExtension(fileName);
         Path target = baseDir.resolve(fileId + ext);
         try {
-            Files.copy(upload.uploadedFile(), target, StandardCopyOption.REPLACE_EXISTING);
+            Files.write(target, bytes, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         } catch (IOException e) {
-            throw new BusinessException(500, "文件保存失败: " + e.getMessage());
-        }
-        long size;
-        try {
-            size = Files.size(target);
-        } catch (IOException e) {
-            size = upload.size();
+            try {
+                Files.deleteIfExists(target);
+            } catch (IOException cleanupError) {
+                LOG.warnf("ModelFileStorageService: 清理未完成文件失败 fileId=%s", fileId);
+            }
+            throw new BusinessException(500, "文件保存失败");
         }
         String md5 = md5Hex(target);
-        return new StoredFile(target, size, md5);
+        return new StoredFile(target, bytes.length, md5);
     }
 
     /** 按 fileId 前缀在存储目录内查找物理文件（ext 未持久化，容忍目录内同前缀单文件）。 */

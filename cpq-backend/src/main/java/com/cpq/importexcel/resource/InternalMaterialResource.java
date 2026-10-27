@@ -2,6 +2,7 @@ package com.cpq.importexcel.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.importexcel.dto.CreateInternalMaterialRequest;
 import com.cpq.importexcel.dto.InternalMaterialDTO;
@@ -23,6 +24,9 @@ public class InternalMaterialResource {
 
     @Inject
     InternalMaterialService service;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     @RoleAllowed({"SALES_REP", "SALES_MANAGER", "PRICING_MANAGER", "SYSTEM_ADMIN"})
@@ -68,7 +72,8 @@ public class InternalMaterialResource {
     @Consumes(MediaType.MULTIPART_FORM_DATA)
     @RoleAllowed({"SALES_MANAGER", "SYSTEM_ADMIN"})
     public ApiResponse<Map<String, Integer>> importFromExcel(@RestForm("file") FileUpload file) {
-        try (java.io.InputStream is = file.uploadedFile().toFile().toURI().toURL().openStream()) {
+        var processed = fileCryptoService.process(file);
+        try (java.io.InputStream is = processed.openStream()) {
             int count = service.importFromExcel(is);
             return ApiResponse.success(Map.of("imported", count));
         } catch (Exception e) {

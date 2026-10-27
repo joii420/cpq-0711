@@ -1,6 +1,7 @@
 package com.cpq.importexcel.resource;
 
 import com.cpq.common.dto.ApiResponse;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.importexcel.dto.CreateCustomerExcelTemplateRequest;
@@ -28,6 +29,9 @@ public class CustomerExcelTemplateResource {
 
     @Inject
     SessionHelper sessionHelper;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     public ApiResponse<List<CustomerExcelTemplateDTO>> list(@QueryParam("customerId") UUID customerId) {
@@ -68,7 +72,8 @@ public class CustomerExcelTemplateResource {
             @RestForm("file") FileUpload file,
             @RestForm("sheetIndex") @DefaultValue("0") int sheetIndex,
             @RestForm("headerRowIndex") @DefaultValue("0") int headerRowIndex) {
-        try (java.io.InputStream fis = file.uploadedFile().toFile().toURI().toURL().openStream()) {
+        var processed = fileCryptoService.process(file);
+        try (java.io.InputStream fis = processed.openStream()) {
             return ApiResponse.success(service.parseExcelHeaders(fis, sheetIndex, headerRowIndex));
         } catch (Exception e) {
             throw new com.cpq.common.exception.BusinessException(400, "Parse failed: " + e.getMessage());

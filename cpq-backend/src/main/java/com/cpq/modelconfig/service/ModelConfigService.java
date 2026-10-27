@@ -13,8 +13,10 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
+import jakarta.transaction.Status;
+import jakarta.transaction.Synchronization;
+import jakarta.transaction.TransactionSynchronizationRegistry;
 import jakarta.ws.rs.NotFoundException;
-import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,6 +42,9 @@ public class ModelConfigService {
 
     @Inject
     ModelFileStorageService fileStorage;
+
+    @Inject
+    TransactionSynchronizationRegistry transactionSynchronizationRegistry;
 
     // ────────────────────────────────────────────────────────────────
     // 查询
@@ -97,16 +102,17 @@ public class ModelConfigService {
 
     @Transactional
     public ModelConfigDTO upload(String subjectType, String subjectKey, String label,
-                                  FileUpload glbFile, FileUpload thumbnailFile,
+                                  String glbFileName, byte[] glbBytes,
+                                  String thumbnailFileName, byte[] thumbnailBytes,
                                   boolean setCurrent, UUID uploadedBy) {
         validateSubjectType(subjectType);
         String key = subjectKey == null ? null : subjectKey.trim();
         requireSubjectKey(key);
-        if (glbFile == null || glbFile.fileName() == null || glbFile.fileName().isBlank()) {
+        if (glbFileName == null || glbFileName.isBlank() || glbBytes == null) {
             throw new BusinessException("需上传 .glb 模型文件");
         }
-        if (!glbFile.fileName().toLowerCase().endsWith(".glb")) {
-            throw new BusinessException("GLB 文件格式非法，需为 .glb: " + glbFile.fileName());
+        if (!glbFileName.toLowerCase().endsWith(".glb")) {
+            throw new BusinessException("GLB 文件格式非法，需为 .glb");
         }
 
         Integer maxVersion = em.createQuery(
@@ -136,54 +142,78 @@ public class ModelConfigService {
         // 后续字段变更未必反映进最终 INSERT（批量 insert 场景下复现 glb_url NOT NULL 违例）。
         // 所以改为：先落盘算出 URL → 所有字段一次性定型 → 最后统一 persist()。
         UUID glbKey = UUID.randomUUID();
-        ModelFileStorageService.StoredFile glbStored = fileStorage.store(glbKey, glbFile);
-        String glbUrl = fileUrl(glbKey);
-
-        UUID thumbKey = null;
+        ModelFileStorageService.StoredFile glbStored = null;
         ModelFileStorageService.StoredFile thumbStored = null;
-        String thumbUrl = null;
-        if (thumbnailFile != null && thumbnailFile.fileName() != null && !thumbnailFile.fileName().isBlank()) {
-            thumbKey = UUID.randomUUID();
-            thumbStored = fileStorage.store(thumbKey, thumbnailFile);
-            thumbUrl = fileUrl(thumbKey);
+        List<Path> newFiles = new ArrayList<>(2);
+        try {
+            glbStored = fileStorage.store(glbKey, glbFileName, glbBytes);
+            newFiles.add(glbStored.path());
+            transactionSynchronizationRegistry.registerInterposedSynchronization(new Synchronization() {
+                @Override
+                public void beforeCompletion() {
+                    // no-op
+                }
+
+                @Override
+                public void afterCompletion(int status) {
+                    if (status != Status.STATUS_COMMITTED) {
+                        newFiles.forEach(fileStorage::deleteQuietly);
+                    }
+                }
+            });
+            String glbUrl = fileUrl(glbKey);
+
+            String thumbUrl = null;
+            if (thumbnailFileName != null && !thumbnailFileName.isBlank() && thumbnailBytes != null) {
+                UUID thumbKey = UUID.randomUUID();
+                thumbStored = fileStorage.store(thumbKey, thumbnailFileName, thumbnailBytes);
+                newFiles.add(thumbStored.path());
+                thumbUrl = fileUrl(thumbKey);
+            }
+
+            ModelConfig entity = new ModelConfig();
+            entity.subjectType = subjectType;
+            entity.subjectKey = key;
+            entity.version = nextVersion;
+            entity.isCurrent = setCurrent;
+            entity.label = label;
+            entity.glbUrl = glbUrl;
+            entity.thumbnailUrl = thumbUrl;
+            entity.sizeKb = (int) Math.ceil(glbStored.sizeBytes() / 1024.0);
+            entity.uploadedBy = uploadedBy;
+            entity.uploadedAt = now;
+            entity.persist();
+
+            ModelConfigFile glbRow = new ModelConfigFile();
+            glbRow.modelConfigId = entity.id;
+            glbRow.fileRole = "GLB";
+            glbRow.fileUrl = glbUrl;
+            glbRow.fileSizeBytes = glbStored.sizeBytes();
+            glbRow.md5Hash = glbStored.md5Hash();
+            glbRow.uploadedAt = now;
+            glbRow.persist();
+
+            if (thumbStored != null) {
+                ModelConfigFile thumbRow = new ModelConfigFile();
+                thumbRow.modelConfigId = entity.id;
+                thumbRow.fileRole = "THUMBNAIL";
+                thumbRow.fileUrl = thumbUrl;
+                thumbRow.fileSizeBytes = thumbStored.sizeBytes();
+                thumbRow.md5Hash = thumbStored.md5Hash();
+                thumbRow.uploadedAt = now;
+                thumbRow.persist();
+            }
+
+            // Surface persistence failures while the newly written files can still be cleaned up.
+            em.flush();
+            ModelConfigDTO dto = ModelConfigDTO.from(entity);
+            enrichSubjectLabels(List.of(dto));
+            return dto;
+        } catch (RuntimeException e) {
+            if (thumbStored != null) fileStorage.deleteQuietly(thumbStored.path());
+            if (glbStored != null) fileStorage.deleteQuietly(glbStored.path());
+            throw e;
         }
-
-        ModelConfig entity = new ModelConfig();
-        entity.subjectType = subjectType;
-        entity.subjectKey = key;
-        entity.version = nextVersion;
-        entity.isCurrent = setCurrent;
-        entity.label = label;
-        entity.glbUrl = glbUrl;
-        entity.thumbnailUrl = thumbUrl;
-        entity.sizeKb = (int) Math.ceil(glbStored.sizeBytes() / 1024.0);
-        entity.uploadedBy = uploadedBy;
-        entity.uploadedAt = now;
-        entity.persist();
-
-        ModelConfigFile glbRow = new ModelConfigFile();
-        glbRow.modelConfigId = entity.id;
-        glbRow.fileRole = "GLB";
-        glbRow.fileUrl = glbUrl;
-        glbRow.fileSizeBytes = glbStored.sizeBytes();
-        glbRow.md5Hash = glbStored.md5Hash();
-        glbRow.uploadedAt = now;
-        glbRow.persist();
-
-        if (thumbStored != null) {
-            ModelConfigFile thumbRow = new ModelConfigFile();
-            thumbRow.modelConfigId = entity.id;
-            thumbRow.fileRole = "THUMBNAIL";
-            thumbRow.fileUrl = thumbUrl;
-            thumbRow.fileSizeBytes = thumbStored.sizeBytes();
-            thumbRow.md5Hash = thumbStored.md5Hash();
-            thumbRow.uploadedAt = now;
-            thumbRow.persist();
-        }
-
-        ModelConfigDTO dto = ModelConfigDTO.from(entity);
-        enrichSubjectLabels(List.of(dto));
-        return dto;
     }
 
     @Transactional

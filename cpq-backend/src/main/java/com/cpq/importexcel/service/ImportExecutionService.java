@@ -299,8 +299,8 @@ public class ImportExecutionService {
         record.importedBy = userId;
         record.persist();
 
-        LOG.infof("Import complete: file=%s total=%d success=%d matched=%d status=%s",
-                fileName, totalRows, successRows, matchedRows, importStatus);
+        LOG.infof("Import complete: total=%d success=%d matched=%d status=%s",
+                totalRows, successRows, matchedRows, importStatus);
 
         // ── D-40：导入建单末尾补写 _record（AC-2④ v3 · 用户 2026-09-07 改裁）─────────────
         // 🔑 为什么挂在这里而不是 `new QuotationLineComponentData()` 那两处：

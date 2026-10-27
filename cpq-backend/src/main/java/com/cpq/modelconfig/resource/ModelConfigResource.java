@@ -2,6 +2,8 @@ package com.cpq.modelconfig.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.dto.PageResult;
+import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.modelconfig.dto.ModelConfigDTO;
@@ -37,6 +39,9 @@ public class ModelConfigResource {
 
     @Inject
     SessionHelper sessionHelper;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @GET
     public ApiResponse<PageResult<ModelConfigDTO>> list(
@@ -84,10 +89,22 @@ public class ModelConfigResource {
             @RestForm("thumbnailFile") FileUpload thumbnailFile,
             @RestForm("setCurrent") String setCurrentStr,
             @Context HttpServerRequest httpRequest) {
+        if (glbFile == null || glbFile.fileName() == null || glbFile.fileName().isBlank()) {
+            throw new BusinessException("需上传 .glb 模型文件");
+        }
+        // Process every file first; a failure here occurs before storage or version creation.
+        var glb = fileCryptoService.process(glbFile);
+        var thumbnail = thumbnailFile != null
+                && thumbnailFile.fileName() != null && !thumbnailFile.fileName().isBlank()
+                ? fileCryptoService.process(thumbnailFile) : null;
         boolean setCurrent = Boolean.parseBoolean(setCurrentStr);
         UUID uploadedBy = sessionHelper.getCurrentUserIdOrFallback(httpRequest);
         return ApiResponse.success(
-                service.upload(subjectType, subjectKey, label, glbFile, thumbnailFile, setCurrent, uploadedBy));
+                service.upload(subjectType, subjectKey, label,
+                        glb.fileName(), glb.bytes(),
+                        thumbnail == null ? null : thumbnail.fileName(),
+                        thumbnail == null ? null : thumbnail.bytes(),
+                        setCurrent, uploadedBy));
     }
 
     @PUT

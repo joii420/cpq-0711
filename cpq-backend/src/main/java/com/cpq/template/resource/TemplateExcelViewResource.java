@@ -2,6 +2,7 @@ package com.cpq.template.resource;
 
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.importexcel.service.CustomerExcelTemplateService;
 import com.cpq.quotation.service.ExcelViewService;
@@ -32,6 +33,9 @@ public class TemplateExcelViewResource {
 
     @Inject
     CustomerExcelTemplateService customerExcelTemplateService;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     /**
      * GET /api/cpq/templates/{id}/excel-view-config
@@ -153,7 +157,8 @@ public class TemplateExcelViewResource {
             @RestForm("sheetIndex") @DefaultValue("1") int sheetIndex,
             @RestForm("headerRowIndex") @DefaultValue("2") int headerRowIndex) {
         if (file == null) throw new BusinessException(400, "file is required");
-        try (InputStream is = file.uploadedFile().toFile().toURI().toURL().openStream()) {
+        var processed = fileCryptoService.process(file);
+        try (InputStream is = processed.openStream()) {
             List<String> headers = customerExcelTemplateService.parseExcelHeaders(is, sheetIndex, headerRowIndex);
             return ApiResponse.success(headers);
         } catch (BusinessException be) {

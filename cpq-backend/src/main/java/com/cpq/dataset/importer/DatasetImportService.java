@@ -292,8 +292,8 @@ public class DatasetImportService {
         out.summary = summary;
         out.durationMs = System.currentTimeMillis() - t0;
         out.importRecordId = recordHistory(reg, fileName, summary, userId, out.durationMs);
-        LOG.infof("[dataset-import] dataset=%s file=%s durationMs=%d sheets=%d",
-                reg.datasetKey(), fileName, out.durationMs, summary.size());
+        LOG.infof("[dataset-import] dataset=%s durationMs=%d sheets=%d",
+                reg.datasetKey(), out.durationMs, summary.size());
         return out;
     }
 

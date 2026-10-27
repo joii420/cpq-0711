@@ -5,6 +5,7 @@ import com.cpq.basicdata.v6.service.MaterializeExecutor;
 import com.cpq.basicdata.v6.service.V6QuotationCommitService;
 import com.cpq.common.dto.ApiResponse;
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import com.cpq.customer.entity.Customer;
@@ -26,8 +27,6 @@ import org.jboss.logging.Logger;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
-import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -66,6 +65,7 @@ public class QuotationImportResource {
     @Inject DatasetQuotationCommitService commitService;
     @Inject CreateQuotationMaterializer materializer;
     @Inject SessionHelper sessionHelper;
+    @Inject FileCryptoService fileCryptoService;
     /**
      * 🚨 <b>导入派发必须用这个 cleared(ThreadContext.CDI) executor，不是全局默认
      * {@code ManagedExecutor}</b>。开发期实测：用全局默认 executor 时本链路 100% 失败于
@@ -119,22 +119,16 @@ public class QuotationImportResource {
         UUID importedBy = sessionHelper.getCurrentUserId(httpRequest);
         if (importedBy == null) throw new BusinessException(401, "未登录");
 
-        UUID recordId = recordWriter.createProcessing(customerId, file.fileName(), importedBy);
-
-        final byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            bytes = in.readAllBytes();   // 必须在请求线程读完
-        } catch (Exception e) {
-            recordWriter.finalizeFailed(recordId, 0, "读取上传文件失败: " + e.getMessage(), List.of());
-            throw new BusinessException(500, "读取上传文件失败: " + e.getMessage());
-        }
-
-        final String fileName = file.fileName();
+        // Finish reading and trust-boundary processing before dispatching the asynchronous task.
+        var processed = fileCryptoService.process(file);
+        final byte[] bytes = processed.bytes();
+        final String fileName = processed.fileName();
+        UUID recordId = recordWriter.createProcessing(customerId, fileName, importedBy);
         importExecutor.runAsync(() ->
                 importService.processImport(recordId, customerNo, fileName, bytes, importedBy));
 
-        LOG.infof("[quotation-import] 受理 record=%s customer=%s file=%s bytes=%d",
-                recordId, customerNo, fileName, bytes.length);
+        LOG.infof("[quotation-import] 受理 record=%s customer=%s bytes=%d",
+                recordId, customerNo, bytes.length);
         return ApiResponse.success(new QuotationImportDTOs.StartResult(
                 recordId, QuotationImportRecordWriter.SYSTEM_TYPE, "PROCESSING"));
     }

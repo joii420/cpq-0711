@@ -23,6 +23,15 @@ public class GlobalExceptionMapper {
     @ServerExceptionMapper
     public Response handleBusinessException(BusinessException e) {
         LOG.warnf("Business error: %s", e.getMessage());
+        if (e instanceof com.cpq.common.filecrypto.FileCryptoException fce) {
+            Map<String, Object> detail = new java.util.LinkedHashMap<>();
+            detail.put("bizCode", fce.getBizCode());
+            if (fce.getUpstreamCode() != null) detail.put("upstreamCode", fce.getUpstreamCode());
+            if (fce.getRequestId() != null) detail.put("requestId", fce.getRequestId());
+            return Response.status(e.getCode())
+                    .entity(ApiResponse.error(e.getCode(), e.getMessage(), null, detail))
+                    .build();
+        }
         if (e instanceof com.cpq.customer.exception.CustomerImportException cie) {
             return Response.status(e.getCode())
                     .entity(ApiResponse.error(e.getCode(), e.getMessage(),

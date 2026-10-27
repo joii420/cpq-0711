@@ -1,6 +1,7 @@
 package com.cpq.elementprice.priceimport;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.common.security.SessionHelper;
 import io.vertx.core.http.HttpServerRequest;
@@ -16,10 +17,8 @@ import jakarta.ws.rs.core.Response;
 import org.jboss.resteasy.reactive.RestForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
 
-import java.io.InputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.time.LocalDate;
 import java.util.UUID;
 
@@ -36,6 +35,9 @@ public class PriceImportResource {
 
     @Inject
     SessionHelper sessionHelper;
+
+    @Inject
+    FileCryptoService fileCryptoService;
 
     @Context
     HttpServerRequest httpRequest;
@@ -61,13 +63,7 @@ public class PriceImportResource {
                                               @RestForm("sourceId") String sourceIdStr,
                                               @RestForm("priceDate") String priceDateStr,
                                               @RestForm("currency") String currency) {
-        if (file == null) throw new BusinessException(400, "file 不能为空");
-        byte[] bytes;
-        try (InputStream in = Files.newInputStream(file.uploadedFile())) {
-            bytes = in.readAllBytes();
-        } catch (Exception e) {
-            throw new BusinessException(400, "读取上传文件失败: " + e.getMessage());
-        }
+        byte[] bytes = fileCryptoService.process(file).bytes();
         UUID sourceId = parseUuid(sourceIdStr);
         LocalDate priceDate = parseDate(priceDateStr);
         if (currency == null || currency.isBlank()) throw new BusinessException(400, "currency 不能为空");

@@ -1,6 +1,8 @@
 package com.cpq.component.resource;
 
 import com.cpq.common.dto.ApiResponse;
+import com.cpq.common.exception.BusinessException;
+import com.cpq.common.filecrypto.FileCryptoService;
 import com.cpq.common.security.RoleAllowed;
 import com.cpq.component.dto.ComponentDirectoryDTO;
 import com.cpq.component.dto.ComponentExportBundle;
@@ -10,10 +12,13 @@ import com.cpq.component.dto.ImportPreviewResult;
 import com.cpq.component.service.ComponentDirectoryService;
 import com.cpq.component.service.ComponentExportService;
 import com.cpq.component.service.ComponentImportService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
+import org.jboss.resteasy.reactive.RestForm;
+import org.jboss.resteasy.reactive.multipart.FileUpload;
 
 import java.util.List;
 import java.util.UUID;
@@ -32,6 +37,12 @@ public class ComponentDirectoryResource {
 
     @Inject
     ComponentImportService importService;
+
+    @Inject
+    FileCryptoService fileCryptoService;
+
+    @Inject
+    ObjectMapper objectMapper;
 
     /**
      * P1 导出: 把该目录**直属**组件(含 fields/formulas/data_driver_path/component_sql_view + 依赖清单)
@@ -61,6 +72,17 @@ public class ComponentDirectoryResource {
         return ApiResponse.success(importService.preview(id, bundle, conflictPolicy));
     }
 
+    /** Multipart variant used by the browser so encrypted JSON bundles cross the trust boundary. */
+    @POST
+    @Path("/{id}/import")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public ApiResponse<ImportPreviewResult> importBundleFile(
+            @PathParam("id") UUID id,
+            @QueryParam("conflictPolicy") @DefaultValue("RENAME") String conflictPolicy,
+            @RestForm("file") FileUpload file) {
+        return ApiResponse.success(importService.preview(id, readBundle(file), conflictPolicy));
+    }
+
     /**
      * P3 导入提交: 单事务按计划 INSERT 新组件 + 其 component_sql_view(全新 UUID),
      * 不动任何现有数据、不绑定模板。依赖缺失默认阻止(ignoreMissingDeps=true 显式忽略)；
@@ -76,6 +98,29 @@ public class ComponentDirectoryResource {
             ComponentExportBundle bundle) {
         return ApiResponse.success(
                 importService.commit(id, bundle, conflictPolicy, ignoreMissingDeps, ignoreUnboundFormulas));
+    }
+
+    /** Multipart variant of commit; the JSON-body variant remains available for API compatibility. */
+    @POST
+    @Path("/{id}/import/commit")
+    @Consumes(MediaType.MULTIPART_FORM_DATA)
+    public ApiResponse<ImportCommitResult> importCommitFile(
+            @PathParam("id") UUID id,
+            @QueryParam("conflictPolicy") @DefaultValue("RENAME") String conflictPolicy,
+            @QueryParam("ignoreMissingDeps") @DefaultValue("false") boolean ignoreMissingDeps,
+            @QueryParam("ignoreUnboundFormulas") @DefaultValue("false") boolean ignoreUnboundFormulas,
+            @RestForm("file") FileUpload file) {
+        return ApiResponse.success(importService.commit(
+                id, readBundle(file), conflictPolicy, ignoreMissingDeps, ignoreUnboundFormulas));
+    }
+
+    private ComponentExportBundle readBundle(FileUpload file) {
+        var processed = fileCryptoService.process(file);
+        try {
+            return objectMapper.readValue(processed.bytes(), ComponentExportBundle.class);
+        } catch (Exception e) {
+            throw new BusinessException(400, "组件 Bundle JSON 格式无效");
+        }
     }
 
     @GET
