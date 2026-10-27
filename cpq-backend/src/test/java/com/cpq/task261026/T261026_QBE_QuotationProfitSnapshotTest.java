@@ -84,86 +84,123 @@ class T261026_QBE_QuotationProfitSnapshotTest {
 
     @AfterEach
     void T261026_QBE_cleanup() {
+        List<Throwable> failures = new ArrayList<>();
         try {
-            QuarkusTransaction.requiringNew().run(() -> {
-                for (UUID quotationId : quotationIds) {
-                    if (tableExists("costing_order_version_override") && tableExists("costing_order")) {
-                        em.createNativeQuery("DELETE FROM costing_order_version_override WHERE costing_order_id IN "
-                                        + "(SELECT id FROM costing_order WHERE quotation_id=:qid)")
-                                .setParameter("qid", quotationId).executeUpdate();
-                    }
-                    if (tableExists("costing_order")) {
-                        em.createNativeQuery("DELETE FROM costing_order WHERE quotation_id=:qid")
-                                .setParameter("qid", quotationId).executeUpdate();
-                    }
-                    em.createNativeQuery("DELETE FROM quotation WHERE id=:qid")
+            attemptCleanup("import_record", this::cleanupImportRecords, failures);
+            attemptCleanup("报价及其依赖", this::cleanupQuotationFixtures, failures);
+            attemptCleanup("客户业务夹具", this::cleanupCustomerFixtures, failures);
+            attemptCleanup("私有 SYSTEM_ADMIN", this::cleanupPrivateAdmin, failures);
+        } finally {
+            quotationIds.clear();
+            customerIds.clear();
+            customerNos.clear();
+            materialNos.clear();
+            generatedMaterialNos.clear();
+            importRecordIds.clear();
+            sessionCookie = null;
+            adminUsername = null;
+        }
+        if (!failures.isEmpty()) {
+            AssertionError combined = new AssertionError("清理失败阶段数=" + failures.size());
+            failures.forEach(combined::addSuppressed);
+            throw combined;
+        }
+    }
+
+    private static void attemptCleanup(String phase, Runnable cleanup, List<Throwable> failures) {
+        try {
+            cleanup.run();
+        } catch (RuntimeException | AssertionError failure) {
+            failures.add(new AssertionError(phase + " 清理失败", failure));
+        }
+    }
+
+    private void cleanupImportRecords() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            for (UUID recordId : importRecordIds) {
+                em.createNativeQuery("UPDATE import_record SET quotation_id=NULL WHERE id=:id")
+                        .setParameter("id", recordId).executeUpdate();
+                em.createNativeQuery("DELETE FROM import_record WHERE id=:id")
+                        .setParameter("id", recordId).executeUpdate();
+                assertEquals(0L, ((Number) em.createNativeQuery(
+                                "SELECT count(*) FROM import_record WHERE id=:id")
+                        .setParameter("id", recordId).getSingleResult()).longValue(),
+                        "本轮 import_record 未清理干净：" + recordId);
+            }
+        });
+    }
+
+    private void cleanupQuotationFixtures() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            for (UUID quotationId : quotationIds) {
+                if (tableExists("costing_order_version_override") && tableExists("costing_order")) {
+                    em.createNativeQuery("DELETE FROM costing_order_version_override WHERE costing_order_id IN "
+                                    + "(SELECT id FROM costing_order WHERE quotation_id=:qid)")
                             .setParameter("qid", quotationId).executeUpdate();
                 }
-
-                for (UUID recordId : importRecordIds) {
-                    em.createNativeQuery("UPDATE import_record SET quotation_id=NULL WHERE id=:id")
-                            .setParameter("id", recordId).executeUpdate();
-                    em.createNativeQuery("DELETE FROM import_record WHERE id=:id")
-                            .setParameter("id", recordId).executeUpdate();
+                if (tableExists("costing_order")) {
+                    em.createNativeQuery("DELETE FROM costing_order WHERE quotation_id=:qid")
+                            .setParameter("qid", quotationId).executeUpdate();
                 }
+                em.createNativeQuery("DELETE FROM quotation WHERE id=:qid")
+                        .setParameter("qid", quotationId).executeUpdate();
+                assertEquals(0L, ((Number) em.createNativeQuery(
+                                "SELECT count(*) FROM quotation WHERE id=:qid")
+                        .setParameter("qid", quotationId).getSingleResult()).longValue(),
+                        "本轮报价未清理干净：" + quotationId);
+            }
+        });
+    }
 
-                for (String customerNo : customerNos) {
-                    for (String table : List.of(
-                            "sel_product_no", "sel_part_signature", "unit_price", "element_bom_item",
-                            "material_bom_item", "ds_quote_material_bom", "ds_quote_element_bom",
-                            "ds_quote_process", "ds_quote_customer_part", "material_customer_map")) {
-                        if (tableExists(table) && columnExists(table, "customer_no")) {
-                            em.createNativeQuery("DELETE FROM " + table + " WHERE customer_no=:cn")
-                                    .setParameter("cn", customerNo).executeUpdate();
-                        }
+    private void cleanupCustomerFixtures() {
+        QuarkusTransaction.requiringNew().run(() -> {
+            for (String customerNo : customerNos) {
+                for (String table : List.of(
+                        "sel_product_no", "sel_part_signature", "unit_price", "element_bom_item",
+                        "material_bom_item", "ds_quote_material_bom", "ds_quote_element_bom",
+                        "ds_quote_process", "ds_quote_customer_part", "material_customer_map")) {
+                    if (tableExists(table) && columnExists(table, "customer_no")) {
+                        em.createNativeQuery("DELETE FROM " + table + " WHERE customer_no=:cn")
+                                .setParameter("cn", customerNo).executeUpdate();
                     }
-                    if (tableExists("ds_quote_material")) {
-                        em.createNativeQuery("DELETE FROM ds_quote_material WHERE customer_no=:cn "
-                                        + "OR material_no LIKE :prefix")
-                                .setParameter("cn", customerNo)
+                }
+                if (tableExists("ds_quote_material")) {
+                    em.createNativeQuery("DELETE FROM ds_quote_material WHERE customer_no=:cn "
+                                    + "OR material_no LIKE :prefix")
+                            .setParameter("cn", customerNo)
+                            .setParameter("prefix", PREFIX + "%").executeUpdate();
+                }
+            }
+
+            Set<String> allMaterials = new LinkedHashSet<>(materialNos);
+            allMaterials.addAll(generatedMaterialNos);
+            if (!allMaterials.isEmpty()) {
+                for (String table : List.of("ds_quote_material_bom", "ds_quote_element_bom")) {
+                    if (tableExists(table) && columnExists(table, "material_no")) {
+                        em.createNativeQuery("DELETE FROM " + table
+                                        + " WHERE material_no IN (:nos) OR material_no LIKE :prefix")
+                                .setParameter("nos", allMaterials)
                                 .setParameter("prefix", PREFIX + "%").executeUpdate();
                     }
                 }
-
-                Set<String> allMaterials = new LinkedHashSet<>(materialNos);
-                allMaterials.addAll(generatedMaterialNos);
-                if (!allMaterials.isEmpty()) {
-                    for (String table : List.of("ds_quote_material_bom", "ds_quote_element_bom")) {
-                        if (tableExists(table) && columnExists(table, "material_no")) {
-                            em.createNativeQuery("DELETE FROM " + table
-                                            + " WHERE material_no IN (:nos) OR material_no LIKE :prefix")
-                                    .setParameter("nos", allMaterials)
-                                    .setParameter("prefix", PREFIX + "%").executeUpdate();
-                        }
-                    }
-                }
-                if (!allMaterials.isEmpty() && tableExists("material_master")) {
-                    em.createNativeQuery("DELETE FROM material_master WHERE material_no IN (:nos) "
-                                    + "OR material_no LIKE :prefix")
-                            .setParameter("nos", allMaterials)
-                            .setParameter("prefix", PREFIX + "%").executeUpdate();
-                }
-                for (UUID customerId : customerIds) {
-                    em.createNativeQuery("DELETE FROM customer_contact WHERE customer_id=:id")
-                            .setParameter("id", customerId).executeUpdate();
-                    em.createNativeQuery("DELETE FROM customer WHERE id=:id")
-                            .setParameter("id", customerId).executeUpdate();
-                }
-            });
-        } finally {
-            try {
-                cleanupPrivateAdmin();
-            } finally {
-                quotationIds.clear();
-                customerIds.clear();
-                customerNos.clear();
-                materialNos.clear();
-                generatedMaterialNos.clear();
-                importRecordIds.clear();
-                sessionCookie = null;
-                adminUsername = null;
             }
-        }
+            if (!allMaterials.isEmpty() && tableExists("material_master")) {
+                em.createNativeQuery("DELETE FROM material_master WHERE material_no IN (:nos) "
+                                + "OR material_no LIKE :prefix")
+                        .setParameter("nos", allMaterials)
+                        .setParameter("prefix", PREFIX + "%").executeUpdate();
+            }
+            for (UUID customerId : customerIds) {
+                em.createNativeQuery("DELETE FROM customer_contact WHERE customer_id=:id")
+                        .setParameter("id", customerId).executeUpdate();
+                em.createNativeQuery("DELETE FROM customer WHERE id=:id")
+                        .setParameter("id", customerId).executeUpdate();
+                assertEquals(0L, ((Number) em.createNativeQuery(
+                                "SELECT count(*) FROM customer WHERE id=:id")
+                        .setParameter("id", customerId).getSingleResult()).longValue(),
+                        "本轮客户未清理干净：" + customerId);
+            }
+        });
     }
 
     @Test
