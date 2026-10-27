@@ -1,5 +1,38 @@
 # 测试报告
 
+## 合并后主线收尾复验（2026-10-26）
+
+- 实现提交：`73e5c9f7`；合并提交：`48505f24`。合并时仅 `ProductSalesPartTab.tsx` 与 `dev-docs/INDEX.md` 出现技术并集冲突，分别保留既有查询按钮与利润列、保留所有并行任务索引记录。
+- 自动 stash 恢复后使用其原始暂存父树重建索引；除上述两个交叉文件外，合并前后暂存差异指纹均为 `37035d7b...`，未暂存差异指纹均为 `723c5336...`。`ProductSalesPartTab.tsx` 仍仅把既有查询按钮保留为未暂存改动，`INDEX.md` 仍保持原 `MM` 边界；未覆盖其他任务内容。
+- 特性 worktree 已在验证通过后移除；分支 `feat/task-261026-material-profit` 保留，等待用户自行执行删除命令。自动 stash `4a633621` 作为主工作区既有改动的额外安全副本保留，未擅自删除。
+
+### 清产物后的主线自动化
+
+后端先执行 `./mvnw clean`，再连接一次性数据库运行：
+
+```text
+DB_NAME=cpq_t261026_profit_20261026 \
+./mvnw -Dtest=Task261026ProfitApiTest,Task261026ProfitTemplateTest,PlainTableWriterTest,RegistryTypeCoherenceAcTest test
+```
+
+结果：`Tests run: 19, Failures: 0, Errors: 0, Skipped: 0`，`BUILD SUCCESS`，54.119s；启动时再次输出 `Registry↔DDL 自检通过：97 张表 / 1784 列` 与 `Semantic graph reloaded: nodes=58 edges=90 tabViews=48`。
+
+前端先执行 `npx tsc -b --clean`，再执行 `npx tsc -b --pretty false`、定向 ESLint 与 `npm run build`：TypeScript 0 错误、ESLint 0 问题、Vite 3441 modules 构建成功，仅有既存大 chunk 警告。
+
+### 合并后冷启动与迁移
+
+- 启动前：`cpq_db_0724` 与 `cpq_db_test` 均为 V452，且 8081 无监听。
+- 在合并后的 `master` 执行 `./mvnw quarkus:dev`，Flyway 将共享开发库 `cpq_db_0724` 从 V452 自动迁移至 V454；`flyway_schema_history` 为 `454|task261026 material profit|true`。
+- 物理列只读核验：`ds_quote_material.profit = numeric(26,12) NULL`；语义列只读核验：`QUOTE|MATERIAL|profit|利润|NUMBER|9|ACTIVE`，唯一命中 1 条。
+- 未登录访问 `GET /api/cpq/dataset/quote/parts` 返回 `401 {"code":401,"message":"未登录"}`，证明业务服务已启动且鉴权正常；随后 Ctrl-C 停止，Maven 输出 `BUILD SUCCESS`。
+- 启动后的既有调价预算后台任务仍在执行；停止时产生在途事务回滚/连接关闭告警。日志调用链位于 `PriceAdjustBudgetService`，与本任务利润链路无关；迁移、Registry/DDL、语义图和接口探针均已先行成功。共享测试库保持 V452。
+
+### 环境收尾
+
+- 一次性库六类残留：`component|0`、`cost_basic|0`、`cost_detail|0`、`import|0`、`material|0`、`user|0`。
+- 8081、15261、18261 均无监听；无本任务 Maven、Quarkus、Vite 或 Playwright 进程。
+- 本次未生成或更新任何部署包。
+
 ## 主线复验摘要（2026-10-26）
 
 ### 隔离环境与迁移

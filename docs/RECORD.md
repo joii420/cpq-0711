@@ -6923,3 +6923,5 @@ DB 扩到 12 位后，即便 handler 完全不归一，12 位 Excel 导入查库
 [2026-10-20] 用户验收通过 - 用户初始密码口径变更 | `master` 工作区前后端 dev server（5174/8081） | 用户在真实前后端环境验收确认通过；新增、导入、管理员重置均使用用户名作为初始密码，不使用随机密码生成器。前端探活 200，后端未登录业务接口 401（鉴权正常）。[已自检✓]
 
 [2026-10-21] 组件管理/全局异常提示 - 将数据库唯一键异常转换为前端可读中文提示 | `cpq-backend/src/main/java/com/cpq/common/exception/GlobalExceptionMapper.java`、`cpq-backend/src/test/java/com/cpq/common/exception/GlobalExceptionMapperTest.java` | 组件编码冲突提示“组件编码已存在”，组件 SQL 视图名称冲突提示“该组件的 SQL 视图名称已存在”，其他唯一键/外键/必填约束使用通用中文提示；数据库原始异常仅写服务端日志，不再下发 `Duplicate value for Key`。
+
+[2026-10-26] 报价基础数据/销售产品/组件取数 - 物料增加可选利润字段并进入待验收 | `73e5c9f7`、`48505f24`、`V454__task261026_material_profit.sql`、`dev-docs/task-261026-物料利润字段/` | 报价导入物料 Sheet 末尾新增非必填“利润”，接受普通有符号十进制，空白重导保留页面维护值；销售产品列表支持字符串精度展示、编辑与显式清空；QUOTE/MATERIAL 语义节点提供 `profit/利润/NUMBER`，组件取数默认数字输入。清产物后后端 19/19、前端 TypeScript/ESLint/Vite 与隔离 UI 3/3 均通过；V454 已由合并后冷启动自动应用到 `cpq_db_0724`，接口未登录返回 401，共享测试库仍为 V452；未生成部署包。任务停在“待验收”，一次性库待用户批准回收。[冷启动✓][已自检✓]
