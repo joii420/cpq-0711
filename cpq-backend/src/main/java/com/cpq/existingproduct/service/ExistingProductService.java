@@ -88,7 +88,10 @@ public class ExistingProductService {
         String joinSql =
                 "FROM ds_quote_customer_part d "
                 // 🚨 D-3：保留兼容视图，🚫 不许直连 ds_quote_material（理由见类 javadoc）。
-                + "LEFT JOIN v_compat_material_master v ON v.material_no = d.material_no ";
+                + "LEFT JOIN v_compat_material_master v ON v.material_no = d.material_no "
+                // 利润是客户轴字段，只作为新增行快照来源；品名/规格仍严格沿用兼容视图。
+                + "LEFT JOIN ds_quote_material qm ON qm.customer_no = d.customer_no "
+                + "                              AND qm.material_no = d.material_no ";
 
         // AC-13：该 (customer_no, material_no) 名下的**全部**客户产品编号，按 created_at 升序。
         // 🚫 不逐行查（N+1）：GROUP BY 聚合子查询，与主查询一次 LEFT JOIN 完成，SQL 条数与行数无关。
@@ -115,7 +118,7 @@ public class ExistingProductService {
                 + "       (SELECT sps.product_type FROM sel_part_signature sps "
                 + "          WHERE sps.quote_part_no = d.material_no AND sps.customer_no = d.customer_no "
                 + "          ORDER BY sps.created_at DESC LIMIT 1) AS config_product_type, "
-                + "       agg.all_product_nos "
+                + "       agg.all_product_nos, qm.profit::text AS profit "
                 + joinSql
                 + "LEFT JOIN (" + aggSql + ") agg ON agg.material_no = d.material_no "
                 + "WHERE " + where + " "
@@ -151,6 +154,7 @@ public class ExistingProductService {
             dto.source = (String) r[6];                 // EXISTING(导入) | CONFIGURED(选配)
             dto.configProductType = (String) r[7];      // SIMPLE | COMPOSITE(仅选配产品)，非选配为 null
             dto.customerProductNos = toStringList(r[8]); // AC-13：全部编号
+            dto.profit = r[9] == null ? null : r[9].toString();
             content.add(dto);
         }
         return new PageResult<>(content, safePage, safeSize, total);

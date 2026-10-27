@@ -131,6 +131,9 @@ public class QuotationService {
     @Inject
     VatSnapshotService vatSnapshotService;
 
+    @Inject
+    QuotationProfitSnapshotService profitSnapshotService;
+
     /** task-0721 B8（2026-07-21 补录，树任务）：反向校验——已有子节点的料号禁止加入材质元素/外购件页签。 */
     @Inject
     QuotationTreeService quotationTreeService;
@@ -662,6 +665,8 @@ public class QuotationService {
                 java.util.List<QuotationLineItem> existingLines = QuotationLineItem.list("quotationId = ?1", id);
                 java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
                 for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
+                java.util.Map<SaveDraftRequest.LineItemDraft, BigDecimal> newProfitByDraft =
+                        resolveNewDraftProfits(id, delta.lines, existingById);
                 java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
                 // V169 二阶段 parent_line_item_id 重建用: index → 行 UUID 的映射(复用行=原 id, 新行=新 id)
                 java.util.UUID[] newIdsByIndex = new java.util.UUID[delta.lines.size()];
@@ -848,6 +853,9 @@ public class QuotationService {
                     if (isNewLine && li.vatRate == null && li.productPartNoSnapshot != null
                             && !li.productPartNoSnapshot.isBlank()) {
                         applyVatSnapshot(li, vatSnapshotService.resolveForNewLine(id, li.productPartNoSnapshot));
+                    }
+                    if (isNewLine) {
+                        li.profitSnapshot = newProfitByDraft.get(liDraft);
                     }
 
                     // （task-260901 B-2d：原先这里累加求总额，已改为末尾一次 SELECT sum）
@@ -2134,6 +2142,8 @@ public class QuotationService {
             newLi.vatSource = srcLi.vatSource;
             newLi.vatEffectiveFrom = srcLi.vatEffectiveFrom;
             newLi.vatResolvedAt = srcLi.vatResolvedAt;
+            // Profit is also a row snapshot. Copy the source value verbatim, including NULL.
+            newLi.profitSnapshot = srcLi.profitSnapshot;
             newLi.compositeType = srcLi.compositeType;
             // parentLineItemId 稍后重映射。
             // repair-0729: 同模板复制 = 值快照整份继承（含 BOM 树墓碑 deletedTreeNodes，
@@ -3036,6 +3046,61 @@ public class QuotationService {
         return delta;
     }
 
+    /**
+     * Resolve profit for this save's newly-created rows only. Both material numbers carried by the
+     * request and legacy product-id-only rows are collected before one profit query; save loops only
+     * read the returned in-memory identity map.
+     */
+    @SuppressWarnings("unchecked")
+    private java.util.Map<SaveDraftRequest.LineItemDraft, BigDecimal> resolveNewDraftProfits(
+            UUID quotationId, java.util.List<SaveDraftRequest.LineItemDraft> drafts,
+            java.util.Map<UUID, QuotationLineItem> existingById) {
+        java.util.Map<SaveDraftRequest.LineItemDraft, String> materialByDraft =
+                new java.util.IdentityHashMap<>();
+        java.util.Set<UUID> productIds = new java.util.LinkedHashSet<>();
+        for (SaveDraftRequest.LineItemDraft draft : drafts) {
+            boolean isNew = !(draft.id != null && existingById.containsKey(draft.id));
+            if (!isNew) continue;
+            if (draft.productPartNo != null && !draft.productPartNo.isBlank()) {
+                materialByDraft.put(draft, draft.productPartNo);
+            } else if (draft.productId != null) {
+                productIds.add(draft.productId);
+            }
+        }
+
+        if (!productIds.isEmpty()) {
+            String[] ids = productIds.stream().map(UUID::toString).toArray(String[]::new);
+            java.util.Map<UUID, String> materialByProductId = new java.util.HashMap<>();
+            java.util.List<Object[]> productRows = em.createNativeQuery(
+                    "SELECT id, part_no FROM product " +
+                    "WHERE id IN (SELECT unnest(CAST(:ids AS text[]))::uuid)")
+                    .setParameter("ids", ids)
+                    .getResultList();
+            for (Object[] row : productRows) {
+                if (row[0] == null || row[1] == null) continue;
+                UUID productId = row[0] instanceof UUID uuid
+                        ? uuid : UUID.fromString(row[0].toString());
+                materialByProductId.put(productId, row[1].toString());
+            }
+            for (SaveDraftRequest.LineItemDraft draft : drafts) {
+                boolean isNew = !(draft.id != null && existingById.containsKey(draft.id));
+                if (isNew && !materialByDraft.containsKey(draft) && draft.productId != null) {
+                    String materialNo = materialByProductId.get(draft.productId);
+                    if (materialNo != null) materialByDraft.put(draft, materialNo);
+                }
+            }
+        }
+
+        java.util.Map<String, BigDecimal> byMaterial =
+                profitSnapshotService.resolveForNewLines(quotationId, materialByDraft.values());
+        java.util.Map<SaveDraftRequest.LineItemDraft, BigDecimal> result =
+                new java.util.IdentityHashMap<>();
+        for (java.util.Map.Entry<SaveDraftRequest.LineItemDraft, String> entry : materialByDraft.entrySet()) {
+            result.put(entry.getKey(), byMaterial.get(entry.getValue()));
+        }
+        return result;
+    }
+
     @SuppressWarnings("unchecked")
     private void processBatchStage1(UUID quotationId, Quotation q, SaveDraftRequest request, DraftDelta delta) {
         // ── task-260901 B-2c：只加载本次真正会用到的行实体 ─────────────────────────────────────
@@ -3059,6 +3124,8 @@ public class QuotationService {
         }
         java.util.Map<java.util.UUID, QuotationLineItem> existingById = new java.util.HashMap<>();
         for (QuotationLineItem ex : existingLines) existingById.put(ex.id, ex);
+        java.util.Map<SaveDraftRequest.LineItemDraft, BigDecimal> newProfitByDraft =
+                resolveNewDraftProfits(quotationId, delta.lines, existingById);
 
         java.util.Set<java.util.UUID> keptIds = new java.util.HashSet<>();
         java.util.Set<java.util.UUID> removedIds = new java.util.HashSet<>();
@@ -3325,6 +3392,9 @@ public class QuotationService {
             if (isNewLine && li.vatRate == null && li.productPartNoSnapshot != null
                     && !li.productPartNoSnapshot.isBlank()) {
                 applyVatSnapshot(li, vatSnapshotService.resolveForNewLine(quotationId, li.productPartNoSnapshot));
+            }
+            if (isNewLine) {
+                li.profitSnapshot = newProfitByDraft.get(liDraft);
             }
 
             // （task-260901 B-2d：原先这里累加 liDraft.subtotal 求总额，已改为末尾一次 SELECT sum）

@@ -196,6 +196,8 @@ public class QuotationDTO {
         public String vatSource;
         public java.time.LocalDate vatEffectiveFrom;
         public OffsetDateTime vatResolvedAt;
+        /** Creation-time quote-row snapshot; string keeps numeric(26,12) precision for JavaScript clients. */
+        public String profit;
         // 前端 driver 展开 / BASIC_DATA 路径解析全靠 productPartNo；DB 端没有冗余列，
         // 这里通过 product_id JOIN product 取，再回退 product_part_no_snapshot。
         public String productPartNo;
@@ -269,6 +271,7 @@ public class QuotationDTO {
             dto.vatSource = li.vatSource;
             dto.vatEffectiveFrom = li.vatEffectiveFrom;
             dto.vatResolvedAt = li.vatResolvedAt;
+            dto.profit = li.profitSnapshot == null ? null : li.profitSnapshot.toPlainString();
             dto.customerPartNo = li.customerPartNo;
             dto.partVersionLocked = li.partVersionLocked;
             dto.productAttributeValues = li.productAttributeValues;

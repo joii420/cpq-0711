@@ -77,6 +77,10 @@ public class QuotationLineItem extends PanacheEntityBase {
     @Column(name = "vat_resolved_at")
     public OffsetDateTime vatResolvedAt;
 
+    /** Profit frozen from ds_quote_material when this quotation row is first created. */
+    @Column(name = "profit_snapshot", precision = 26, scale = 12)
+    public BigDecimal profitSnapshot;
+
     @Column(name = "product_name_snapshot", length = 500)
     public String productNameSnapshot;
 

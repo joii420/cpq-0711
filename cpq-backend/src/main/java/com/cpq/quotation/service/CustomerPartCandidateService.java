@@ -68,13 +68,17 @@ public class CustomerPartCandidateService {
             "       m.customer_product_no, m.customer_material_name, m.customer_drawing_no, " +
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
-            "       NULL::int AS current_version " +
+            "       NULL::int AS current_version, " +
+            "       qm.profit::text AS profit " +
             "FROM material_master p " +
             "LEFT JOIN material_customer_map m " +
             "       ON m.material_no = p.material_no " +
             "      AND m.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             "      AND m.system_type = 'QUOTE' " +
             "      AND m.pending_quotation_id IS NULL " +
+            "LEFT JOIN ds_quote_material qm " +
+            "       ON qm.material_no = p.material_no " +
+            "      AND qm.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             // task-260910 · B-4：删 internal_material JOIN（全表 0 行的死链路）。
             // 生产料号详情改由 ProductionPartInfoService 在下面一次性批量补齐。
             // task-0721 B7 闸门：未审核报价单占用的料号不出现在候选里（单表谓词，零 N+1，AC-4）。
@@ -102,6 +106,7 @@ public class CustomerPartCandidateService {
             // V161+ 修复: 透传 mapping.current_version → 前端 buildLineItemFromTemplate
             // 写入 LineItem.partVersionLocked, 首次自动展开就带正确版本号 → driver 注入 part_version=N
             dto.currentVersion    = row[10] != null ? ((Number) row[10]).intValue() : null;
+            dto.profit            = row[11] != null ? row[11].toString() : null;
             result.add(dto);
         }
         fillProductionPartInfo(customerId, result);
@@ -186,7 +191,8 @@ public class CustomerPartCandidateService {
             "       m.customer_product_no, m.customer_material_name, m.customer_drawing_no, " +
             "       m.base_currency, m.quote_currency, " +
             "       (m.id IS NOT NULL) AS customer_specific, " +
-            "       NULL::int AS current_version " +
+            "       NULL::int AS current_version, " +
+            "       qm.profit::text AS profit " +
             "FROM material_master p " +
             "LEFT JOIN material_customer_map m " +
             "       ON m.material_no = p.material_no " +
@@ -195,6 +201,9 @@ public class CustomerPartCandidateService {
             // task-0721 B7：customer_specific 判定不应被「同客户下其它未审核报价单」的 pending
             // 占号行误判为 true（防御性一致性；本查询本身已按 hfSet 精确框定"本批导入"，主 WHERE 不受影响）。
             "      AND m.pending_quotation_id IS NULL " +
+            "LEFT JOIN ds_quote_material qm " +
+            "       ON qm.material_no = p.material_no " +
+            "      AND qm.customer_no = (SELECT code FROM customer WHERE id = :customerId) " +
             // task-260910 · B-4：删 internal_material JOIN，生产料号详情改走 ProductionPartInfoService
             "WHERE p.material_no IN :hfs " +
             "ORDER BY (m.id IS NOT NULL) DESC, p.material_no ASC";
@@ -218,6 +227,7 @@ public class CustomerPartCandidateService {
             dto.customerSpecific  = row[9] != null && (Boolean) row[9];
             // V161+ 修复: V6 路径同样透传 current_version
             dto.currentVersion    = row[10] != null ? ((Number) row[10]).intValue() : null;
+            dto.profit            = row[11] != null ? row[11].toString() : null;
             result.add(dto);
         }
         fillProductionPartInfo(customerId, result);

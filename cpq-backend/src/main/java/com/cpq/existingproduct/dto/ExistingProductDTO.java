@@ -63,6 +63,9 @@ public class ExistingProductDTO {
     /** 规格：{@code COALESCE(NULLIF(v_compat_material_master.specification,''), dimension)}。 */
     public String spec;
 
+    /** 当前客户销售产品利润；十进制字符串或 null，供新增报价行冻结快照。 */
+    public String profit;
+
     /**
      * 来源标签（AC-6，<b>按来源列判定</b>，不再按「客户产品编号是否为空」）：
      * {@code source='IMPORT'} → {@code EXISTING}（导入建档，前端标「已有」）；

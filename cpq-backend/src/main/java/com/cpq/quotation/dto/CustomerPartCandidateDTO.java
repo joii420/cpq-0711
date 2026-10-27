@@ -50,6 +50,10 @@ public class CustomerPartCandidateDTO {
      *  避免初次从 import 跳转过来时 partVersion 缺省导致 ImplicitJoinRewriter 不注入版本过滤. */
     public Integer currentVersion;
 
+    /** 当前客户销售产品利润；字符串保留 numeric(26,12) 精度，空值也必须显式返回。 */
+    @JsonInclude(JsonInclude.Include.ALWAYS)
+    public String profit;
+
     /** 生产料号详情——供选品候选行的「生产料号」浮层用；缺失（未绑生产料号）时为 null。
      *  task-260910 · B-4 换源：与报价单卡片走**同一个** {@code ProductionPartInfoService}
      *  （ds_quote_material → ds_cost_basic_material ∪ ds_cost_detail_material）。

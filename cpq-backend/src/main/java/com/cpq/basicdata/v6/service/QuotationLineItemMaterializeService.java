@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.Map;
+import java.math.BigDecimal;
 
 /**
  * 服务端从「导入候选 + 报价模板」建 quotation_line_item 明细行。
@@ -76,7 +77,7 @@ public class QuotationLineItemMaterializeService {
         Map<String, VatSnapshotService.Snapshot> vatByMaterial = vatSnapshotService.resolveForNewLines(quotationId, candidateMaterials);
 
         // 第一遍：过滤空白 partNo + 生成 id + 编号 sort_order（与改动前逐行版本时机一致）。
-        // 每行 = [id, partNo, pname, customerPartNo, sortOrder, version]
+        // 每行 = [id, partNo, pname, customerPartNo, sortOrder, version, vat, profit]
         List<Object[]> rows = new ArrayList<>();
         int sort = 0;
         for (CustomerPartCandidateDTO c : candidates) {
@@ -87,7 +88,8 @@ public class QuotationLineItemMaterializeService {
             int ver = c.currentVersion != null ? c.currentVersion : 2000;
             // VAT is resolved once per newly created line and persisted as a snapshot.
             VatSnapshotService.Snapshot vat = vatByMaterial.get(c.partNo);
-            rows.add(new Object[]{ id, c.partNo, pname, c.customerProductNo, sort, ver, vat });
+            BigDecimal profit = c.profit == null ? null : new BigDecimal(c.profit);
+            rows.add(new Object[]{ id, c.partNo, pname, c.customerProductNo, sort, ver, vat, profit });
             ids.add(id);
             sort++;
         }
@@ -108,13 +110,14 @@ public class QuotationLineItemMaterializeService {
                     .append(", :tcvid").append(i).append(", :vr").append(i)
                     .append(", :vrr").append(i).append(", :vsrc").append(i)
                     .append(", :vef").append(i).append(", :vres").append(i)
+                    .append(", :profit").append(i)
                     .append(", NOW())");
             }
             String sql = "INSERT INTO quotation_line_item " +
                 "(id, quotation_id, template_id, product_part_no_snapshot, product_name_snapshot, " +
                 " customer_part_no, composite_type, sort_order, part_version_locked, " +
                 " product_attribute_values, tax_category_id, tax_category_version_id, vat_rate, vat_rate_ratio, " +
-                " vat_source, vat_effective_from, vat_resolved_at, created_at) VALUES " + valB;
+                " vat_source, vat_effective_from, vat_resolved_at, profit_snapshot, created_at) VALUES " + valB;
             var query = em.createNativeQuery(sql);
             query.setParameter("q", quotationId);
             query.setParameter("tid", templateId);
@@ -134,6 +137,7 @@ public class QuotationLineItemMaterializeService {
                 query.setParameter("vsrc" + i, vat.source());
                 query.setParameter("vef" + i, vat.effectiveFrom());
                 query.setParameter("vres" + i, vat.resolvedAt());
+                query.setParameter("profit" + i, r[7]);
             }
             query.executeUpdate();
         }

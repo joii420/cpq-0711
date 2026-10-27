@@ -88,7 +88,8 @@ public class DatasetQuotationCommitService {
      * <p>🚫 {@code WHERE cp.customer_no = :customerCode} 那条<b>本来就对</b>（形态②），不要动。
      */
     private static final String CANDIDATE_SQL =
-            "SELECT cp.customer_product_no, cp.customer_part_name, cp.material_no, m.material_name " +
+            "SELECT cp.customer_product_no, cp.customer_part_name, cp.material_no, m.material_name, " +
+            "       m.profit::text AS profit " +
             "  FROM ds_quote_customer_part cp " +
             "  LEFT JOIN ds_quote_material m ON m.material_no = cp.material_no " +
             "                              AND m.customer_no = cp.customer_no " +
@@ -261,6 +262,7 @@ public class DatasetQuotationCommitService {
             d.customerPartName  = str(r[1]);
             d.partNo            = str(r[2]);         // 销售料号 = 明细行的 product_part_no_snapshot
             d.partName          = str(r[3]);         // LEFT JOIN 未命中时为 null，由建行兜底
+            d.profit            = str(r[4]);
             d.customerSpecific  = true;
             out.add(d);
         }
