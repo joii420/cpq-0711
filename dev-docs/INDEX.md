@@ -565,8 +565,9 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 |---|---|---|
 | ~~`feat/quote-material-no`~~ | 报价料号 Spec 1 收尾 | ❌ **2026-08-17 废弃**（落后 master 922 提交；独有 diff 仅 `BACKLOG.md` +15 行、**零代码**）。内容**未丢**：其 `BL-0020`（7 项技术债）经实测复核后以 **[[BL-0175]]** 转录进 master 的 `BACKLOG.md`（原编号已被占用故改号）。**Major-2 按 P1 定级** —— 实测 `MaterialNoResolver.java:71` 的 `ensureRegistered` 位于 per-row 的 `resolve()` 内，被 8 个 handler 在行循环体内调用 = 活的 N+1 违规；Minor-6 的迁移编号洞（V308→V310 缺 V309）亦仍成立 |
 | `feat/task-260926-customer-code-import` | `task-260926-客户编号与客户Excel导入` | ✅ 已合并 master `624473dc`，worktree 已移除；**分支实体待用户执行 `git branch -d feat/task-260926-customer-code-import`** |
+| `feat/task-261026-material-profit` | `task-261026-物料利润字段` | 🟢 开发中；worktree `.claude/worktrees/task-261026-material-profit`；基线 `18b73062`；当前迁移候选 `V454`，建迁移前须五方重核。 |
 
-> 当前 worktree 已清理；已合并分支实体按规则保留，待用户执行删除命令后本表再清零。
+> `task-261026-物料利润字段` worktree 正在使用；其余已合并分支实体按规则保留，待用户执行删除命令后再清零。
 
 ---
 
