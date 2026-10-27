@@ -31,6 +31,7 @@ DB_NAME=cpq_t261026_profit_20261026 \
 
 - 一次性库六类残留：`component|0`、`cost_basic|0`、`cost_detail|0`、`import|0`、`material|0`、`user|0`。
 - 8081、15261、18261 均无监听；无本任务 Maven、Quarkus、Vite 或 Playwright 进程。
+- 回收前只读复核：数据库占用约 84 MB；PostgreSQL 端仍显示来自 `10.177.157.20` 的 5 条 idle JDBC 会话（无活动事务，最后查询均为 `SELECT 1`）。普通 `DROP DATABASE` 会在连接存在时安全失败；本任务不强制断开、不使用 `WITH (FORCE)`，待会话关闭后由用户执行回收命令。
 - 本次未生成或更新任何部署包。
 
 ## 主线复验摘要（2026-10-26）
@@ -121,7 +122,7 @@ API 测试又在 compile/preview 前后独立比对同六张表，前后摘要�
 
 | 库名 | 创建日期 | 归属片 | 状态 | 回收命令 |
 |---|---|---|---|---|
-| `cpq_t261026_profit_20261026` | 2026-10-26 | S-BE / S-UI / 主线亲验 | 全部测试已绿，可回收 | `DROP DATABASE cpq_t261026_profit_20261026;` |
+| `cpq_t261026_profit_20261026` | 2026-10-26 | S-BE / S-UI / 主线亲验 | 全部测试已绿、六类测试残留为 0；当前 5 条 idle JDBC 会话，关闭后可回收 | `DROP DATABASE cpq_t261026_profit_20261026;` |
 
 该 `DROP DATABASE` 属不可逆操作；本任务不会自动执行。
 
