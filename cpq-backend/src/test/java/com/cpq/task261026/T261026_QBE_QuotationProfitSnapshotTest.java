@@ -22,6 +22,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mindrot.jbcrypt.BCrypt;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.math.BigDecimal;
@@ -444,7 +445,9 @@ class T261026_QBE_QuotationProfitSnapshotTest {
     @DisplayName("T261026_QBE_22 / AC-15、AC-18：报价导入物化冻结 12 位利润字符串")
     void T261026_QBE_22_importMaterializationFreezesProfit() throws Exception {
         String materialNo = PREFIX + "IMPORT_MAT";
-        byte[] workbook = quotationImportWorkbook(materialNo, "1.234567891500", customer.code());
+        String profit = "1.234567891500";
+        byte[] workbook = quotationImportWorkbook(materialNo, profit, customer.code());
+        assertQuotationImportWorkbook(workbook, customer.code(), materialNo, profit);
         Response imported = request()
                 .multiPart("customerId", customer.id().toString())
                 .multiPart("file", PREFIX + "quotation-import.xlsx", workbook, XLSX_MIME)
@@ -882,13 +885,35 @@ class T261026_QBE_QuotationProfitSnapshotTest {
             ensureOptionalHeader(customerPart, "结算单位", "客户料号名称");
             Row customerPartRow = requireFirstDataRow(customerPart);
             writeText(customerPart, customerPartRow, "销售料号", materialNo);
-            writeIfHeader(customerPart, customerPartRow, "客户编号", customerNo);
+            writeText(customerPart, customerPartRow, "客户编号", customerNo);
             writeIfHeader(customerPart, customerPartRow, "客户产品编号", PREFIX + "IMPORT_CPN");
             writeIfHeader(customerPart, customerPartRow, "客户料号", PREFIX + "IMPORT_CPN");
             writeIfHeader(customerPart, customerPartRow, "客户料号名称", PREFIX + "导入产品");
 
             workbook.write(output);
             return output.toByteArray();
+        }
+    }
+
+    private static void assertQuotationImportWorkbook(
+            byte[] bytes, String customerNo, String materialNo, String profit) throws Exception {
+        assertTrue(bytes.length > 0, "导入 workbook 序列化后不得为空");
+        try (InputStream input = new ByteArrayInputStream(bytes);
+             XSSFWorkbook workbook = new XSSFWorkbook(input)) {
+            Sheet customerPart = workbook.getSheet("客户料号");
+            Row customerPartRow = requireFirstDataRow(customerPart);
+            assertEquals(customerNo,
+                    cellText(customerPartRow.getCell(headerIndex(customerPart, "客户编号"))),
+                    "上传前回读：客户料号 Sheet 的客户编号必须是本轮私有客户");
+            assertEquals(materialNo,
+                    cellText(customerPartRow.getCell(headerIndex(customerPart, "销售料号"))),
+                    "上传前回读：客户料号 Sheet 的销售料号必须是本轮料号");
+
+            Sheet material = workbook.getSheet("物料");
+            Row materialRow = requireFirstDataRow(material);
+            assertEquals(profit,
+                    cellText(materialRow.getCell(headerIndex(material, "利润"))),
+                    "上传前回读：物料 Sheet 利润必须保留 12 位字符串");
         }
     }
 
