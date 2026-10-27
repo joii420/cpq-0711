@@ -22,7 +22,7 @@
 | 任务 | 状态 | 入口文档 |
 |---|---|---|
 | `task-261026-生产环境上传文件解密/` | 🟠 **开发中 · 闸门 A 已通过（2026-10-26）**（路径 A 标准档；分支 `feat/task-261026-file-decryption`；全部有效入口、仅 prod、失败关闭；`file.encryption.server` 仅配 IP／主机＋端口） | `需求文档.md`、`fronttask.md`、`backtask.md`、`api.md`、`test.md`；依据 `docs/文件加解密服务接口调用文档.md` |
-| `task-261026-物料利润字段/` | 🟡 **待验收 · 已合并 master `48505f24`，闸门 B 待用户真机验收**（路径 A 标准档；普通有符号数字 + Excel 空白保留页面维护值；V454 已在 `cpq_db_0724` 成功应用） | `需求文档.md`、`fronttask.md`、`backtask.md`、`api.md`、`test.md`、`test-report.md`、`原型图/index.html` |
+| `task-261026-物料利润字段/` | 🟠 **开发中（验收期扩围）· 闸门 A 已通过（2026-10-26）**（路径 A 标准档；分支 `feat/task-261026-quote-profit-card`；新报价行冻结利润快照，历史报价不回填并显示 `利润: -`；扩围迁移当前候选 V455） | `需求文档.md`、`fronttask.md`、`backtask.md`、`api.md`、`test.md`、`test-report.md`、`原型图/index.html` |
 
 ### 新立项（2026-10-15）
 | 任务 | 状态 | 入口文档 |
@@ -564,6 +564,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 
 | 分支 | 对应任务 | 处置 |
 |---|---|---|
+| `feat/task-261026-quote-profit-card` | `task-261026-物料利润字段` | 🟠 开发中；worktree `.claude/worktrees/task-261026-quote-profit-card`；验收期扩围闸门 A 2026-10-26 已通过；扩围迁移当前候选 `V455` |
 | `feat/task-261026-file-decryption` | `task-261026-生产环境上传文件解密` | 🟠 开发中；worktree `.claude/worktrees/task-261026-file-decryption`；闸门 A 2026-10-26 已通过 |
 | ~~`feat/quote-material-no`~~ | 报价料号 Spec 1 收尾 | ❌ **2026-08-17 废弃**（落后 master 922 提交；独有 diff 仅 `BACKLOG.md` +15 行、**零代码**）。内容**未丢**：其 `BL-0020`（7 项技术债）经实测复核后以 **[[BL-0175]]** 转录进 master 的 `BACKLOG.md`（原编号已被占用故改号）。**Major-2 按 P1 定级** —— 实测 `MaterialNoResolver.java:71` 的 `ensureRegistered` 位于 per-row 的 `resolve()` 内，被 8 个 handler 在行循环体内调用 = 活的 N+1 违规；Minor-6 的迁移编号洞（V308→V310 缺 V309）亦仍成立 |
 | `feat/task-260926-customer-code-import` | `task-260926-客户编号与客户Excel导入` | ✅ 已合并 master `624473dc`，worktree 已移除；**分支实体待用户执行 `git branch -d feat/task-260926-customer-code-import`** |
