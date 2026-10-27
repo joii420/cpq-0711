@@ -1,11 +1,11 @@
 <!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>物料利润字段 · 原型导航</title><link rel="stylesheet" href="prototype.css"></head><body><main class="page">
 <section class="card pad"><h1>📌 当前基准 · 销售产品列表「利润」列</h1><div class="muted">task-261026-物料利润字段 · 2026-10-26 · 路径 A 闸门 A 前置产物</div><span class="tag">范围：产品管理 → 销售产品</span><span class="tag gray">3 份关键状态</span><div class="alert warn"><b>局部基准：</b>本组只接管销售产品列表的「利润列及其行内编辑」。客户选择器、搜索/刷新、其他列、抽屉与分页继续沿用现行实现和上游原型。</div></section>
 <section class="card pad"><h2>原型导航</h2><div class="nav">
-<a href="01-销售产品-利润默认态.html">01 · 默认态<span>完整销售产品表格；利润在生产料号之后，展示负数、零、小数与空值。</span></a>
+<a href="01-销售产品-利润默认态.html">01 · 默认态<span>完整销售产品表格；利润紧跟增值税，展示负数、零、小数与空值。</span></a>
 <a href="02-销售产品-利润编辑与校验态.html">02 · 编辑与校验态<span>双击/编辑图标、数字输入、保存中、非法值、显式清空。</span></a>
 <a href="03-销售产品-利润空态失败与极值.html">03 · 空态、失败与极值<span>业务空态、候选失败、保存失败回滚、超长数字不撑破布局。</span></a>
 </div></section>
 <section class="card pad"><h2>覆盖面与不出图说明</h2><table class="facts"><thead><tr><th>改动区域</th><th>原型</th><th>说明</th></tr></thead><tbody><tr><td>销售产品列表</td><td>01 / 02 / 03</td><td>增加表格列和行内编辑交互，触发 <code>frontend.md §1.3</code>。</td></tr><tr><td>组件管理 → 取数配置 → 物料字段列表</td><td>不另出</td><td>前端布局与交互零改动，只由 field-tree 多返回一个普通 NUMBER 字段；以 AC-11 的真实 JSON、拖入和编译预览证据约束。</td></tr><tr><td>报价单管理 → 基础数据导入</td><td>不另出</td><td>上传抽屉零改动；变化发生在 Excel 模板和后端导入校验。</td></tr></tbody></table></section>
-<section class="card pad"><h2>🕰️ 被本组局部取代的历史基准</h2><table class="facts"><thead><tr><th>历史原型</th><th>本任务后的偏差</th></tr></thead><tbody><tr><td><code>task-260927-增值税税率模块/原型图/产品管理-客户产品与销售产品.html</code></td><td>销售产品表当时没有「利润」列；本任务在「生产料号」后追加「利润」，并增加数字行内编辑。该图的税务分类、VAT 和其余布局仍有效。</td></tr><tr><td><code>task-260907-产品管理客户过滤/原型图/03-销售产品-当前客户.html</code></td><td>客户维度与横向滚动仍有效；列集合以后续 VAT 原型和本任务增量为准。</td></tr><tr><td><code>task-260903-产品维护能力增强/原型图/销售产品-可编辑生产料号.html</code></td><td>生产料号编辑交互仍有效；利润使用同层级但独立的数字编辑组件。</td></tr></tbody></table></section>
+<section class="card pad"><h2>🕰️ 被本组局部取代的历史基准</h2><table class="facts"><thead><tr><th>历史原型</th><th>本任务后的偏差</th></tr></thead><tbody><tr><td><code>task-260927-增值税税率模块/原型图/产品管理-客户产品与销售产品.html</code></td><td>销售产品表当时没有「利润」列；本任务在「增值税」后紧跟「利润」，并增加数字行内编辑。该图的税务分类、VAT 和其余布局仍有效。</td></tr><tr><td><code>task-260907-产品管理客户过滤/原型图/03-销售产品-当前客户.html</code></td><td>客户维度与横向滚动仍有效；列集合以后续 VAT 原型和本任务增量为准。</td></tr><tr><td><code>task-260903-产品维护能力增强/原型图/销售产品-可编辑生产料号.html</code></td><td>生产料号编辑交互仍有效；利润使用同层级但独立的数字编辑组件。</td></tr></tbody></table></section>
 <section class="card pad"><h2>还原纪律</h2><div class="alert">定稿后，利润列位置、对齐、输入控件、保存/失败文案和空态均按本组还原。原型未接管的区域不自由调整；若原型与 AC 冲突，以 AC 为准并立即回报。</div></section>
 </main></body></html>

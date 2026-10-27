@@ -197,14 +197,26 @@ async function archiveScreenshot(page: Page, filename: string) {
 test.beforeAll(() => assertIsolatedEnv());
 
 test('T261026_UI_01 / AC-7：列序、右对齐、NULL 破折号、极值与横向滚动', async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on('console', (entry) => {
+    if (entry.type() === 'error') consoleErrors.push(entry.text());
+  });
   await page.setViewportSize({ width: 980, height: 760 });
   const state: MockState = { rows: fixtureRows(), puts: [], failNext: false, delayNextMs: 0 };
   await openSalesList(page, state);
 
+  expect(page.url(), '页面必须停在产品管理壳页').toContain('/products-hub');
+  await expect(page).toHaveTitle('cpq-frontend');
+  await expect(page.getByRole('heading', { name: '产品管理', exact: true })).toBeVisible();
+  await expect(page.locator('vite-error-overlay, webpack-dev-server-client-overlay, nextjs-portal'))
+    .toHaveCount(0);
+
   const headers = await headerTexts(page);
-  const productionAt = headers.indexOf('生产料号');
-  expect(productionAt, '必须先找到生产料号列，否则相对列序断言会空跑').toBeGreaterThanOrEqual(0);
-  expect(headers.indexOf('利润'), 'AC-7：利润必须紧跟生产料号').toBe(productionAt + 1);
+  const vatAt = headers.indexOf('增值税');
+  expect(vatAt, '必须先找到增值税列，否则相对列序断言会空跑').toBeGreaterThanOrEqual(0);
+  const profitAt = headers.indexOf('利润');
+  expect(profitAt, 'AC-7：利润必须紧跟增值税').toBe(vatAt + 1);
+  expect(headers.indexOf('产品分类'), 'AC-7：利润后应为产品分类').toBe(profitAt + 1);
 
   const negative = await profitCell(page, `${PREFIX}NEG`);
   expect(await negative.evaluate((el) => getComputedStyle(el).textAlign), 'AC-7：利润列必须右对齐')
@@ -230,6 +242,7 @@ test('T261026_UI_01 / AC-7：列序、右对齐、NULL 破折号、极值与横�
   await negative.click();
   await expect(page.locator('.ant-drawer-open'), '利润格单击不得误开抽屉').toHaveCount(0);
   await archiveScreenshot(page, '01-default-null-extreme-horizontal-scroll.png');
+  expect(consoleErrors, '默认态不得有浏览器 console error').toEqual([]);
 });
 
 test('T261026_UI_02 / AC-8：双击/图标编辑，Esc 取消，Enter 与失焦保存', async ({ page }) => {

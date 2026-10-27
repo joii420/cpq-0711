@@ -8,7 +8,7 @@
 
 | 编号 | 服务的 AC | 内容 |
 |---|---|---|
-| F-1 | AC-6、AC-7 | `PartListItem` 增加 `profit?: string \| null`；销售产品表在生产料号之后加「利润」列，右对齐并保持宽表横向滚动。 |
+| F-1 | AC-6、AC-7 | `PartListItem` 增加 `profit?: string \| null`；销售产品表在增值税之后紧跟「利润」列，右对齐并保持宽表横向滚动。 |
 | F-2 | AC-8、AC-9、AC-10 | 新增利润专用行内编辑单元格：数字输入、Enter/失焦保存、Esc 取消、显式清空、保存中、失败回滚；吞掉单元格点击，避免误开行抽屉。 |
 | F-3 | AC-8、AC-9 | API `UpdatePartPayload` 增加 `profit?: string \| null`；成功后按 `(customerNo, axisValue)` 只回写本地目标行。 |
 | F-4 | AC-11、AC-12 | 用真实字段树响应确认 `利润` 自动出现在物料分组、可拖入且默认 `INPUT_NUMBER`；不修改 `SqlViewBuilderTab.tsx` 的字段清单逻辑。 |

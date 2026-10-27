@@ -10,7 +10,7 @@
 //
 // 🆕 子任务 `task-260903-产品维护能力增强`（F-2 / AC-6）当时只将
 //    「生产料号」改为可编辑单元格，抽屉维持全只读。
-// 🆕 `task-261026-物料利润字段`（F-1~F-3）再在生产料号后追加独立的「利润」
+// 🆕 `task-261026-物料利润字段`（F-1~F-3）在增值税后紧跟独立的「利润」
 //    可编辑列；其余列和销售产品抽屉仍不开放编辑。
 //    🔐 四个角色都渲染编辑能力（用户 2026-09-03 裁决）⇒ 本文件不读 authStore、无角色分支。
 //
@@ -202,9 +202,28 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
     { title: '税务分类', dataIndex: 'taxCategoryName', key: 'taxCategoryName', width: 140, ellipsis: true, render: renderTextCell },
     { title: '增值税', dataIndex: 'vatRate', key: 'vatRate', width: 100, align: 'right', ellipsis: true,
       render: (value: string | null | undefined) => value == null || value === '' ? '—' : `${value}%` },
-    // 🆕 F-5 / AC-8：产品分类列。**位置第 2 位（销售料号之后）是用户 2026-09-03 裁决**，
-    //    照报价 Excel 物料 sheet 的列序（销售料号 · 产品分类 · 品名 · 规格 · 尺寸 · 旧料号 ·
-    //    单重 · 生产料号 · 类型），让页面与导入模板保持一致。
+    {
+      title: '利润',
+      dataIndex: 'profit',
+      key: 'profit',
+      width: 190,
+      align: 'right',
+      // 不开 Table 的 ellipsis：只读态由单元格内层省略，否则编辑态 InputNumber 会被裁切。
+      onCell: () => ({
+        onClick: (event: React.MouseEvent) => { event.stopPropagation(); },
+      }),
+      render: (_: unknown, row: PartListItem) => (
+        <EditableProfitCell
+          axisValue={row.axisValue}
+          customerNo={row.customerNo}
+          value={row.profit}
+          onSaved={(next) => handleProfitSaved(row.customerNo, row.axisValue, next)}
+        />
+      ),
+    },
+    // 🆕 F-5 / AC-8：产品分类列。客户、税务维度之后仍按报价 Excel 物料 sheet 的
+    //    业务字段顺序（产品分类 · 品名 · 规格 · 尺寸 · 旧料号 · 单重 · 生产料号）；
+    //    task-261026 验收裁决 D-5 将利润插在增值税与产品分类之间。
     // 🚩 **只显示 `categoryName`（如「默认分类」），不显示 `categoryCode`（`000000`）** —— 同一裁决。
     // ⚠️ 表头写「产品分类」**不带空格**：Excel 列名里那个 `产品 分类` 的空格是模板缺陷
     //    （task-260902 已加硬拦截并请用户删除），属导入侧列名匹配的事，UI 标题不照抄。
@@ -242,25 +261,6 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
           customerNo={row.customerNo}
           value={row.productionNo}
           onSaved={(next) => handleProductionNoSaved(row.customerNo, row.axisValue, next)}
-        />
-      ),
-    },
-    {
-      title: '利润',
-      dataIndex: 'profit',
-      key: 'profit',
-      width: 190,
-      align: 'right',
-      // 不开 Table 的 ellipsis：只读态由单元格内层省略，否则编辑态 InputNumber 会被裁切。
-      onCell: () => ({
-        onClick: (event: React.MouseEvent) => { event.stopPropagation(); },
-      }),
-      render: (_: unknown, row: PartListItem) => (
-        <EditableProfitCell
-          axisValue={row.axisValue}
-          customerNo={row.customerNo}
-          value={row.profit}
-          onSaved={(next) => handleProfitSaved(row.customerNo, row.axisValue, next)}
         />
       ),
     },
