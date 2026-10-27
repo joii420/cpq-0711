@@ -8,7 +8,7 @@
 | S-UI | AC-7~AC-10 | 销售产品利润列与编辑单元格、PUT payload/客户隔离、状态切换、逐屏视觉 | 组件测试使用 Mock API；真实接口夹具统一 `T261026_UI_` 前缀并定点清理。 |
 | S-E2E | AC-13、AC-20 | 冷启动、全链真实串联、双视图浏览器验收与范围回归 | 迁移合入主线后由主代理串行执行；使用 `T261026_E2E_` 前缀，先取基线，结束逐表核对并清理。 |
 | S-QBE | AC-14、AC-15、AC-17~AC-19 | 报价行快照迁移、所有新行入口、历史空值、精度契约、复制与 N+1 | 隔离测试库；数据统一 `T261026_QBE_` 前缀，历史行夹具在迁移前建立或用明确 NULL 夹具模拟，结束定点清理。 |
-| S-QUI | AC-16 | 编辑态/只读态提示框位置、文案、极值布局与双视图视觉 | 使用 Mock API + 隔离 E2E 单据 `T261026_QUI_`；截图写测试输出目录，不污染仓库。 |
+| S-QUI | AC-16 | 编辑态/只读态提示框位置、文案、极值布局与双视图视觉 | 使用隔离 E2E 单据 `T261026_QUI_`；完整页面优先连隔离后端，只有纯格式分支可 Mock。截图写测试输出目录，不污染仓库。 |
 
 新增 DDL 不在开发子代理阶段直接应用到共享开发库。迁移先在隔离环境验证；合并后按主线规则冷启动测试实例，再做真实 E2E。
 
@@ -61,3 +61,62 @@
 - 冷启动记录 Flyway 最新成功版本、Schema 自检日志、字段树 JSON、列表 GET/PUT 原始响应、导入错误原始响应。
 - UI 记录三份原型逐屏对照截图和浏览器控制台 0 error 证据。
 - N+1 记录列表与更新 SQL 条数，不以代码目测代替。
+
+## 6. 独立测试实现边界与收集入口
+
+本节是对独立测试首轮阻塞的处置，不放宽“测试代理不得阅读业务实现”的独立性要求。
+
+### 6.1 允许读取与禁止读取
+
+独立测试代理可读取并复用以下测试基建：
+
+- `cpq-backend/src/test/**`、`cpq-backend/pom.xml`、`cpq-backend/src/test/resources/application.properties`；
+- `cpq-frontend/e2e/**`、`cpq-frontend/package.json`、`cpq-frontend/playwright.config.ts`；
+- 本任务的 `需求文档.md`、`api.md`、`test.md`。
+
+仍禁止读取 `cpq-backend/src/main/**`、`cpq-frontend/src/**` 以及本次前后端代理的实现 diff。测试必须从文档契约和
+可观察行为推出断言，不得翻实现“对答案”。数据库只允许查看隔离库的 schema/metadata，不允许借共享库当前数据洗绿。
+
+### 6.2 测试文件与命名
+
+- S-QBE 新增测试放 `cpq-backend/src/test/java/com/cpq/task261026/`，类/方法名前缀
+  `T261026_QBE_`；可复用同目录既有 `Task261026ProfitApiTest` 的登录、前缀清理、RestAssured 和
+  Hibernate Statistics 模式，但不得修改 S-BE 已认领断言。
+- S-QUI 新增 `cpq-frontend/e2e/task261026-quotation-profit-ui.spec.ts`，测试标题前缀
+  `T261026_QUI_`。同步把 `e2e/task261026.config.ts` 的 `testMatch` 扩到两个 task261026 spec，
+  不能让既有销售产品 spec 掉出收集范围。
+- 后端测试编写完成后的定向命令：
+  `DB_NAME=<临时库> ./mvnw -Dtest='com.cpq.task261026.*' test`（从 `cpq-backend/` 执行）。
+- 前端测试编写完成后的收集命令：
+  `PW_BASE_URL=<临时前端> PW_BACKEND_URL=<临时后端> npx playwright test -c e2e/task261026.config.ts --list`。
+  真正运行仍必须等主代理启动独立栈并给出 URL。
+
+### 6.3 隔离栈与夹具所有权
+
+- 主代理负责在执行前创建新的临时数据库和独立前后端端口，并把名称/URL交给测试分片；测试代理不得自行
+  DROP 数据库，也不得连接共享 5174/8081 或默认开发库。
+- S-QBE 可在隔离库选择既有 ACTIVE 客户作为父记录，但所有新数据必须使用
+  `T261026_QBE_` 前缀并在 `finally/@AfterAll` 精确清理；禁止 `DELETE FROM <table>` 无谓词或按全局数量断言。
+- S-QUI 使用 S-QBE REST/SQL 夹具口径创建自己的 `T261026_QUI_` 报价；不得依赖某个固定现网报价 UUID。
+  若为了纯前端 null/精度分支做 route mock，必须先用真实隔离单据拿到完整响应形状，只覆写
+  `lineItems[].profit`，不得手写一份不完整整单 JSON。
+- 鉴权、接口、请求体、SQL 观测和稳定 DOM 的完整契约见 `api.md` 第 7 节。
+
+### 6.4 S-QUI 浏览器硬断言
+
+每个编辑态/只读态场景除 T-19 业务断言外，还必须同时断言：
+
+1. URL 和页面标题正确、页面非空、`.qt-product-card` 至少 1 张；
+2. 无错误遮罩，浏览器 `console.error` 为 0；
+3. 单位/VAT/利润在同一 `.qt-card-header-left` 内且 DOM 顺序严格递增；
+4. 1440×900 下利润框不与右侧产品名/销售料号重叠，卡片和页面无意外横向溢出；
+5. 编辑态删除按钮存在且仍可触发既有确认/删除交互；只读态删除按钮数量为 0；
+6. 截图写 Playwright `outputPath()`/测试输出目录，不写入仓库受跟踪目录。
+
+## 7. 独立测试首轮阻塞处置
+
+- 草稿、创建、复制、刷新、重算、导入物化的 URL 与请求形状：已由 `api.md` §7.1~§7.3 补齐。
+- 隔离库、鉴权、夹具和 SQL 观测口径：已由 `api.md` §7.4 与本文件 §6.3 补齐。
+- 页面入口和稳定 DOM：已由 `api.md` §7.5 与本文件 §6.4 补齐。
+- 现有测试 fixture/helper/构建配置读取权：已由本文件 §6.1 明确开放；业务实现目录仍禁止读取。
+- 完整页面不要求猜测最小 Mock 响应：默认使用隔离真实栈；需要 Mock 时只能在真实完整响应上覆写利润字段。

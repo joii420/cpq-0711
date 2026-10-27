@@ -609,3 +609,9 @@ S-UI 第三轮异步同步问题已修正（仅测试文件，未启动服务）
 当前该 spec 仍为未跟踪状态：`?? cpq-frontend/e2e/task261026-material-profit-ui.spec.ts`。
 
 已自检：TypeScript 0 错误 ✅；定向 ESLint 0 错误 ✅；Playwright `--list` 识别 3/3 用例 ✅；证据目录可配置且默认按轮次隔离 ✅。
+
+## 验收期扩围 · 独立测试首轮阻塞原文（2026-10-26）
+
+> S-QBE/S-QUI 已仅按授权读完 AC-14~20、test.md、api.md。现被契约信息阻塞，按“信息不足即停，不许翻实现补齐”暂停，尚未改文件：1) api.md 只给 draft 语义，缺 PUT /quotations/{id}/draft 的完整请求 schema（added/modified 行身份字段）、创建报价/复制报价/刷新基础数据/重算的 URL 与请求响应；无法覆盖 saveDraft、导入物化、已有产品、选配/绑定、复制、不漂移序列。2) 缺隔离夹具建立/鉴权契约（如何创建客户、ds_quote_material、quotation/line item，哪些测试 profile/环境变量；禁止共享库下不能猜）。3) “利润查询不随行数增长”缺可观测计数接口/统计方式和允许的基线条数。4) S-QUI 缺报价编辑页/只读页 URL、登录方式与单位/VAT/利润/删除按钮稳定 DOM 标识；也缺页面依赖的最小 Mock API 响应全集，无法在不读现有测试/实现的前提下编写可执行 Playwright。5) 当前读取权限又明确限制为三份文档，连既有测试基建/fixture/helper/pom/package 配置也不能读，因此无法确定 JUnit/Quarkus/Playwright 收集入口。请补充上述测试契约，或明确扩大只读范围到相关现有测试基建（仍不读 src/main/src）后我继续。未验证：等待实现完成后按片解锁。
+
+处置：主线补充现有接口、夹具、SQL 观测与 DOM 选择器的测试基建契约后，测试工程师仍只从任务文档取数，不开放业务实现目录。
