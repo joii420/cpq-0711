@@ -151,7 +151,8 @@ async function openReadonly(page: Page, fixture: Fixture) {
 
 async function openEditStep2(page: Page, fixture: Fixture) {
   await openReadonly(page, fixture);
-  const edit = page.getByRole('button', { name: /^\s*编\s*辑\s*$/ }).first();
+  const edit = page.getByRole('button', { name: /编辑/ });
+  await expect(edit, '详情页必须且只能有一个 accessible name 包含“编辑”的按钮').toHaveCount(1);
   await expect(edit, '编辑态必须按“详情 → 编辑”入口进入').toBeVisible();
   await edit.click();
   const next = page.getByRole('button', { name: /下\s*一\s*步/ }).first();
