@@ -171,25 +171,41 @@ async function assertHeaderContract(
   const header = card.locator('.qt-card-header-left');
   await expect(header, '产品卡必须有 .qt-card-header-left').toHaveCount(1);
 
-  const unit = header.locator(':scope > .qt-sku-badge');
+  const unit = header
+    .locator(':scope > .qt-sku-badge')
+    .filter({ hasText: /^\s*单位\s*[:：]/ });
   const vat = header.locator(':scope > .qt-vat-badge');
   const profit = header.locator(':scope > .qt-profit-badge');
-  await expect(unit, '单位提示框必须是头部直接子元素').toHaveCount(1);
   await expect(vat, 'VAT 提示框必须是头部直接子元素').toHaveCount(1);
   await expect(profit, '利润提示框必须是头部直接子元素').toHaveCount(1);
-  await expect(unit).toContainText(/^单位\s*[:：]/);
+  const unitCount = await unit.count();
+  expect(unitCount, '单位提示框为条件渲染；存在时必须唯一且是头部直接子元素')
+    .toBeLessThanOrEqual(1);
+  if (unitCount === 1) {
+    await expect(unit).toContainText(/^\s*单位\s*[:：]/);
+  }
   await expect(profit).toHaveText(expectedProfit);
+  await expect(
+    header.locator(':scope > .qt-vat-badge + .qt-profit-badge'),
+    '利润必须是 VAT 的下一个直接兄弟，且两者都在头部直接子级',
+  ).toHaveCount(1);
 
   const order = await header.evaluate((element) => {
     const children = Array.from(element.children);
     return {
-      unit: children.findIndex((child) => child.matches('.qt-sku-badge')),
+      unit: children.findIndex((child) => child.matches('.qt-sku-badge')
+        && /^\s*单位\s*[:：]/.test(child.textContent ?? '')),
       vat: children.findIndex((child) => child.matches('.qt-vat-badge')),
       profit: children.findIndex((child) => child.matches('.qt-profit-badge')),
     };
   });
-  expect(order.unit, '单位必须位于 VAT 之前').toBeGreaterThanOrEqual(0);
-  expect(order.vat, 'VAT 必须位于利润之前').toBeGreaterThan(order.unit);
+  if (unitCount === 1) {
+    expect(order.unit, '单位存在时必须位于 VAT 之前').toBeGreaterThanOrEqual(0);
+    expect(order.vat, '单位存在时 VAT 必须位于单位之后').toBeGreaterThan(order.unit);
+  } else {
+    expect(order.unit, '无结算单位的真实报价不得误把客户产品编号识别成单位').toBe(-1);
+  }
+  expect(order.vat, 'VAT 必须存在于头部直接子级').toBeGreaterThanOrEqual(0);
   expect(order.profit, '利润必须紧跟 VAT，不能插到产品名/销售料号之后').toBe(order.vat + 1);
 
   const deleteButton = card.locator('button.qt-action-btn.delete');
