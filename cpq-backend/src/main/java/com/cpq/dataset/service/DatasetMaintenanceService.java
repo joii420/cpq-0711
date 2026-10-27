@@ -134,6 +134,8 @@ public class DatasetMaintenanceService {
         // 🚫 不写死 dataset=='quote' —— 按 Registry 元数据判定，将来哪套数据集加了这一列都自动跟上。
         // 核价两套的轴本身就是 production_no，已由 axisValue 表达，再出一遍是冗余（契约要求整个省略）。
         boolean hasProductionNo = hasNonAxisColumn(reg, "production_no");
+        // task-261026：profit 只属于报价物料；同样按 Registry 元数据决定键是否出现。
+        boolean hasProfit = hasNonAxisColumn(reg, "profit");
         // api.md §3 / 需求文档 R-1.6（D-26）：料号类型是「料号的属性」，三套物料表都建了这一列。
         // 🚫 同样不写死 dataset —— 走 Registry 元数据，将来哪套去掉这一列，键自动跟着消失。
         boolean hasMaterialType = hasNonAxisColumn(reg, "material_type");
@@ -216,6 +218,7 @@ public class DatasetMaintenanceService {
                 + " m.unit_weight, COALESCE(a.c, 0), " + lastUpdated
                 + (hasPricingUnit ? ", m.pricing_unit" : "")
                 + (hasProductionNo ? ", m.production_no" : "")
+                + (hasProfit ? ", m.profit" : "")
                 + (hasMaterialType ? ", m.material_type" : "")
                 + (hasCategory ? ", m.category_code, pc.name" : "")
                 + (hasCustomer ? ", m.customer_no, cust.name" : "")
@@ -247,6 +250,7 @@ public class DatasetMaintenanceService {
             int dyn = 8;
             if (hasPricingUnit) it.putPricingUnit(str(r[dyn++]));
             if (hasProductionNo) it.putProductionNo(str(r[dyn++]));
+            if (hasProfit) it.putProfit(plainDecimal(r[dyn++]));
             if (hasMaterialType) it.putMaterialType(str(r[dyn++]));
             if (hasCategory) {
                 it.putCategoryCode(str(r[dyn++]));
@@ -296,8 +300,9 @@ public class DatasetMaintenanceService {
     /**
      * 该数据集的<b>物料表</b>是否把 {@code columnName} 建成了「轴列之外的独立列」。
      *
-     * <p>用于 api.md §3 的 {@code productionNo} / {@code materialType}：报价物料表有独立的「生产料号」列；
-     * 核价两套的 {@code production_no} 就是轴列本身，不算独立列。{@code material_type} 三套都有。
+     * <p>用于 api.md §3 的动态属性键：报价物料表有独立的 {@code production_no}
+     * 与 {@code profit}；核价两套的 {@code production_no} 就是轴列本身且没有
+     * {@code profit}。{@code material_type} 三套都有。
      * 判定走 Registry 元数据而非硬编码 datasetKey —— 与建表同源，将来加列自动跟上。
      */
     private boolean hasNonAxisColumn(DatasetRegistry reg, String columnName) {
@@ -1061,8 +1066,8 @@ public class DatasetMaintenanceService {
      * </ol>
      *
      * <h3>与导入的冲突消解（D-29）</h3>
-     * 这里改过的 {@code production_no} 不会被下次导入的空格子打回 ——
-     * {@code PlainTableWriter} 对 {@code preserveOnNull} 的列走 {@code COALESCE}（AC-62）。
+     * 这里改过的 {@code production_no} / {@code profit} 不会被下次导入的空格子打回 ——
+     * {@code PlainTableWriter} 对 {@code preserveOnNull} 的列走 {@code COALESCE}。
      * ⚠️ <b>每新开放一个可编辑字段，都要单独回答「下次导入会不会把它打回」</b>，不能默认继承。
      *
      * <h3>🚩 {@code null} 与「键缺席」必须区分（跨端契约，api.md §3.5）</h3>
@@ -1071,13 +1076,14 @@ public class DatasetMaintenanceService {
      *   <li><b>键不存在</b> → 该列<b>不进</b> {@code UPDATE SET}，一个字节不动。</li>
      * </ul>
      * 🚫 <b>严禁用 {@code map.get(k) != null} 判断「这个字段要不要改」</b> ——
-     * {@code {"production_no": null}} 与 {@code {}} 在 {@code get()} 下<b>返回同一个 null</b>，
+     * {@code {"production_no": null}} / {@code {"profit": null}} 与 {@code {}} 在 {@code get()} 下
+     * <b>返回同一个 null</b>，
      * 「清空」会被当成「没传」而<b>静默不改</b>，症状是「点了清空、提示保存成功、值还在」。
      * 本方法遍历 {@code entrySet()}，天然按「键在不在」判定 —— 改写时不要退回 {@code get()}。
      *
      * <h3>键名接受两种写法</h3>
-     * DB 列名 {@code production_no}（契约正名）与其小驼峰 {@code productionNo}
-     *（= {@code GET /parts} item 里的键名）都接受，解析到同一列。
+     * DB 列名与其小驼峰（例如 {@code production_no} / {@code productionNo}）都接受，
+     * 解析到同一列；{@code profit} 在两种命名下相同。
      * 前端从列表拿到的是小驼峰，写回时若被迫做一次蛇形转换，转错了就是<b>静默改不到</b>。
      * 🚫 白名单强度不因此降低：解析后仍按 {@link ColumnDef#partEditable} 判定，不在白名单一律 400 点名。
      *
@@ -1125,6 +1131,17 @@ public class DatasetMaintenanceService {
                     && ValueNormalizer.toRawString(e.getValue()).length() > max) {
                 throw new BusinessException(400,
                     "列「" + c.label + "」" + DatasetValidationReasons.tooLong(max));
+            }
+            if (!ValueNormalizer.isBlank(e.getValue())) {
+                String raw = ValueNormalizer.toRawString(e.getValue());
+                if (DatasetValues.isInteger(c) && ValueNormalizer.parseInteger(raw) == null) {
+                    throw new BusinessException(400,
+                        "列「" + c.label + "」" + DatasetValidationReasons.NOT_AN_INTEGER);
+                }
+                if (DatasetValues.isNumeric(c) && ValueNormalizer.parseDecimal(raw) == null) {
+                    throw new BusinessException(400,
+                        "列「" + c.label + "」" + DatasetValidationReasons.NOT_A_NUMBER);
+                }
             }
             Object v = DatasetValues.coerce(c, e.getValue());   // 🚫 不截断；空 → null（= 清空该列）
             String pn = "v" + (i++);
@@ -1279,7 +1296,9 @@ public class DatasetMaintenanceService {
     private static String editableNames(SheetDef material) {
         List<String> names = new ArrayList<>();
         for (ColumnDef c : material.persistedColumns()) {
-            if (c.partEditable) names.add(c.name + " / " + toCamel(c.name));
+            if (!c.partEditable) continue;
+            String camel = toCamel(c.name);
+            names.add(c.name.equals(camel) ? c.name : c.name + " / " + camel);
         }
         return names.isEmpty() ? "无" : String.join("，", names);
     }

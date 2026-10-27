@@ -58,7 +58,7 @@ SRC_NOTE = {}
 # ── 中文列名 → 英文字段名（沿用现有 V6 命名习惯）────────────────────────────
 COL = {
  "销售料号":"material_no","生产料号":"production_no","品名":"material_name","规格":"specification",
- "尺寸":"dimension","旧料号":"old_material_no","单重":"unit_weight","项次":"item_seq",
+ "尺寸":"dimension","旧料号":"old_material_no","单重":"unit_weight","利润":"profit","项次":"item_seq",
  "客户编号":"customer_no","客户料号名称":"customer_part_name","客户产品编号":"customer_product_no","客户图号":"customer_drawing_no",
  "投入料号":"input_material_no","投入料号名称":"input_material_name",
  # ── D-26 / D-27（2026-09-03 交付后变更）──
@@ -122,7 +122,7 @@ TBL = {
 #    报「不是合法数值」。改为**分层判定，文本型规则优先于数值型规则**。
 INT_KW  = ("项次", "顺序", "次数", "寿命", "产量")
 DEC_KW  = ("率", "比例", "占比", "含量", "重", "价", "费", "成本", "金额", "值",
-           "用量", "数量", "底数", "面积", "厚度", "密度", "折扣", "损耗")
+           "用量", "数量", "底数", "面积", "厚度", "密度", "折扣", "损耗", "利润")
 
 def pgtype(cn):
     """PG 类型推断（2026-09-03 修订 v2）。

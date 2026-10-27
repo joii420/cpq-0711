@@ -76,6 +76,9 @@ class PlainTableWriterTest {
                 .findFirst()
                 .orElseThrow();
 
+        int profitIndex = indexOfPersisted(material, "profit");
+        int generatedVatIndex = material.persistedColumns().size();
+
         EntityManager em = mock(EntityManager.class);
         Query query = mock(Query.class);
         when(em.createNativeQuery(anyString())).thenReturn(query);
@@ -99,8 +102,16 @@ class PlainTableWriterTest {
 
         assertEquals(1, result.inserted());
         assertEquals(0, result.updated());
-        assertFalse(boundNames.contains("p0_9"), "tax_category_id is a SQL expression, not a bind parameter");
-        assertTrue(boundNames.contains("p0_10"), "source must retain the column slot after tax_category_id");
-        assertTrue(boundNames.contains("p0_14"), "customer_no must remain the final bind parameter");
+        assertTrue(boundNames.contains("p0_" + profitIndex),
+                "profit is a persisted Excel value and must not be mistaken for generated VAT");
+        assertFalse(boundNames.contains("p0_" + generatedVatIndex),
+                "tax_category_id is a SQL expression, not a bind parameter");
+    }
+
+    private static int indexOfPersisted(SheetDef sheet, String name) {
+        for (int i = 0; i < sheet.persistedColumns().size(); i++) {
+            if (name.equals(sheet.persistedColumns().get(i).name)) return i;
+        }
+        throw new AssertionError("missing persisted column: " + name);
     }
 }

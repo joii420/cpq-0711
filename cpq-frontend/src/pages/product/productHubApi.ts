@@ -17,12 +17,14 @@
 // 🚫 **本文件刻意不实现** `import` / `saveRows`（`PUT .../sheets/{key}/rows`）/ `lookup` 三个函数：
 //    调 `PUT rows` 就产生了第二条升版路径（报价侧交接说明点名禁止），且**抽屉维持全只读**
 //    （子任务 AC-7 反向断言）；`lookup` 只服务下拉候选，本页唯一的编辑控件是自由文本输入。
-//    写了就是超范围（子任务 api.md §3）。
+//    写了就是超范围（子任务 api.md §3）。后续 task-261026 新增的利润
+//    也只复用下方已有的单列更新端点，不放开抽屉行编辑。
 //
 // 🆕 子任务 `task-260903-产品维护能力增强`（2026-09-03）在**只读之外**新增了两个调用，
 //    两者都经过用户裁决，不是顺手加的：
 //      · `updateDatasetPart` —— `PUT /dataset/{dataset}/parts/{axisValue}`（对方 B-20，闸门 A0 走方案甲）
-//        列表上**只开放 `production_no` 一列**，写入语义仍归 task-260902 单一维护。
+//        列表在该子任务中**只开放 `production_no` 一列**；task-261026 另经裁决
+//        在同一通用端点开放 `profit`，两者均仅传被改的单列。
 //      · `listCustomerPartCustomers` —— 客户过滤器候选（本任务 B-2）。
 // ─────────────────────────────────────────────────────────────────────────────
 import api from '../../services/api';
@@ -277,6 +279,11 @@ export interface UpdatePartPayload {
    *      导入时 Excel 空着 ⇒ 保留库里的值（对方 B-19）。别用同一条分支理解。
    */
   productionNo?: string | null;
+  /**
+   * 利润始终以十进制字符串提交；`null` 表示页面显式清空并落库 NULL。
+   * 🚫 不得用 Number() 转换，也不得省略清空时的 null 键。
+   */
+  profit?: string | null;
 }
 
 export async function updateDatasetPart(

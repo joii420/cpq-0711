@@ -204,9 +204,9 @@ public class DatasetMaintenanceResource {
     /**
      * api.md §3.5 —— 免版本物料表的<b>单列更新</b>（B-20 / D-31 / AC-65）。
      *
-     * <p>body 形如 {@code {"production_no": "P-001"}}，键是 DB 列名。
-     * 只有 {@code ColumnDef.partEditable} 白名单里的列能改（当前<b>只有</b>
-     * {@code ds_quote_material.production_no}），其余一律 400 并点名该字段。
+     * <p>body 形如 {@code {"production_no": "P-001"}} 或 {@code {"profit": "-2.5"}}，
+     * 键是 DB 列名（也接受小驼峰）。只有 {@code ColumnDef.partEditable} 白名单里的列能改
+     * （当前为 {@code ds_quote_material.production_no/profit}），其余一律 400 并点名该字段。
      *
      * <h3>🚦 权限 = 四个角色（与本类其他写端点<b>刻意不同</b>）</h3>
      * 其他写端点是 {@code PRICING_MANAGER} / {@code SYSTEM_ADMIN}，这里多开了两个销售角色。

@@ -8,9 +8,10 @@
 //
 // 🚫 无导入按钮 —— 导入入口留在报价单管理的「导入报价数据」（需求文档 ② 明确不做）。
 //
-// 🆕 子任务 `task-260903-产品维护能力增强`（F-2 / AC-6）：**「生产料号」一列改为可编辑单元格**。
-//    🚫 其余 6 列（销售料号/品名/规格/尺寸/旧料号/单重）的 render **一个字都没动**，
-//       抽屉**维持全只读**（AC-7 反向断言）—— 编辑能力只在列表这一格上，不得往下渗。
+// 🆕 子任务 `task-260903-产品维护能力增强`（F-2 / AC-6）当时只将
+//    「生产料号」改为可编辑单元格，抽屉维持全只读。
+// 🆕 `task-261026-物料利润字段`（F-1~F-3）再在生产料号后追加独立的「利润」
+//    可编辑列；其余列和销售产品抽屉仍不开放编辑。
 //    🔐 四个角色都渲染编辑能力（用户 2026-09-03 裁决）⇒ 本文件不读 authStore、无角色分支。
 //
 // 🚧 过渡（2026-09-03 主线情报更正）：原计划复用的 `<SheetPartListTab>` 公共件不会存在了
@@ -41,6 +42,7 @@ import { renderTextCell, renderDecimalCell } from './productHubCells';
 import ZeroTotalFooter from './ZeroTotalFooter';
 import ProductSalesPartDrawer from './ProductSalesPartDrawer';
 import EditableProductionNoCell from './EditableProductionNoCell';
+import EditableProfitCell from './EditableProfitCell';
 import {
   SEARCH_WIDTH,
   SEARCH_DEBOUNCE_MS,
@@ -167,6 +169,15 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
     ));
   }, []);
 
+  /** 利润保存成功后按复合行身份只回写当前行，数值字符串原样保留。 */
+  const handleProfitSaved = useCallback((rowCustomerNo: string, axisValue: string, next: string | null) => {
+    setItems((prev) => prev.map(
+      (it) => (it.customerNo === rowCustomerNo && it.axisValue === axisValue
+        ? { ...it, profit: next }
+        : it),
+    ));
+  }, []);
+
   const handleTaxCategorySaved = useCallback((rowCustomerNo: string, axisValue: string, result: {
     taxCategoryId: string;
     taxCategoryName?: string | null;
@@ -206,7 +217,8 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
     { title: '旧料号', dataIndex: 'oldMaterialNo', key: 'oldMaterialNo', width: 140, ellipsis: true, render: renderTextCell },
     // 单重是数值：后端**以字符串回传保留 scale**，走 Decimal 格式化，右对齐
     { title: '单重', dataIndex: 'unitWeight', key: 'unitWeight', width: 130, align: 'right', ellipsis: true, render: renderDecimalCell },
-    // 🆕 F-2：唯一可编辑的一列。宽度 210 取自增量原型 `销售产品-可编辑生产料号.html` 的 `width:210px`
+    // 🆕 F-2：原有的可编辑生产料号列。宽度 210 取自增量原型
+    //    `销售产品-可编辑生产料号.html` 的 `width:210px`。
     //    （编辑态要放得下 Input）。
     // ⚠️ 这里**不能开 `ellipsis`**：ellipsis 会把 render 结果再包一层带 `title` 的省略号容器，
     //    编辑态的 Input 会被裁掉一截。省略号由单元格组件自己在**只读态**做。
@@ -230,6 +242,25 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
           customerNo={row.customerNo}
           value={row.productionNo}
           onSaved={(next) => handleProductionNoSaved(row.customerNo, row.axisValue, next)}
+        />
+      ),
+    },
+    {
+      title: '利润',
+      dataIndex: 'profit',
+      key: 'profit',
+      width: 190,
+      align: 'right',
+      // 不开 Table 的 ellipsis：只读态由单元格内层省略，否则编辑态 InputNumber 会被裁切。
+      onCell: () => ({
+        onClick: (event: React.MouseEvent) => { event.stopPropagation(); },
+      }),
+      render: (_: unknown, row: PartListItem) => (
+        <EditableProfitCell
+          axisValue={row.axisValue}
+          customerNo={row.customerNo}
+          value={row.profit}
+          onSaved={(next) => handleProfitSaved(row.customerNo, row.axisValue, next)}
         />
       ),
     },

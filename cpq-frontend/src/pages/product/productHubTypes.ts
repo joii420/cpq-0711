@@ -63,7 +63,7 @@ export interface SheetsResult {
 // ── 料号列表（GET /dataset/{dataset}/parts）───────────────────────────────────
 
 /**
- * 🚨 数值列（unitWeight）后端**以字符串回传**保留库中 scale。
+ * 🚨 数值列（unitWeight / profit）后端**以字符串回传**保留库中 scale。
  * 禁止在此声明为 number —— 声明成 number 会诱导 `Number()` 转换，丢精度（api.md 硬约束 2）。
  */
 export interface PartListItem {
@@ -89,6 +89,11 @@ export interface PartListItem {
    * ⚠️ 后端未补齐前该字段为 undefined —— 渲染必须兜底 `—`，不得崩溃、不得整列不渲染。
    */
   productionNo?: string | null;
+  /**
+   * dataset=quote 专有的利润基础属性。GET 列表契约要求该键恒出现，
+   * 且必须是十进制字符串或 null，禁止改成 number 后在浏览器中丢精度。
+   */
+  profit: string | null;
   /**
    * 产品分类（子任务 AC-8，来自 `task-260902` 的 B-16）。
    *
