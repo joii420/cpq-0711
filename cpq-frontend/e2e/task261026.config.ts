@@ -18,7 +18,7 @@ if (/:(5174|8081)(?:\/|$)/.test(baseURL) || /:(5174|8081)(?:\/|$)/.test(backendU
 
 export default defineConfig({
   testDir: '.',
-  testMatch: /(?:^|\/)task261026-material-profit-ui\.spec\.ts$/,
+  testMatch: /(?:^|\/)task261026-(?:material-profit-ui|quotation-profit-ui)\.spec\.ts$/,
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
