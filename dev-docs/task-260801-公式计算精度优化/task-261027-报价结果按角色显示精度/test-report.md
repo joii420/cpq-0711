@@ -3,11 +3,11 @@
 | 项 | 值 |
 |---|---|
 | 执行日期 | 2026-10-27 |
-| 分支 / worktree | `feat/task-261027-role-display-precision` / `.claude/worktrees/task-261027-role-display-precision` |
+| 分支 / 合并 | `feat/task-261027-role-display-precision` → `master@7d9f0a11`；worktree 已移除，分支保留待用户删除 |
 | 数据库 | `10.177.152.12:5432/cpq_t261027_rdp_1027a`（一次性隔离库，V455） |
 | 界面栈 | 后端 `127.0.0.1:18082` + 前端生产预览 `127.0.0.1:15176` |
 | 浏览器 | Playwright Chrome Desktop 1440×900；Browser plugin 不可用，按前端测试规范使用仓库 Playwright |
-| 结论 | 实现、保存、导出、权限与四角色界面验证全绿；尚未合并 `master` |
+| 结论 | 实现、保存、导出、权限与四角色界面验证全绿；已合并 `master`，待用户验收 |
 
 ## 1. 结论摘要
 
@@ -131,8 +131,9 @@ npx playwright test -c e2e/task261027-role-display-precision.config.ts
 - 临时 Vite dev / preview / Quarkus / Playwright 进程均已停止；15175 / 15176 / 18082 无监听。
 - 临时视觉验证脚本与 preview config 已删除。
 - 未生成或修改 `deploy/` 交付包；用户本轮未要求打包/部署。
-- 当前主工作区存在大量他人/用户未提交修改，且与本任务的 `QuotationList.tsx`、`QuotationStep2.tsx`、`QuotationStep3.tsx`、`QuotationWizard.tsx`、`ProductDetailViews.tsx`、`ReadonlyProductCard.tsx`、`INDEX.md`、`RECORD.md`、`BACKLOG.md` 重叠。依规范不重置、不 stash、不覆盖；功能分支提交后需由用户先处置主工作区，才能安全合并。
+- 用户将主工作区改动提交为 `dc823d40`后，以非破坏方式合并功能分支。共解析 6 个前端内容冲突，保留主线币种展示/查询改动并叠加角色 4/9 位上限，合并提交为 `7d9f0a11`。
+- 合并后主线复验：前端 116 个文件 / 1473 项全绿，`tsc -b --clean`、`tsc -b`、Vite 生产构建成功；后端 clean 39/39 全绿，`BUILD SUCCESS`。
 
 ## 8. 已自检
 
-已自检：AC-1~AC-11 均有非空正向证据；后端 clean 39/39、前端 1473/1473、TypeScript、生产构建、Playwright 6/6、主线视觉亲验、真实保存与数据清理均已复核。新增失败 0，未验项 0；未合并与未部署已明确记录，未做超出授权的破坏性操作。
+已自检：AC-1~AC-11 均有非空正向证据；后端 clean 39/39、前端 1473/1473、TypeScript、生产构建、Playwright 6/6、主线视觉亲验、真实保存、冲突解析后主线复验与数据清理均已复核。新增失败 0，未验项 0；已合并、未打包、未部署，未做超出授权的破坏性操作。
