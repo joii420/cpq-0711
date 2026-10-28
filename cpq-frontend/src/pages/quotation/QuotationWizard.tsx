@@ -74,6 +74,7 @@ import {
 import type { DecimalContext } from '../../utils/formulaEngine';
 import { formatNumber } from '../../utils/formatNumber';
 import { applyFormulaResultsToDraftRow, toDraftComponentSubtotal } from './draftPrecision';
+import { useQuotationResultDisplayScale } from './quotationResultDisplayScale';
 
 // antd 6.x: Steps uses `items` prop, not <Step> children
 const { TextArea } = Input;
@@ -234,6 +235,7 @@ const QuotationWizard: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const maxDisplayDecimals = useQuotationResultDisplayScale();
   const [form] = Form.useForm();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -2248,6 +2250,7 @@ const QuotationWizard: React.FC = () => {
         quoteCurrency={quotation?.currency || quotation?.baseCurrency || 'CNY'}
         quoteExchangeRate={quotation?.exchangeRate || '1'}
         locateTarget={locateTarget}
+        maxDisplayDecimals={maxDisplayDecimals}
       />
 
       <AddProductModal
@@ -2312,6 +2315,7 @@ const QuotationWizard: React.FC = () => {
         setLineItems(prev => updater(prev));
       }}
       globalVariableDefs={gvDefs}
+      maxDisplayDecimals={maxDisplayDecimals}
     />
   );
 
@@ -2419,7 +2423,7 @@ const QuotationWizard: React.FC = () => {
                 title: '小计',
                 key: 'subtotal',
                 render: (_: unknown, li: LineItem) =>
-                  `${formatNumber(foreignSubtotal(li), { isComputed: true }) ?? '0'} ${quoteCurrency}`,
+                  `${formatNumber(foreignSubtotal(li), { isComputed: true, maxDisplayDecimals }) ?? '0'} ${quoteCurrency}`,
               },
             ]}
             summary={() => (
@@ -2427,7 +2431,7 @@ const QuotationWizard: React.FC = () => {
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={2}><Text strong>合计</Text></Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
-                    <Text strong>{formatNumber(foreignOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
+                    <Text strong>{formatNumber(foreignOriginalAmount, { isComputed: true, maxDisplayDecimals }) ?? '0'} {quoteCurrency}</Text>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>
@@ -2437,10 +2441,10 @@ const QuotationWizard: React.FC = () => {
 
         <Card title="定价" size="small" style={{ marginTop: 16 }}>
           <Descriptions column={2} bordered size="small">
-            <Descriptions.Item label="原始总金额">{formatNumber(foreignOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Descriptions.Item>
+            <Descriptions.Item label="原始总金额">{formatNumber(foreignOriginalAmount, { isComputed: true, maxDisplayDecimals }) ?? '0'} {quoteCurrency}</Descriptions.Item>
             <Descriptions.Item label="折扣率">{discountRate}%</Descriptions.Item>
             <Descriptions.Item label="最终总金额">
-              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>{formatNumber(foreignTotalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
+              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>{formatNumber(foreignTotalAmount, { isComputed: true, maxDisplayDecimals }) ?? '0'} {quoteCurrency}</Text>
             </Descriptions.Item>
           </Descriptions>
         </Card>

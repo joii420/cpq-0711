@@ -23,6 +23,7 @@ import BoundGlobalVariablesTab from './components/BoundGlobalVariablesTab';
 import type { SubmissionSnapshot } from '../../types/quotation-snapshot';
 import dayjs from 'dayjs';
 import { openHtmlDocument } from '../../utils/htmlDocument';
+import { quotationResultDisplayScale } from './quotationResultDisplayScale';
 
 const { Title } = Typography;
 
@@ -46,7 +47,9 @@ const approvalActionMap: Record<string, { label: string; color: string }> = {
 
 const QuotationDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const user = useAuthStore((s) => s.user);
+  const userId = useAuthStore((s) => s.user?.id);
+  const userRole = useAuthStore((s) => s.user?.role);
+  const maxDisplayDecimals = quotationResultDisplayScale(userRole);
   const navigate = useNavigate();
   const location = useLocation();
   // repair-0806：/quotations/:id/comparison 深链（价格调整审核抽屉「直达比对视图」，
@@ -401,6 +404,7 @@ const QuotationDetail: React.FC = () => {
             quotation={quotation}
             locateTarget={locateTarget}
             initialMainTab={deepLinkComparison ? 'comparison' : undefined}
+            maxDisplayDecimals={maxDisplayDecimals}
           />
 
           {/* Approval History */}
@@ -543,8 +547,8 @@ const QuotationDetail: React.FC = () => {
                   task-0721（F3）：APPROVED 撤回补一句「已回填生效的基础数据不会回退」（规则七）
               ---------------------------------------------------------------- */}
               {['SUBMITTED', 'COSTING_REJECTED', 'APPROVED'].includes(status) &&
-                (user?.id === quotation.salesRepId ||
-                  ['SYSTEM_ADMIN', 'PRICING_MANAGER'].includes(user?.role ?? '')) && (
+                (userId === quotation.salesRepId ||
+                  ['SYSTEM_ADMIN', 'PRICING_MANAGER'].includes(userRole ?? '')) && (
                 <Popconfirm
                   title={
                     status === 'APPROVED'

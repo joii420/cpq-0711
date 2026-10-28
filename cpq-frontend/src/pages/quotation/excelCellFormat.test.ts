@@ -15,4 +15,15 @@ describe('excelCellFormat', () => {
     expect(isComputedExcelColumn('CARD_FORMULA')).toBe(true);
     expect(isComputedExcelColumn('COMPONENT_FIELD')).toBe(false);
   });
+
+  it('计算列应用角色上限，原始列保持原精度', () => {
+    expect(renderCellValue('1.2345678915', col({ source_type: 'EXCEL_FORMULA' }), 4)).toBe('1.2346');
+    expect(renderCellValue('1.2345678915', col({ source_type: 'COMPONENT_FIELD' }), 4)).toBe('1.2345678915');
+  });
+
+  it('仅对计算百分比列应用角色上限', () => {
+    const display_format = { type: 'PERCENT', decimals: 6 } as CostingTemplateColumn['display_format'];
+    expect(renderCellValue('0.123456789', col({ source_type: 'EXCEL_FORMULA', display_format }), 4)).toBe('12.3457%');
+    expect(renderCellValue('0.123456789', col({ source_type: 'COMPONENT_FIELD', display_format }), 4)).toBe('12.345679%');
+  });
 });

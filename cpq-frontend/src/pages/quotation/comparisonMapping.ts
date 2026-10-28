@@ -61,14 +61,26 @@ export function columnDecimals(_col: ColumnDef): number {
 }
 
 /** 数值展示：固定小数位 + 千分位；空值 "—"。 */
-export function formatComparisonNumber(value: DecimalString | null | undefined, decimals: number): string {
-  return value == null ? '—' : (formatNumber(value, { decimals, isComputed: true }) ?? '—');
+export function formatComparisonNumber(
+  value: DecimalString | null | undefined,
+  decimals: number,
+  maxDisplayDecimals?: number,
+): string {
+  return value == null ? '—' : (formatNumber(value, {
+    decimals,
+    isComputed: true,
+    maxDisplayDecimals,
+  }) ?? '—');
 }
 
 /** 差异值展示：固定小数位 + 千分位 + 正数带 "+" 号；空值 "—"。 */
-export function formatDiffNumber(diff: DecimalString | null | undefined, decimals: number): string {
+export function formatDiffNumber(
+  diff: DecimalString | null | undefined,
+  decimals: number,
+  maxDisplayDecimals?: number,
+): string {
   if (diff == null) return '—';
-  const formatted = formatNumber(diff, { decimals, isComputed: true }) ?? '—';
+  const formatted = formatNumber(diff, { decimals, isComputed: true, maxDisplayDecimals }) ?? '—';
   return toDecimal(diff).greaterThan(0) ? `+${formatted}` : formatted;
 }
 

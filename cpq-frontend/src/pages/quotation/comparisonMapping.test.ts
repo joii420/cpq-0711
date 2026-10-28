@@ -121,6 +121,11 @@ describe('formatComparisonNumber / formatDiffNumber', () => {
   it('差异值 0 不带符号', () => {
     expect(formatDiffNumber('0', 2)).toBe('0');
   });
+  it('报价值、核价值和差异值使用同一角色上限', () => {
+    expect(formatComparisonNumber('1.2345678915', 9, 4)).toBe('1.2346');
+    expect(formatDiffNumber('1.2345678915', 9, 4)).toBe('+1.2346');
+    expect(formatDiffNumber('-1.23445', 9, 4)).toBe('-1.2345');
+  });
 });
 
 describe('getColumnValue', () => {

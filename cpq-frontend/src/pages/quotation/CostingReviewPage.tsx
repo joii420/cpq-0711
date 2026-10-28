@@ -83,7 +83,7 @@ function buildFrozenView(d: CostingOrderDetail): any {
 const CostingReviewPage: React.FC = () => {
   const { coid } = useParams<{ coid: string }>();
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
+  const userRole = useAuthStore((s) => s.user?.role);
 
   const [detail, setDetail] = useState<CostingOrderDetail | null>(null);
   const [frozen, setFrozen] = useState<any>(null);
@@ -116,7 +116,7 @@ const CostingReviewPage: React.FC = () => {
 
   /** 核价操作权限：角色 + 核价单处于待核价状态 */
   const canReview =
-    ['PRICING_MANAGER', 'SYSTEM_ADMIN'].includes(user?.role ?? '') &&
+    ['PRICING_MANAGER', 'SYSTEM_ADMIN'].includes(userRole ?? '') &&
     detail?.status === 'PENDING';
 
   /**
@@ -263,6 +263,7 @@ const CostingReviewPage: React.FC = () => {
           coid={coid}
           editable={editable}
           onVersionSwitched={handleVersionSwitched}
+          maxDisplayDecimals={9}
         />
       ) : (
         <Card>
