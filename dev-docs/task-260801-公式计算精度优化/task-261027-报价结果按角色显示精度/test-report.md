@@ -7,7 +7,7 @@
 | 数据库 | `10.177.152.12:5432/cpq_t261027_rdp_1027a`（一次性隔离库，V455） |
 | 界面栈 | 后端 `127.0.0.1:18082` + 前端生产预览 `127.0.0.1:15176` |
 | 浏览器 | Playwright Chrome Desktop 1440×900；Browser plugin 不可用，按前端测试规范使用仓库 Playwright |
-| 结论 | 实现、保存、导出、权限与四角色界面验证全绿；已合并 `master`，待用户验收 |
+| 结论 | 实现、保存、导出、权限与四角色界面验证全绿；已合并 `master` 并部署测试服务器，待用户验收 |
 
 ## 1. 结论摘要
 
@@ -130,10 +130,20 @@ npx playwright test -c e2e/task261027-role-display-precision.config.ts
 - 本任务未新增依赖、未改 schema/迁移/配置；已实际 clean 编译并启动 Quarkus、生成前端生产 build，无额外冷启动触发项。
 - 临时 Vite dev / preview / Quarkus / Playwright 进程均已停止；15175 / 15176 / 18082 无监听。
 - 临时视觉验证脚本与 preview config 已删除。
-- 未生成或修改 `deploy/` 交付包；用户本轮未要求打包/部署。
+- 用户后续显式要求部署，已新建 `deploy/2026102702/`；上次部署 SQL 基线为 V455，本任务无新迁移，包内 README 明确本次 V455 → V455、不执行 SQL。
 - 用户将主工作区改动提交为 `dc823d40`后，以非破坏方式合并功能分支。共解析 6 个前端内容冲突，保留主线币种展示/查询改动并叠加角色 4/9 位上限，合并提交为 `7d9f0a11`。
 - 合并后主线复验：前端 116 个文件 / 1473 项全绿，`tsc -b --clean`、`tsc -b`、Vite 生产构建成功；后端 clean 39/39 全绿，`BUILD SUCCESS`。
 
 ## 8. 已自检
 
-已自检：AC-1~AC-11 均有非空正向证据；后端 clean 39/39、前端 1473/1473、TypeScript、生产构建、Playwright 6/6、主线视觉亲验、真实保存、冲突解析后主线复验与数据清理均已复核。新增失败 0，未验项 0；已合并、未打包、未部署，未做超出授权的破坏性操作。
+已自检：AC-1~AC-11 均有非空正向证据；后端 clean 39/39、前端 1473/1473、TypeScript、生产构建、Playwright 6/6、主线视觉亲验、真实保存、冲突解析后主线复验与数据清理均已复核。新增失败 0，未验项 0；已合并并部署 `2026102702`，未做超出授权的破坏性操作。
+
+## 9. 测试服务器部署验证（2026-10-28）
+
+- 交付包：`deploy/2026102702/`，代码产物基线 `master@115cf40c`；前端 `dist/`、后端 `quarkus-app/`、`eclipse-temurin:21-jre` Dockerfile 和 README 齐全。
+- SQL 顺序：上次包 `2026102701` 已到 V455；本任务无新增迁移，本次不执行 SQL。远端 `flyway_schema_history` 最新值为 `455|t`，Quarkus 日志为 `Schema public is up to date`。
+- 上传后远端产物哈希与本地同口径一致；旧 dist/quarkus-app/Dockerfile 及前后端镜像保留 `backup-20261027234508`。
+- 远端启动：Java 21.0.11 LTS，Quarkus `webtest` 6.845s 启动，严格 ERROR 级别 0；外部前端 200，后端未登录业务端点 401。
+- 真实输出：SYSTEM_ADMIN / SALES_MANAGER 登录与 HTML 导出均为 200；同一报价分别输出 `1717.135540718` / `1717.1355`，销售结果不含 9 位文本。
+- 真实浏览器：Browser plugin 不可用，按规范使用 Playwright Chrome 1440×900。管理员报价列表显示 `1717.135540718 USD`，销售经理显示 `1717.1355 USD`；页面非空，无框架错误覆盖层，console error/warn 均为 0。
+- 验收入口：`http://10.177.152.12:5173`。
