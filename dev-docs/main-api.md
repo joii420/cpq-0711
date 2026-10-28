@@ -3,6 +3,7 @@
 > 本文件由技术总监扫描 `cpq-backend` 全部 JAX-RS Resource 自动生成，覆盖 **89 个 Resource 类、约 422 个 HTTP 端点**，按业务模块分为 12 大类。
 > 生成日期：2026-07-08 ｜ 最近契约更新：**2026-10-26（task-261026 生产环境上传文件解密：20 个有效上传操作在 `prod` 下统一 inspect/decrypt；组件 Bundle 预览和提交新增 multipart 形态；见全局约定 §2.1 与组件管理 §2.1）**；此前：**2026-09-22（task-260922 料号搜索加生产料号：`GET /quotations` 的 `partNo` 增加生产料号一路，并补回写 task-260914 的三个过滤参数）；此前同日 task-260920 审核列表秒开与按需试算：`/price-adjust/reviews` 新增 `compute-now` 与 `/{id}/row`、列表返回 `notComputedTotal` / `excludedByNotComputed` 与确定排序、`reject` 预算守门、`impact` 新增 `materials[]`、详情 `budgetError`，新配置 `cpq.price-adjust.budget.concurrency` / `interactive-concurrency`，见 12.X.4 补充）**；此前：**2026-09-18（repair-260918 大单升版：`/price-adjust/jobs*` 新增 `running` 与实时计数、三个新 `errorCode`、两处重试行为修正，审核列表 `budgetError`，版本明细 `changeRate` 12 位；来源 `task-260729/repair-260918-大单升版超时与涨跌率显示`）；同日 repair-260918 报价 Excel 视图后端重算改读卡片值：`/excel-view`、`/excel-view/dry-run`、`/export-excel-view` 兜底、`/ensure-excel-values`、模板级 / 组件级连表试算 6 个端点的取数口径与「卡片值不可用」语义）**；此前：**2026-09-16（repair-260916 来料类材料名补查材质表：§8.1 `ConfigCenterResource` 新增 `POST /config-center/recompile-components`（按组件重编译取数视图）；同节 `refresh-all-snapshots` 小节按现行源码更正（2026-09-17，原描述停留在 K4 旧实现））** ｜ 更早一次：**2026-09-16（task-260915 组件导出/导入往返保真：§2.1 导出/导入预览/导入提交三个端点按真实源码整段覆盖 —— 含本次新增 8 个字段与 `builderCoord`，并顺带补齐 task-0805 遗留未回写的 `bindingReport`/`formulaBinding`/`ignoreUnboundFormulas`/`unboundWarnings` 等）** ｜ 前次：2026-09-03（task-260903 产品管理页重做：新增 `GET /dataset/{dataset}/customer-parts`，见 §6.9；其前序 task-260902 新增 9 个端点，见 §6.8 / §6.9） ｜ 数据来源：`cpq-backend/src/main/java/com/cpq/**/resource/*.java` 及其引用的 DTO / 实体。
 > 用途：前后端接口契约基线、联调对照、新接口设计参照。字段说明取自源码 javadoc / 注释，无注释处据字段名与类型推断。
+> 2026-10-27 契约补记（task-261027）：报价 HTML/PDF/报价 Excel/Excel 视图导出/比对 Excel/邮件附件的计算结果按当前会话角色限制最大显示位数：`SALES_REP` / `SALES_MANAGER` 为 4，`PRICING_MANAGER` / `SYSTEM_ADMIN` 为 9；普通 JSON、请求体、保存值与权限不变。
 
 ---
 
@@ -3432,6 +3433,7 @@
 | showTabDetails | boolean | 否 | 显示页签明细，默认 false |
 
 - **响应内容**: HTML 字节流（filename="quotation.html"）
+- **角色显示精度（task-261027）**：计算金额由当前已认证会话决定最多 4/9 位，`HALF_UP` 并去尾零；税率、折扣率与原始值不套该角色上限。不接受 body/query/header 自报角色或位数。
 
 #### 4.1.26 导出 PDF
 - **功能**: 导出用于浏览器打印为 PDF 的 HTML（务实方案，实际返回 HTML）
@@ -3449,6 +3451,7 @@
 | showTabDetails | boolean | 否 | 显示页签明细，默认 false |
 
 - **响应内容**: HTML 字节流（filename="quotation.html"）
+- **角色显示精度（task-261027）**：与 HTML 导出完全同口径；计算金额按当前会话角色最多 4/9 位，不改未舍入原值。
 
 #### 4.1.27 导出 Excel
 - **功能**: 导出报价单 Excel（.xlsx）
@@ -3465,6 +3468,7 @@
 | includeRawData | boolean | 否 | 包含原始数据，默认 false |
 
 - **响应内容**: Excel 字节流（filename=`{quotationNumber}.xlsx`）
+- **角色显示精度（task-261027）**：行金额、单价、折扣金额、折后单价、小计、未税/税额/含税及合计按会话角色最多 4/9 位，仍写精度安全文本单元格；VAT/折扣率、原始行 JSON 不受角色上限影响。
 
 #### 4.1.28 发送报价单邮件
 - **功能**: 通过邮件发送报价单，可选附带 Excel
@@ -3483,6 +3487,7 @@
 | attachExcel | boolean | — | 是否附带 Excel，默认 false |
 
 - **响应内容**: `ApiResponse<QuotationDTO>`
+- **角色显示精度（task-261027）**：HTML 附件及可选 Excel 附件使用发起发送操作的当前会话角色（4/9 位）；收件人身份不参与判定，既有发送权限和 `SENT` 状态流转不变。
 
 #### 4.1.29 获取 Excel 视图
 - **功能**: 获取报价单 Excel 视图（v2）数据（列结构 + 行值）
@@ -3536,6 +3541,7 @@
 - **产出**: `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`（直返 `Response`）
 - **路径参数**: `id` UUID — 报价单 ID
 - **响应内容**: Excel 字节流（filename=`{quotationNumber}-view.xlsx`）
+- **角色显示精度（task-261027）**：`FORMULA` / `CARD_FORMULA` / `TAB_JOIN_FORMULA` / `EXCEL_FORMULA` 的已计算结果按当前会话角色最多 4/9 位；`display_format.decimals` 更小时优先。原始/取数列保留原精度。
 - **兜底取数（repair-260918）**：优先 `quote_excel_values`；该行存值为空时整行用 `GET /{id}/excel-view` 的行兜底 —— 兜底值随之改为按该行卡片值计算，卡片值也不可用时对应单元格为空。
 > 来源任务：`task-260801/repair-260918-报价Excel后端重算与卡片值不一致`｜回写日期：2026-09-18
 
@@ -4585,6 +4591,7 @@ Row：`partNo`(String 料号)、`presence`(String：BOTH/QUOTE_ONLY/COSTING_ONLY
 Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(boolean 是否高亮)。
 
 - **响应内容**: 直返二进制 xlsx（`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`，`Content-Disposition: attachment; filename="comparison-{id}.xlsx"`），非 ApiResponse 包装。
+- **角色显示精度（task-261027）**：报价值与核价值均按当前服务端会话角色最多 4/9 位导出；请求体不新增角色或显示位数字段，差异分类和请求原值不变。
 
 ---
 
@@ -10112,7 +10119,7 @@ Cell：`quote`(Object 报价值)、`costing`(Object 核价值)、`highlighted`(b
 | P1-18d | `POST /api/cpq/quotations/{qid}/line-items/{lid}/delete-driver-row` | 结构请求不变；返回投影快照中的精度节点为 decimal string |
 | P1-18e | `POST /api/cpq/quotations/{qid}/line-items/{lid}/restore-driver-rows` | 结构请求不变；返回投影快照中的精度节点为 decimal string |
 | P2 公式 | `POST /api/cpq/formulas/evaluate`；`POST /api/cpq/formulas/batch-evaluate` | bindings/context 精度值仅 decimal string；结果为最多 12 位 decimal string；批量顺序与单项错误隔离不变 |
-| P3 Excel/导出 | `GET /api/cpq/quotations/{id}/excel-view`；`POST /api/cpq/quotations/{id}/excel-view/dry-run`；`PUT /api/cpq/quotations/{id}/excel-view`；`POST /api/cpq/quotations/{id}/export/html`；`POST /api/cpq/quotations/{id}/export/pdf`；`POST /api/cpq/quotations/{id}/export/excel`；`GET /api/cpq/quotations/{id}/export-excel-view`；`POST /api/cpq/quotations/{id}/send` | API 值为 decimal string；输出最多 9 位；Excel 精度计算值为 STRING 单元格 |
+| P3 Excel/导出 | `GET /api/cpq/quotations/{id}/excel-view`；`POST /api/cpq/quotations/{id}/excel-view/dry-run`；`PUT /api/cpq/quotations/{id}/excel-view`；`POST /api/cpq/quotations/{id}/export/html`；`POST /api/cpq/quotations/{id}/export/pdf`；`POST /api/cpq/quotations/{id}/export/excel`；`GET /api/cpq/quotations/{id}/export-excel-view`；`POST /api/cpq/quotations/{id}/send` | API/JSON 值仍为原 decimal string；服务端报价输出的计算结果按会话角色最多 4/9 位；报价 Excel 计算金额为 STRING 单元格 |
 | P4 核价 | `GET /api/cpq/costing-orders`；`GET /api/cpq/costing-orders/{coid}`；`GET /api/cpq/costing-orders/{coid}/version-options`；`POST /api/cpq/costing-orders/{coid}/version-switch` | 总额、明细、版本金额为 decimal string |
-| P4 比较 | `GET /api/cpq/quotations/{id}/comparison`；`POST /api/cpq/quotations/{id}/comparison/export`；`GET /api/cpq/quotations/{id}/comparison-view/data` | 报价、核价和差异为 decimal string；导出最多 9 位 |
+| P4 比较 | `GET /api/cpq/quotations/{id}/comparison`；`POST /api/cpq/quotations/{id}/comparison/export`；`GET /api/cpq/quotations/{id}/comparison-view/data` | JSON 报价、核价和差异仍为原 decimal string；比对 Excel 的报价/核价计算值按会话角色最多 4/9 位 |
 | P4 价格版本/审核/任务 | `GET /api/cpq/quotations/{quotationId}/price-revisions`；`GET /api/cpq/quotations/{quotationId}/price-revisions/{revisionId}/preview`；`GET /api/cpq/price-adjust/reviews`；`GET /api/cpq/price-adjust/reviews/{reviewId}`；`POST /api/cpq/price-adjust/reviews/impact`；`POST /api/cpq/price-adjust/reviews/approve`；`POST /api/cpq/price-adjust/reviews/{reviewId}/recompute-budget`；`GET /api/cpq/price-adjust/jobs`；`GET /api/cpq/price-adjust/jobs/{jobId}`；`GET /api/cpq/price-adjust/jobs/{jobId}/items` | 总额、current/adjusted/diff/warn 和任务差异均为 decimal string；阈值写入同样拒绝 JSON number |
