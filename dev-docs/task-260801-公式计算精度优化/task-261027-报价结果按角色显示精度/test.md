@@ -27,7 +27,7 @@
 
 ## 3. 独立测试实现边界
 
-- 测试工程师只读本任务 `需求文档.md`、`api.md`、`test.md`，以及 `cpq-backend/src/test/**`、`cpq-frontend/e2e/**`、现有测试配置和 package/pom；禁止读取 `cpq-backend/src/main/**`、`cpq-frontend/src/**` 及前后端实现 diff。
+- 测试工程师只读本任务 `需求文档.md`、`api.md`、`test.md`，以及 `cpq-backend/src/test/**`、`cpq-frontend/e2e/**`、`cpq-frontend/src/**/*.test.*`、现有测试配置和 package/pom；禁止读取 `cpq-backend/src/main/**`、`cpq-frontend/src/**` 中非测试实现文件及前后端实现 diff。
 - 信息不足时只报告缺失契约，不得通过阅读实现补答案。
 - 新测试命名统一 `T261027_RDP_`；后端建议放独立包 `com.cpq.task261027rdp`，前端定向单测/组件测试和 E2E 用同前缀标题。
 - S-FLOW 创建四个私有角色账号和一张私有报价；不得修改现有 `admin/alice/bob` 的角色或密码。所有断言基于明确 ID/前缀，不使用“全库共有 N 行”。
