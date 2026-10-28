@@ -1,6 +1,7 @@
 package com.cpq.quotation.service;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.quotation.dto.QuotationDTO;
 import com.cpq.quotation.entity.Quotation;
 import io.quarkus.mailer.Mail;
@@ -28,6 +29,12 @@ public class QuotationEmailService {
 
     @Transactional
     public QuotationDTO send(UUID quotationId, String to, String cc, String subject, String body, boolean attachExcel) {
+        return send(quotationId, to, cc, subject, body, attachExcel, PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    @Transactional
+    public QuotationDTO send(UUID quotationId, String to, String cc, String subject, String body,
+                             boolean attachExcel, int maxDisplayDecimals) {
         Quotation q = Quotation.findById(quotationId);
         if (q == null) {
             throw new BusinessException(404, "Quotation not found: " + quotationId);
@@ -47,11 +54,13 @@ public class QuotationEmailService {
         }
 
         // Attach HTML export (acts as PDF substitute)
-        byte[] htmlBytes = exportService.exportHtml(quotationId, true, false, false);
+        byte[] htmlBytes = exportService.exportHtml(
+                quotationId, true, false, false, maxDisplayDecimals);
         mail.addAttachment(q.quotationNumber + "-报价单.html", htmlBytes, "text/html");
 
         if (attachExcel) {
-            byte[] excelBytes = exportService.exportExcel(quotationId, true, false);
+            byte[] excelBytes = exportService.exportExcel(
+                    quotationId, true, false, maxDisplayDecimals);
             mail.addAttachment(q.quotationNumber + "-报价单.xlsx", excelBytes,
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
         }

@@ -1,5 +1,6 @@
 package com.cpq.quotation.service;
 
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.common.exception.StaleVersionException;
 import com.cpq.quotation.dto.SaveDraftRequest;
@@ -11,6 +12,7 @@ import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -45,6 +47,7 @@ public class SaveDraftIncrementalProtocolTest {
     private static final String ROW_DATA_FRONTEND = "[{\"材料净重\":\"3.3\",\"单位\":\"g\",\"row_index\":0}]";
     /** 只改最后一位小数。 */
     private static final String ROW_DATA_CHANGED = "[{\"材料净重\":\"3.4\",\"单位\":\"g\",\"row_index\":0}]";
+    private static final String HIGH_PRECISION_HEADER_AMOUNT = "1.234567891500";
 
     // ────────────────────────────────── 夹具 ──────────────────────────────────
 
@@ -190,6 +193,57 @@ public class SaveDraftIncrementalProtocolTest {
 
     @Test
     @TestTransaction
+    @DisplayName("task-261027 AC-7：批量路径纯 projectName 保存精确保留 12 位头金额")
+    void headerOnlyBatchPath_preservesExactHeaderAmounts() {
+        assertHeaderOnlyPreservesExactAmounts(true);
+    }
+
+    @Test
+    @TestTransaction
+    @DisplayName("task-261027 AC-7：逐行路径纯 projectName 保存精确保留 12 位头金额")
+    void headerOnlyPerRowPath_preservesExactHeaderAmounts() {
+        assertHeaderOnlyPreservesExactAmounts(false);
+    }
+
+    @Test
+    @TestTransaction
+    @DisplayName("task-261027 AC-7：批量路径真实行金额变化仍按既有 9 位总额边界重算")
+    void changedLineBatchPath_stillRecalculatesTotals() {
+        assertChangedLineRecalculatesTotals(true);
+    }
+
+    @Test
+    @TestTransaction
+    @DisplayName("task-261027 AC-7：逐行路径真实行金额变化仍按既有 9 位总额边界重算")
+    void changedLinePerRowPath_stillRecalculatesTotals() {
+        assertChangedLineRecalculatesTotals(false);
+    }
+
+    @Test
+    @TestTransaction
+    @DisplayName("task-261027 AC-7：仅折扣变化保留 originalAmount 并按既有口径重算 totalAmount")
+    void discountOnlyChange_preservesOriginalAndRecalculatesTotal() {
+        Fixture f = buildFixture();
+        setHeaderAmounts(f.quotationId(), HIGH_PRECISION_HEADER_AMOUNT,
+                HIGH_PRECISION_HEADER_AMOUNT, "100.000000000000");
+
+        BigDecimal newRate = new BigDecimal("80.123456789012");
+        SaveDraftRequest req = incrementalRequest(f);
+        req.finalDiscountRate = newRate;
+        saveWithBatchStage1(true, () -> quotationService.saveDraft(f.quotationId(), req));
+
+        String[] amounts = readHeaderAmounts(f.quotationId());
+        BigDecimal expectedTotal = QuotationService.quotationTotalResult(
+                PrecisionPolicy.divide(new BigDecimal(HIGH_PRECISION_HEADER_AMOUNT).multiply(newRate),
+                        new BigDecimal("100")));
+        assertEquals(HIGH_PRECISION_HEADER_AMOUNT, amounts[0],
+                "折扣变化不应把 originalAmount 压到 9 位或从行小计覆盖");
+        assertEquals(expectedTotal.setScale(12).toPlainString(), amounts[1],
+                "totalAmount 仍须按新折扣和既有 QUOTATION_TOTAL_SCALE 重算");
+    }
+
+    @Test
+    @TestTransaction
     @DisplayName("AC-3：removed[] 点名的行才被删，且子表一并清掉")
     void explicitRemoval() {
         Fixture f = buildFixture();
@@ -285,6 +339,49 @@ public class SaveDraftIncrementalProtocolTest {
         assertEquals(400, ex.getCode());
     }
 
+    private void assertHeaderOnlyPreservesExactAmounts(boolean batchStage1) {
+        Fixture f = buildFixture();
+        setHeaderAmounts(f.quotationId(), HIGH_PRECISION_HEADER_AMOUNT,
+                HIGH_PRECISION_HEADER_AMOUNT, "100.000000000000");
+
+        SaveDraftRequest req = incrementalRequest(f);
+        req.projectName = "AC7-header-only-" + batchStage1;
+        saveWithBatchStage1(batchStage1, () -> quotationService.saveDraft(f.quotationId(), req));
+
+        assertArrayEquals(new String[]{HIGH_PRECISION_HEADER_AMOUNT, HIGH_PRECISION_HEADER_AMOUNT},
+                readHeaderAmounts(f.quotationId()),
+                "空 added/modified/removed 的非金额单头保存必须逐字保留 original/total");
+    }
+
+    private void assertChangedLineRecalculatesTotals(boolean batchStage1) {
+        Fixture f = buildFixture();
+        setHeaderAmounts(f.quotationId(), HIGH_PRECISION_HEADER_AMOUNT,
+                HIGH_PRECISION_HEADER_AMOUNT, "100.000000000000");
+
+        SaveDraftRequest.LineItemDraft changed = draftOf(f, ROW_DATA_CHANGED);
+        changed.subtotal = new BigDecimal("23.456789123400");
+        SaveDraftRequest req = incrementalRequest(f);
+        req.modified = List.of(changed);
+        saveWithBatchStage1(batchStage1, () -> quotationService.saveDraft(f.quotationId(), req));
+
+        BigDecimal expected = QuotationService.quotationTotalResult(readLineSubtotalSum(f.quotationId()));
+        String expectedStored = expected.setScale(12).toPlainString();
+        assertArrayEquals(new String[]{expectedStored, expectedStored},
+                readHeaderAmounts(f.quotationId()),
+                "真实行变化必须继续从整单行小计聚合并刷新 original/total");
+    }
+
+    private void saveWithBatchStage1(boolean enabled, Runnable save) {
+        String previous = System.getProperty("cpq.savedraft-batch-stage1");
+        try {
+            System.setProperty("cpq.savedraft-batch-stage1", Boolean.toString(enabled));
+            save.run();
+        } finally {
+            if (previous == null) System.clearProperty("cpq.savedraft-batch-stage1");
+            else System.setProperty("cpq.savedraft-batch-stage1", previous);
+        }
+    }
+
     // ────────────────────────────────── 读库辅助 ──────────────────────────────────
 
     @SuppressWarnings("unchecked")
@@ -308,6 +405,41 @@ public class SaveDraftIncrementalProtocolTest {
         Object v = em.createNativeQuery("SELECT user_data_version FROM quotation WHERE id = :q")
             .setParameter("q", quotationId).getSingleResult();
         return v == null ? 0 : ((Number) v).intValue();
+    }
+
+    private void setHeaderAmounts(UUID quotationId, String original, String total, String discountRate) {
+        em.createNativeQuery("""
+                UPDATE quotation
+                   SET original_amount = CAST(:original AS numeric(26,12)),
+                       total_amount = CAST(:total AS numeric(26,12)),
+                       final_discount_rate = CAST(:rate AS numeric(26,12))
+                 WHERE id = :id
+                """)
+            .setParameter("original", original)
+            .setParameter("total", total)
+            .setParameter("rate", discountRate)
+            .setParameter("id", quotationId)
+            .executeUpdate();
+        em.flush();
+        em.clear();
+    }
+
+    private String[] readHeaderAmounts(UUID quotationId) {
+        em.flush();
+        em.clear();
+        Object[] row = (Object[]) em.createNativeQuery(
+                "SELECT original_amount::text, total_amount::text FROM quotation WHERE id = :id")
+            .setParameter("id", quotationId)
+            .getSingleResult();
+        return new String[]{String.valueOf(row[0]), String.valueOf(row[1])};
+    }
+
+    private BigDecimal readLineSubtotalSum(UUID quotationId) {
+        Object value = em.createNativeQuery(
+                "SELECT COALESCE(sum(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :id")
+            .setParameter("id", quotationId)
+            .getSingleResult();
+        return (BigDecimal) value;
     }
 
     private long countProcesses(UUID lineItemId) {

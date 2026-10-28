@@ -1,6 +1,7 @@
 package com.cpq.costing.service;
 
 import com.cpq.common.exception.BusinessException;
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.costing.dto.ComparisonExportRequest;
 import jakarta.enterprise.context.ApplicationScoped;
 import org.apache.poi.ss.usermodel.*;
@@ -21,6 +22,10 @@ import java.util.Map;
 public class ComparisonExportService {
 
     public byte[] export(ComparisonExportRequest req) {
+        return export(req, PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    public byte[] export(ComparisonExportRequest req, int maxDisplayDecimals) {
         try (XSSFWorkbook wb = new XSSFWorkbook()) {
             Sheet sheet = wb.createSheet("比对");
             CellStyle headerStyle = headerStyle(wb);
@@ -68,8 +73,10 @@ public class ComparisonExportService {
                     BigDecimal qv = cell != null ? cell.quote : null;
                     BigDecimal cv = cell != null ? cell.costing : null;
                     boolean hl = cell != null && cell.highlighted;
-                    writeValue(reportRow.createCell(c), qv, hl ? highlightStyle : null);
-                    writeValue(costingRow.createCell(c), cv, hl ? highlightStyle : null);
+                    writeValue(reportRow.createCell(c), qv, hl ? highlightStyle : null,
+                            maxDisplayDecimals);
+                    writeValue(costingRow.createCell(c), cv, hl ? highlightStyle : null,
+                            maxDisplayDecimals);
                 }
                 r += 2;
             }
@@ -82,9 +89,10 @@ public class ComparisonExportService {
         }
     }
 
-    private void writeValue(Cell cell, BigDecimal value, CellStyle style) {
+    private void writeValue(Cell cell, BigDecimal value, CellStyle style, int maxDisplayDecimals) {
         if (value != null) {
-            cell.setCellValue(com.cpq.common.NumberFormatUtil.format(value, null, true));
+            cell.setCellValue(com.cpq.common.NumberFormatUtil.format(
+                    value, null, true, maxDisplayDecimals));
         }
         if (style != null) cell.setCellStyle(style);
     }

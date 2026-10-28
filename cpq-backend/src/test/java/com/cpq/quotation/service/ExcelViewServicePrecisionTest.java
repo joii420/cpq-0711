@@ -59,6 +59,17 @@ class ExcelViewServicePrecisionTest {
                 cell, column, value);
     }
 
+    private void invokeWriteFormattedCell(XSSFWorkbook workbook, Cell cell,
+                                          Map<String, Object> column, Object value,
+                                          int maxDisplayDecimals) throws Exception {
+        Method m = ExcelViewService.class.getDeclaredMethod("writeFormattedCell",
+                XSSFWorkbook.class, DataFormat.class, Map.class, Cell.class, Map.class,
+                Object.class, int.class);
+        m.setAccessible(true);
+        m.invoke(svc, workbook, workbook.createDataFormat(), new HashMap<String, CellStyle>(),
+                cell, column, value, maxDisplayDecimals);
+    }
+
     /**
      * 0.1+0.2 必须十进制精确 = 0.3。走真实生产路径：[A]/[B] 引用经 resolveFormulaRef 从
      * cachedCells 取值 → toNumericStr 加 "B" 后缀 → DecimalJexl.newEngine() 求值。
@@ -101,6 +112,28 @@ class ExcelViewServicePrecisionTest {
                     new BigDecimal("1.2345678915"));
             assertEquals(CellType.STRING, computed.getCellType());
             assertEquals("1.234567892", computed.getStringCellValue());
+        }
+    }
+
+    @Test
+    void computedValuesUseRoleCapButRawValuesIgnoreIt() throws Exception {
+        try (XSSFWorkbook workbook = new XSSFWorkbook()) {
+            Cell computed = workbook.createSheet().createRow(0).createCell(0);
+            invokeWriteFormattedCell(workbook, computed, Map.of("source_type", "FORMULA"),
+                    new BigDecimal("1.2345678915"), 4);
+            assertEquals("1.2346", computed.getStringCellValue());
+
+            Cell configured = workbook.getSheetAt(0).getRow(0).createCell(1);
+            invokeWriteFormattedCell(workbook, configured,
+                    Map.of("source_type", "CARD_FORMULA",
+                            "display_format", Map.of("decimals", 2)),
+                    new BigDecimal("1.2345678915"), 4);
+            assertEquals("1.23", configured.getStringCellValue());
+
+            Cell raw = workbook.getSheetAt(0).getRow(0).createCell(2);
+            invokeWriteFormattedCell(workbook, raw, Map.of("source_type", "COMPONENT_FIELD"),
+                    new BigDecimal("1.2345678915"), 4);
+            assertEquals("1.2345678915", raw.getStringCellValue());
         }
     }
 
