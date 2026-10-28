@@ -17,24 +17,37 @@ export function isComputedExcelColumn(sourceType: string | undefined): boolean {
  * 格式化单元格值（统一接入 formatNumber，与卡片视图同口径）：
  * - null/undefined/''/''—'' → 显示 "—"
  * - PERCENT 格式：经 formatNumber(isPercent) → 值 ×100 + % 后缀（默认 2 位）
- * - 计算列（FORMULA/CARD_FORMULA/TAB_JOIN_FORMULA/EXCEL_FORMULA）未配 decimals → 兜底 2 位；
+ * - 计算列（FORMULA/CARD_FORMULA/TAB_JOIN_FORMULA/EXCEL_FORMULA）未配 decimals → 全局最多 9 位；
  *   原始/取数列未配 decimals → 保留原精度（如汇率 6.9755）
  * - 非数值字符串原样显示
  */
-export function renderCellValue(val: any, col: CostingTemplateColumn): React.ReactNode {
+export function renderCellValue(
+  val: any,
+  col: CostingTemplateColumn,
+  maxDisplayDecimals?: number,
+): React.ReactNode {
   if (val === null || val === undefined || val === '' || val === '—') {
     return <span style={{ color: '#bbb' }}>—</span>;
   }
 
   const fmt = col.display_format;
+  const isComputed = isComputedExcelColumn(col.source_type);
   if (fmt?.type === 'PERCENT') {
-    const out = formatNumber(val, { isPercent: true, decimals: fmt.decimals ?? 2 });
+    const out = formatNumber(val, {
+      isPercent: true,
+      decimals: fmt.decimals ?? 2,
+      isComputed,
+      maxDisplayDecimals,
+    });
     return out ?? <span style={{ color: '#bbb' }}>—</span>;
   }
 
-  const isComputed = isComputedExcelColumn(col.source_type);
   // 数值（含数值字符串）走 formatNumber；返回 null（空/非数值）→ 占位 "—"
-  const out = formatNumber(val, { decimals: fmt?.decimals ?? null, isComputed });
+  const out = formatNumber(val, {
+    decimals: fmt?.decimals ?? null,
+    isComputed,
+    maxDisplayDecimals,
+  });
   if (out != null) return out;
   // formatNumber 判定非数值 → 保持原字符串
   if (typeof val === 'number') return <span style={{ color: '#bbb' }}>—</span>;

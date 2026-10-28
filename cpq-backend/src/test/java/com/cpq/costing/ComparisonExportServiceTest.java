@@ -64,4 +64,19 @@ class ComparisonExportServiceTest {
                     "核价行差异格也应有实心填充");
         }
     }
+
+    @Test
+    void roleCapFormatsBothQuoteAndCostingValues() throws Exception {
+        ComparisonExportRequest req = sampleRequest();
+        ComparisonExportRequest.Cell value = req.rows.get(0).cells.get("MATERIAL");
+        value.quote = new BigDecimal("1.2345678915");
+        value.costing = new BigDecimal("-1.23445");
+
+        byte[] bytes = new ComparisonExportService().export(req, 4);
+        try (Workbook wb = new XSSFWorkbook(new ByteArrayInputStream(bytes))) {
+            Sheet sheet = wb.getSheetAt(0);
+            assertEquals("1.2346", sheet.getRow(1).getCell(2).getStringCellValue());
+            assertEquals("-1.2345", sheet.getRow(2).getCell(2).getStringCellValue());
+        }
+    }
 }

@@ -13,16 +13,26 @@ export interface DecimalSpec {
   decimals?: number | null;
   /** FORMULA/TAB_JOIN/CARD_FORMULA/subtotal/total value. */
   isComputed?: boolean;
+  /** Optional caller-specific display cap. Only applies to computed values. */
+  maxDisplayDecimals?: number | null;
   /** Existing percentage presentation contract remains unchanged. */
   isPercent?: boolean;
 }
 
 export function resolveDecimals(spec: DecimalSpec): number | null {
+  const computedCap = spec.isComputed
+    ? Math.min(
+        DISPLAY_SCALE,
+        spec.maxDisplayDecimals == null
+          ? DISPLAY_SCALE
+          : Math.max(0, Math.trunc(spec.maxDisplayDecimals)),
+      )
+    : null;
   if (spec.decimals != null) {
     const configured = Math.max(0, Math.trunc(spec.decimals));
-    return spec.isComputed ? Math.min(DISPLAY_SCALE, configured) : configured;
+    return computedCap == null ? configured : Math.min(computedCap, configured);
   }
-  return spec.isComputed ? DISPLAY_SCALE : null;
+  return computedCap;
 }
 
 /** Shared UI presentation boundary. Precision values must arrive as Decimal/string. */
@@ -33,7 +43,10 @@ export function formatNumber(value: DecimalValue | null | undefined, spec: Decim
   if (!decimal.isFinite()) return null;
 
   if (spec.isPercent) {
-    const decimals = Math.max(0, Math.trunc(spec.decimals ?? 2));
+    const configured = Math.max(0, Math.trunc(spec.decimals ?? 2));
+    const decimals = spec.isComputed
+      ? (resolveDecimals({ ...spec, decimals: configured }) ?? configured)
+      : configured;
     return `${decimal.times('100').toDecimalPlaces(decimals, ROUNDING).toFixed(decimals)}%`;
   }
 

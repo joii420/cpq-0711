@@ -23,7 +23,7 @@ import type {
   FormulaDefinitionEntry,
   MasterDataSnapshotEntry,
 } from '../../../types/quotation-snapshot';
-import { formatNumber } from '../../../utils/formatNumber';
+import { formatElementActualPrice } from '../snapshotDisplay';
 
 const { Text, Paragraph } = Typography;
 
@@ -148,7 +148,7 @@ const SnapshotTab: React.FC<SnapshotTabProps> = ({ snapshot, loading }) => {
       width: 120,
       // task-0801：不再固定 2 位 toFixed，改走 formatNumber（6 位去尾零兜底）
       render: (v: string, row: ElementActualPriceEntry) =>
-        <Text strong>¥{formatNumber(v, { isComputed: true }) ?? '0'} {row.currency || 'CNY'}</Text>,
+        <Text strong>¥{formatElementActualPrice(v)} {row.currency || 'CNY'}</Text>,
     },
     { title: '货币', dataIndex: 'currency', key: 'currency', width: 80,
       render: (v: string) => v || 'CNY' },

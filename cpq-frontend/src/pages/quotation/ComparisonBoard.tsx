@@ -30,6 +30,7 @@ import type { DecimalString } from '../../utils/precision';
 import { ComparisonTable } from './ComparisonTable';
 import { ComparisonToolbar } from './ComparisonToolbar';
 import { LinkConfigDrawer } from './LinkConfigDrawer';
+import { quotationSurfaceDisplayScale } from './quotationResultDisplayScale';
 
 export interface ComparisonBoardProps {
   quotationId: string;
@@ -38,13 +39,19 @@ export interface ComparisonBoardProps {
   readonly?: boolean;
   /** 详情页/已提交核价单=true → data 端点带 frozen=true（冻结快照口径）。 */
   frozen?: boolean;
+  /** Role-derived quotation cap; FINANCE is forced back to the existing 9-place display. */
+  maxDisplayDecimals: number;
 }
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export const ComparisonBoard: React.FC<ComparisonBoardProps> = ({
-  quotationId, bucket, readonly = false, frozen = false,
+  quotationId, bucket, readonly = false, frozen = false, maxDisplayDecimals,
 }) => {
+  const effectiveDisplayDecimals = quotationSurfaceDisplayScale(
+    bucket === 'FINANCE' ? 'INDEPENDENT_COSTING' : 'QUOTATION',
+    maxDisplayDecimals,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [meta, setMeta] = useState<ComparisonMetaDTO | null>(null);
@@ -171,6 +178,7 @@ export const ComparisonBoard: React.FC<ComparisonBoardProps> = ({
         columns={columns}
         rows={pageRows}
         readonly={readonly}
+        maxDisplayDecimals={effectiveDisplayDecimals}
         onRemoveColumn={handleRemoveColumn}
         onUpdateThreshold={handleUpdateThreshold}
       />

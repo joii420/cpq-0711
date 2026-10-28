@@ -136,6 +136,8 @@ export interface ComponentCellProps {
   /** true = 详情/只读页；false = 编辑页（渲染 <input>） */
   readonly: boolean;
   context: CellContext;
+  /** Current-role cap for computed quotation result text only. */
+  maxDisplayDecimals?: number;
 }
 
 // ─── 内部辅助 ────────────────────────────────────────────────────────────────
@@ -272,6 +274,7 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
   fieldKey: key,
   readonly,
   context: ctx,
+  maxDisplayDecimals,
 }) => {
   const {
     basicDataValues,
@@ -309,8 +312,12 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
       );
     }
     const val = formulaCache[field.name];
-    // 计算列：未配 decimals → 兜底 2 位（与 Excel 视图同口径）
-    const text = formatNumber(val, { decimals: field.decimals ?? null, isComputed: true }) ?? '—';
+    // 计算列：字段位数、全局 9 位与当前角色上限取最小值。
+    const text = formatNumber(val, {
+      decimals: field.decimals ?? null,
+      isComputed: true,
+      maxDisplayDecimals,
+    }) ?? '—';
     return (
       <span className="qt-formula-cell-value">
         {text}
@@ -377,12 +384,17 @@ export const ComponentCell: React.FC<ComponentCellProps> = ({
         pathCacheState as any,
       );
       if (v == null) return <span className="qt-ds-placeholder">—</span>;
+      const text = formatNumber(v, {
+        decimals: field.decimals ?? null,
+        isComputed: true,
+        maxDisplayDecimals,
+      }) ?? '—';
       return (
         <span
           className="qt-formula-cell-value"
           title={`📋 [${listFormulaItem.code}] ${chosenFormula}`}
         >
-          {v}
+          {text}
         </span>
       );
     } catch {

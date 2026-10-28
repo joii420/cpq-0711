@@ -28,6 +28,7 @@ import ListQueryButton from '../../components/ListQueryButton';
 import QuotationDatasetImportDrawer from './QuotationDatasetImportDrawer';
 import { QUOTE_IMPORT_ROLES, QUOTE_IMPORT_NO_PERMISSION_TIP } from './quoteDatasetImportConfig';
 import { formatNumber } from '../../utils/formatNumber';
+import { quotationResultDisplayScale } from './quotationResultDisplayScale';
 // task-260914 · F-4（C-4）：创建日期按**浏览器本地时区**换算。dayjs 是项目既有依赖
 // （package.json:24 `^1.11.20`，master-data / config 等多处在用），🚫 不另造日期工具。
 import dayjs from 'dayjs';
@@ -58,10 +59,13 @@ const statusTabs = [
 ];
 
 /** 列表金额使用公式计算结果原值，仅将展示币种标识切换为报价单结算币种。 */
-function formatQuotationListAmount(record: { totalAmount?: string | number | null; currency?: string | null }): string {
+function formatQuotationListAmount(
+  record: { totalAmount?: string | number | null; currency?: string | null },
+  maxDisplayDecimals: number,
+): string {
   if (record.totalAmount == null) return '-';
   const currency = record.currency || 'CNY';
-  return `${formatNumber(String(record.totalAmount), { isComputed: true }) ?? '0'} ${currency}`;
+  return `${formatNumber(String(record.totalAmount), { isComputed: true, maxDisplayDecimals }) ?? '0'} ${currency}`;
 }
 
 /**
@@ -86,7 +90,9 @@ function compareVersion(a?: string, b?: string): number {
 
 const QuotationList: React.FC = () => {
   const navigate = useNavigate();
-  const user = useAuthStore((s) => s.user);
+  const userId = useAuthStore((s) => s.user?.id);
+  const userRole = useAuthStore((s) => s.user?.role);
+  const maxDisplayDecimals = quotationResultDisplayScale(userRole);
   const [data, setData] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -110,13 +116,13 @@ const QuotationList: React.FC = () => {
   const [quoteDatasetImportOpen, setQuoteDatasetImportOpen] = useState(false);
   // task-260907 · F-2（AC-19）：权限判据改按 api.md §1 的角色白名单（销售/销售经理/管理员），
   // 🚫 不再用 `DATASET_EDIT_ROLES`（PRICING_MANAGER/SYSTEM_ADMIN）—— 那是维护页写端点的口径。
-  const canImportQuoteDataset = !!user && QUOTE_IMPORT_ROLES.includes(user.role);
+  const canImportQuoteDataset = !!userRole && QUOTE_IMPORT_ROLES.includes(userRole);
   const [copySource, setCopySource] = useState<{ id: string; templateId?: string } | null>(null);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const salesRepFilter = user?.role === 'SALES_REP' ? user.id : undefined;
+      const salesRepFilter = userRole === 'SALES_REP' ? userId : undefined;
       const res = await quotationService.list({
         page,
         size,
@@ -241,7 +247,7 @@ const QuotationList: React.FC = () => {
     {
       title: '总金额', dataIndex: 'totalAmount', key: 'totalAmount', width: 130,
       // 列表与详情统一使用报价单结算币种标识，避免 USD 报价单仍显示 ¥。
-      render: (_v: string | null | undefined, record: any) => formatQuotationListAmount(record),
+      render: (_v: string | null | undefined, record: any) => formatQuotationListAmount(record, maxDisplayDecimals),
     },
     // task-260914 · F-4（AC-8 / AC-11 / C-4）：创建日期列插在「总金额」之后、「到期日」之前。
     // 🕐 **按浏览器本地时区换算**后再格式化成 YYYY-MM-DD（D-9：不带时分秒）。
@@ -261,7 +267,7 @@ const QuotationList: React.FC = () => {
   ];
 
   // PRICING_MANAGER 角色不参与动作，直接给空 actions
-  const isPricingManager = user?.role === 'PRICING_MANAGER';
+  const isPricingManager = userRole === 'PRICING_MANAGER';
 
   const actions: ToolbarAction<any>[] = isPricingManager ? [] : [
     {
@@ -325,7 +331,7 @@ const QuotationList: React.FC = () => {
         if (rows.length === 0) return false;
         if (rows.some((r: any) => !['SUBMITTED', 'COSTING_REJECTED', 'APPROVED'].includes(r.status)))
           return '仅待核价/已驳回/已审核可撤回';
-        if (rows.some((r: any) => r.salesRepId !== user?.id)) return '只能撤回自己提交的报价单';
+        if (rows.some((r: any) => r.salesRepId !== userId)) return '只能撤回自己提交的报价单';
         return true;
       },
       needsConfirm: true,

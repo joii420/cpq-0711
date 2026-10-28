@@ -12,6 +12,7 @@ import com.cpq.quotation.dto.QuotationDTO;
 import com.cpq.quotation.dto.SaveDraftRequest;
 import com.cpq.quotation.service.ExcelViewService;
 import com.cpq.quotation.service.QuotationEmailService;
+import com.cpq.quotation.service.QuotationDisplayPrecisionPolicy;
 import com.cpq.quotation.service.QuotationExportService;
 import com.cpq.quotation.service.CustomerPartCandidateService;
 import com.cpq.quotation.service.QuotationService;
@@ -773,8 +774,11 @@ public class QuotationResource {
             @PathParam("id") UUID id,
             @QueryParam("showDiscount") @DefaultValue("true") boolean showDiscount,
             @QueryParam("showProcesses") @DefaultValue("true") boolean showProcesses,
-            @QueryParam("showTabDetails") @DefaultValue("false") boolean showTabDetails) {
-        byte[] html = exportService.exportHtml(id, showDiscount, showProcesses, showTabDetails);
+            @QueryParam("showTabDetails") @DefaultValue("false") boolean showTabDetails,
+            @Context HttpServerRequest request) {
+        int maxDisplayDecimals = currentMaxDisplayDecimals(request);
+        byte[] html = exportService.exportHtml(
+                id, showDiscount, showProcesses, showTabDetails, maxDisplayDecimals);
         return Response.ok(html, MediaType.TEXT_HTML)
                 .header("Content-Disposition", "inline; filename=\"quotation.html\"")
                 .build();
@@ -785,12 +789,15 @@ public class QuotationResource {
     @Produces(MediaType.TEXT_HTML)
     public Response exportPdf(
             @PathParam("id") UUID id,
-            Map<String, Object> body) {
+            Map<String, Object> body,
+            @Context HttpServerRequest request) {
         boolean showDiscount = body != null && Boolean.TRUE.equals(body.get("showDiscount"));
         boolean showProcesses = body == null || !Boolean.FALSE.equals(body.get("showProcesses"));
         boolean showTabDetails = body != null && Boolean.TRUE.equals(body.get("showTabDetails"));
         // Return HTML for browser print-to-PDF (pragmatic approach)
-        byte[] html = exportService.exportHtml(id, showDiscount, showProcesses, showTabDetails);
+        int maxDisplayDecimals = currentMaxDisplayDecimals(request);
+        byte[] html = exportService.exportHtml(
+                id, showDiscount, showProcesses, showTabDetails, maxDisplayDecimals);
         return Response.ok(html, MediaType.TEXT_HTML)
                 .header("Content-Disposition", "inline; filename=\"quotation.html\"")
                 .build();
@@ -801,10 +808,13 @@ public class QuotationResource {
     @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     public Response exportExcel(
             @PathParam("id") UUID id,
-            Map<String, Object> body) {
+            Map<String, Object> body,
+            @Context HttpServerRequest request) {
         boolean showDiscount = body == null || !Boolean.FALSE.equals(body.get("showDiscount"));
         boolean includeRawData = body != null && Boolean.TRUE.equals(body.get("includeRawData"));
-        byte[] excel = exportService.exportExcel(id, showDiscount, includeRawData);
+        int maxDisplayDecimals = currentMaxDisplayDecimals(request);
+        byte[] excel = exportService.exportExcel(
+                id, showDiscount, includeRawData, maxDisplayDecimals);
         QuotationDTO q = quotationService.getById(id);
         String filename = (q.quotationNumber != null ? q.quotationNumber : "quotation") + ".xlsx";
         return Response.ok(excel)
@@ -814,13 +824,16 @@ public class QuotationResource {
 
     @POST
     @Path("/{id}/send")
-    public ApiResponse<QuotationDTO> sendQuotation(@PathParam("id") UUID id, Map<String, Object> body) {
+    public ApiResponse<QuotationDTO> sendQuotation(@PathParam("id") UUID id, Map<String, Object> body,
+                                                   @Context HttpServerRequest request) {
         String to = body != null ? (String) body.get("to") : null;
         String cc = body != null ? (String) body.get("cc") : null;
         String subject = body != null ? (String) body.get("subject") : null;
         String emailBody = body != null ? (String) body.get("body") : null;
         boolean attachExcel = body != null && Boolean.TRUE.equals(body.get("attachExcel"));
-        return ApiResponse.success(emailService.send(id, to, cc, subject, emailBody, attachExcel));
+        int maxDisplayDecimals = currentMaxDisplayDecimals(request);
+        return ApiResponse.success(emailService.send(
+                id, to, cc, subject, emailBody, attachExcel, maxDisplayDecimals));
     }
 
     // ---- Excel View v2 ----
@@ -999,13 +1012,20 @@ public class QuotationResource {
     @GET
     @Path("/{id}/export-excel-view")
     @Produces("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    public Response exportExcelView(@PathParam("id") UUID id) {
-        byte[] excel = excelViewService.exportExcelView(id);
+    public Response exportExcelView(@PathParam("id") UUID id,
+                                    @Context HttpServerRequest request) {
+        int maxDisplayDecimals = currentMaxDisplayDecimals(request);
+        byte[] excel = excelViewService.exportExcelView(id, maxDisplayDecimals);
         QuotationDTO q = quotationService.getById(id);
         String filename = (q.quotationNumber != null ? q.quotationNumber : "quotation") + "-view.xlsx";
         return Response.ok(excel)
                 .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
                 .build();
+    }
+
+    private int currentMaxDisplayDecimals(HttpServerRequest request) {
+        return QuotationDisplayPrecisionPolicy.maxDecimalsForRole(
+                sessionHelper.getCurrentUserRoleOrFallback(request));
     }
 
     @PUT

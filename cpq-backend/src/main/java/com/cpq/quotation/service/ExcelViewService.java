@@ -1056,6 +1056,10 @@ public class ExcelViewService {
     // ---- Export Excel with formulas ----
 
     public byte[] exportExcelView(UUID quotationId) {
+        return exportExcelView(quotationId, PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    public byte[] exportExcelView(UUID quotationId, int maxDisplayDecimals) {
         // 列定义 + fallback 重算行（含 _lineItemId 索引键 + EXCEL_FORMULA 公式串）
         Map<String, Object> viewData = getExcelView(quotationId);
         @SuppressWarnings("unchecked")
@@ -1152,11 +1156,14 @@ public class ExcelViewService {
                         if (formula.startsWith("=")) formula = formula.substring(1);
                         try {
                             cell.setCellFormula(formula);
+                            cell.setCellStyle(numberStyleFor(workbook, dataFormat, numberStyleCache,
+                                    computedDisplayDecimals(col, maxDisplayDecimals)));
                         } catch (Exception e) {
                             cell.setCellValue(formula);
                         }
                     } else if (cellValue != null) {
-                        writeFormattedCell(workbook, dataFormat, numberStyleCache, cell, col, cellValue);
+                        writeFormattedCell(workbook, dataFormat, numberStyleCache, cell, col, cellValue,
+                                maxDisplayDecimals);
                     }
                 }
             }
@@ -1211,13 +1218,22 @@ public class ExcelViewService {
     private void writeFormattedCell(XSSFWorkbook workbook, DataFormat dataFormat,
                                     Map<String, CellStyle> numberStyleCache,
                                     Cell cell, Map<String, Object> col, Object value) {
+        writeFormattedCell(workbook, dataFormat, numberStyleCache, cell, col, value,
+                PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    private void writeFormattedCell(XSSFWorkbook workbook, DataFormat dataFormat,
+                                    Map<String, CellStyle> numberStyleCache,
+                                    Cell cell, Map<String, Object> col, Object value,
+                                    int maxDisplayDecimals) {
         BigDecimal num = toBigDecimalOrNull(value);
         if (num != null) {
             String sourceType = (String) col.get("source_type");
             boolean isComputed = isComputedColumn(sourceType);
             Integer explicitDecimals = explicitDecimals(col);
             if (isComputed) {
-                cell.setCellValue(com.cpq.common.NumberFormatUtil.format(num, explicitDecimals, true));
+                cell.setCellValue(com.cpq.common.NumberFormatUtil.format(
+                        num, explicitDecimals, true, maxDisplayDecimals));
                 return;
             }
             // 解析有效位数：显式优先 → 计算列兜底 9 位（呈现精度统一 PrecisionPolicy.DISPLAY_SCALE）
@@ -1270,6 +1286,15 @@ public class ExcelViewService {
             }
         }
         return null;
+    }
+
+    private int computedDisplayDecimals(Map<String, Object> col, int maxDisplayDecimals) {
+        if (maxDisplayDecimals < 0) {
+            throw new IllegalArgumentException("maxDisplayDecimals must be non-negative");
+        }
+        Integer configured = explicitDecimals(col);
+        int decimals = configured != null ? configured : COMPUTED_FALLBACK_DECIMALS;
+        return Math.min(Math.min(decimals, PrecisionPolicy.DISPLAY_SCALE), maxDisplayDecimals);
     }
 
     private BigDecimal toBigDecimalOrNull(Object value) {

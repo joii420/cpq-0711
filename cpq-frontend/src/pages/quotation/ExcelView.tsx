@@ -17,6 +17,7 @@ import {
   toCalculationString,
 } from '../../utils/precision';
 import { formatNumber } from '../../utils/formatNumber';
+import { useQuotationResultDisplayScale } from './quotationResultDisplayScale';
 
 interface ViewColumn {
   col_key: string;
@@ -113,6 +114,7 @@ function getCellValue(col: ViewColumn, lineItem: LineItem): string {
 // ─── ExcelView component ──────────────────────────────────────────────────────
 
 const ExcelView: React.FC<Props> = ({ quotationId: _quotationId, lineItems, onUpdate }) => {
+  const maxDisplayDecimals = useQuotationResultDisplayScale();
   const [viewConfig, setViewConfig] = useState<ExcelViewConfig | null>(null);
   const [loading, setLoading] = useState(false);
   // rowData[lineItemIndex][col_key] = current cell value (strings for inputs)
@@ -293,7 +295,7 @@ const ExcelView: React.FC<Props> = ({ quotationId: _quotationId, lineItems, onUp
                       <td key={col.col_key} style={formulaCellStyle}>
                         {computed === '#ERR' ? (
                           <span style={{ color: '#ff4d4f' }}>#ERR</span>
-                        ) : (formatNumber(computed, { isComputed: true }) ?? '0')}
+                        ) : (formatNumber(computed, { isComputed: true, maxDisplayDecimals }) ?? '0')}
                       </td>
                     );
                   }

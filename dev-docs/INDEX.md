@@ -580,6 +580,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 
 | 分支 | 对应任务 | 处置 |
 |---|---|---|
+| `feat/task-261027-role-display-precision` | `task-260801-公式计算精度优化/task-261027-报价结果按角色显示精度` | 🟢 开发中；worktree `.claude/worktrees/task-261027-role-display-precision`；闸门 A 已通过，前后端与测试按方案甲并行实施。 |
 | `feat/task-261026-quote-profit-card` | `task-261026-物料利润字段` | ✅ 已合并 master `cb361d08`；迁移 `V455` 已部署；**分支实体待用户执行 `git branch -d feat/task-261026-quote-profit-card`** |
 | `deploy/task-261027-profit-card` | `task-261026-物料利润字段` | ✅ 部署收尾已合并 master；`deploy/2026102701`、V455 内网增量、部署及验收证据已落盘，worktree 结案后移除；**分支实体待用户执行 `git branch -d deploy/task-261027-profit-card`** |
 | `feat/task-261026-file-decryption` | `task-261026-生产环境上传文件解密` | ✅ 已合并 master (`1c71348c`)，worktree 已移除；**分支实体待用户执行 `git branch -d feat/task-261026-file-decryption`** |

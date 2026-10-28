@@ -359,6 +359,8 @@ export interface QuotationStep2Props {
   /** 报价币种快照；仅报价侧展示换算后的金额，核价侧保持 CNY + 外币双口径。 */
   quoteCurrency?: string;
   quoteExchangeRate?: DecimalValue;
+  /** Current-role cap for computed quotation result text only. */
+  maxDisplayDecimals: number;
 }
 
 // ─── BASIC_DATA path 求值结果格式化 ─────────────────────────────────────────
@@ -2442,12 +2444,14 @@ interface ProductCardProps {
   quotationStatus?: string;
   quoteCurrency?: string;
   quoteExchangeRate?: DecimalValue;
+  /** Current-role cap for computed quotation result text only. */
+  maxDisplayDecimals: number;
   /** task-260825（F-5）：料号查询命中高亮词（防抖后的 searchTerm，大小写不敏感），
    *  用于卡片头部「客户产品编号/料号」徽标的黄底高亮；空值即不高亮，不产生额外 DOM。 */
   highlightTerm?: string;
 }
 
-const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus, highlightTerm, quoteCurrency, quoteExchangeRate }) => {
+const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpdate, customerId, driverExpansions, configTemplates, quotationId, pathCacheState, globalVariableDefs, cardSide, cardStructure, onReloadQuotation, locateComponentId, locateSeq, quotationStatus, highlightTerm, quoteCurrency, quoteExchangeRate, maxDisplayDecimals }) => {
   const [activeTab, setActiveTab] = useState(0);
   const [dsLoading, setDsLoading] = useState<Record<string, boolean>>({});
   const [dsErrors, setDsErrors] = useState<Record<string, string>>({});
@@ -3120,7 +3124,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
 
   // 金额显示：公式结果不自动套汇率；报价侧只把结果标记为报价单结算币种。
   const formatCurrency = (val: DecimalValue | null | undefined) => {
-    return `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${formatNumber(toDecimal(val ?? '0').toString(), { isComputed: true }) ?? '0'}`;
+    return `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${formatNumber(toDecimal(val ?? '0').toString(), {
+      isComputed: true,
+      maxDisplayDecimals,
+    }) ?? '0'}`;
   };
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
@@ -3939,6 +3946,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                             fieldKey={key}
                             readonly={false}
                             context={cellCtx}
+                            maxDisplayDecimals={maxDisplayDecimals}
                           />
                         );
                         const isFirstField = activeComponent.fields[0] === field;
@@ -4053,7 +4061,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? '0';
                           // 金额列与普通数值列均只显示原始计算值，不带货币单位。
-                          const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '—');
+                          const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true, maxDisplayDecimals }) ?? '—');
                           // 页签内小计只展示原始计算值：不做报价汇率换算，也不显示货币单位。
                           const text = plain;
                           return (
@@ -4091,7 +4099,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
                           if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
                           const total = sumTabColumns(activeComponent as any, allComponentSubtotals);
                           // 页签合计与小计同口径：保留原始数值，不做汇率换算、不显示货币单位。
-                          const totalText = formatNumber(total, { isComputed: true }) ?? '0';
+                          const totalText = formatNumber(total, { isComputed: true, maxDisplayDecimals }) ?? '0';
                           return fs.map((f, fi) => {
                             const k = f.name || f.key || fi;
                             if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
@@ -4136,7 +4144,10 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
             ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
             : item.subtotal;
           const rate = quoteExchangeRate && !toDecimal(quoteExchangeRate).isZero() ? toDecimal(quoteExchangeRate) : toDecimal('1');
-          const foreignSubtotal = formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), { isComputed: true }) ?? '0';
+          const foreignSubtotal = formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), {
+            isComputed: true,
+            maxDisplayDecimals,
+          }) ?? '0';
           if (cardSide === 'COSTING') {
             return <>
               <div className="qt-subtotal-line qt-subtotal-total">
@@ -4199,6 +4210,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
   locateTarget,
   quoteCurrency,
   quoteExchangeRate,
+  maxDisplayDecimals,
 }) => {
   // 两级 tab：左侧 mainTab（报价单 / 核价单 / 比对视图），右侧 viewType（产品卡片 / Excel视图）。
   // 比对视图为单一展示，无 viewType 切换。
@@ -4823,7 +4835,13 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
 
       {mainTab === 'comparison' && quotationId ? (
         // task-0717：报价单编辑页（销售入口）— 可配置比对视图。SALES 桶、编辑态（frozen=false）。
-        <ComparisonBoard quotationId={quotationId} bucket="SALES" readonly={false} frozen={false} />
+        <ComparisonBoard
+          quotationId={quotationId}
+          bucket="SALES"
+          readonly={false}
+          frozen={false}
+          maxDisplayDecimals={maxDisplayDecimals}
+        />
       ) : mainTab === 'costing' && viewType === 'excel' && quotationId ? (
         // 核价单 — Excel 视图（V73/V74 起按 linkedTemplateId 反查 costing_template 渲染）：
         // 入口 = 报价单的 costingCardTemplateId（核价模板）→ 反查 linked_template_id 命中的 Excel 模板
@@ -4842,6 +4860,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
             side="COSTING"
             pageOffset={(pgPage - 1) * pgPageSize}
             highlightTerm={paging.searchTerm}
+            maxDisplayDecimals={maxDisplayDecimals}
           />
           {showPager && renderPagingBar()}
         </div>
@@ -4905,6 +4924,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   quoteCurrency={quoteCurrency}
                   quoteExchangeRate={quoteExchangeRate}
                   highlightTerm={paging.searchTerm}
+                  maxDisplayDecimals={maxDisplayDecimals}
                 />
               );
             })}
@@ -4931,6 +4951,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
             globalVariableDefs={gvDefs}
             pageOffset={(pgPage - 1) * pgPageSize}
             highlightTerm={paging.searchTerm}
+            maxDisplayDecimals={maxDisplayDecimals}
           />
           {showPager && renderPagingBar()}
         </div>
@@ -4984,6 +5005,7 @@ const QuotationStep2: React.FC<QuotationStep2Props> = ({
                   quoteCurrency={quoteCurrency}
                   quoteExchangeRate={quoteExchangeRate}
                   highlightTerm={paging.searchTerm}
+                  maxDisplayDecimals={maxDisplayDecimals}
                 />
               </div>
             );

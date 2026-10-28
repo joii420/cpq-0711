@@ -15,9 +15,10 @@ interface Props {
   lineItems: LineItem[];
   side: 'QUOTE' | 'COSTING';
   columns: CostingTemplateColumn[] | null | undefined;
+  maxDisplayDecimals: number;
 }
 
-const ReadonlyExcelView: React.FC<Props> = ({ lineItems, side, columns }) => {
+const ReadonlyExcelView: React.FC<Props> = ({ lineItems, side, columns, maxDisplayDecimals }) => {
   const parsedColumns = (columns ?? []).filter(c => !c.hidden);
   const { rows } = useExcelSnapshotRows({ lineItems, side, parsedColumns });
 
@@ -43,7 +44,7 @@ const ReadonlyExcelView: React.FC<Props> = ({ lineItems, side, columns }) => {
       title: col.title || col.col_key,
       dataIndex: col.col_key,
       key: col.col_key,
-      render: (v: any) => renderCellValue(v, col),
+      render: (v: any) => renderCellValue(v, col, maxDisplayDecimals),
     })),
   ];
 

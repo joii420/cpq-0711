@@ -48,6 +48,8 @@ interface Props {
   globalVariableDefs?: Record<string, GlobalVariableDefinition>;
   /** task-260825（F-5）：料号查询命中高亮词（防抖后的 searchTerm），高亮「料号」列命中片段。 */
   highlightTerm?: string;
+  /** Current-role cap for computed quotation result text only. */
+  maxDisplayDecimals: number;
 }
 
 /**
@@ -78,6 +80,7 @@ const LinkedExcelView: React.FC<Props> = ({
   pathCache,
   globalVariableDefs,
   highlightTerm,
+  maxDisplayDecimals,
 }) => {
   // ---- 旧模型 hook（始终调用，用 enabled 控制是否真正运行）----
   // useLinkedExcelRows 内部用 linkedTemplateId 有无控制；直接传完整参数，
@@ -289,7 +292,7 @@ const LinkedExcelView: React.FC<Props> = ({
       render: (val: any) => {
         // 旧模型的 '__loading__' 哨兵
         if (val === '__loading__') return <span style={{ color: '#bbb' }}>加载中…</span>;
-        return renderCellValue(val, col);
+        return renderCellValue(val, col, maxDisplayDecimals);
       },
     })),
   ];

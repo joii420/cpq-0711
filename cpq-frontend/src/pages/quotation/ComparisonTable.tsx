@@ -136,12 +136,13 @@ export interface ComparisonTableProps {
   /** 已过滤/排序/分页后的当前页料号（每料号渲染 3 行）。 */
   rows: ComparisonRowDTO[];
   readonly: boolean;
+  maxDisplayDecimals: number;
   onRemoveColumn: (id: string) => void;
   onUpdateThreshold: (id: string, threshold: DecimalString) => void;
 }
 
 export const ComparisonTable: React.FC<ComparisonTableProps> = ({
-  columns, rows, readonly, onRemoveColumn, onUpdateThreshold,
+  columns, rows, readonly, maxDisplayDecimals, onRemoveColumn, onUpdateThreshold,
 }) => {
   const dataSource = useMemo<RecordRow[]>(() => {
     const out: RecordRow[] = [];
@@ -225,16 +226,16 @@ export const ComparisonTable: React.FC<ComparisonTableProps> = ({
           if (rec.rowType === 'diff') {
             if (rec.row.presence !== 'BOTH') return <span style={{ color: MUTED_FG }}>—</span>;
             const diff = computeDiff(getColumnValue(rec.row, col, 'quote'), getColumnValue(rec.row, col, 'costing'));
-            return formatDiffNumber(diff, decimals);
+            return formatDiffNumber(diff, decimals, maxDisplayDecimals);
           }
           const v = getColumnValue(rec.row, col, rec.rowType);
-          const text = formatComparisonNumber(v, decimals);
+          const text = formatComparisonNumber(v, decimals, maxDisplayDecimals);
           return text === '—' ? <span style={{ color: MUTED_FG }}>—</span> : text;
         },
       });
     }
     return base;
-  }, [columns, readonly, onRemoveColumn, onUpdateThreshold]);
+  }, [columns, readonly, maxDisplayDecimals, onRemoveColumn, onUpdateThreshold]);
 
   return (
     <div style={{ margin: '0 24px', border: '1px solid #f0f0f0', borderRadius: 6, overflowX: 'auto' }}>

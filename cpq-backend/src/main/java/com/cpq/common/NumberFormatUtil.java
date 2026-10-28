@@ -13,7 +13,7 @@ import java.math.RoundingMode;
  * <p><b>task-0801（2026-08-01）精度口径反转</b>：本类曾在 2026-06-21 采用「计算列/列小计/页签合计
  * 兜底 4 位，仅最终产品小计+对外导出总额固定 2 位」的策略（见 docs/RECORD.md 2026-06-21 记录）。
  * 该策略已被 task-0801 推翻并作废——现统一口径：<b>所有计算类数值（含最终产品小计、导出总额）
- * 一律兜底 {@link PrecisionPolicy#DISPLAY_SCALE}（6）位</b>，不再区分"卡片小计固定 2 位"的例外。
+ * 一律兜底 {@link PrecisionPolicy#DISPLAY_SCALE} 位</b>，不再区分"卡片小计固定 2 位"的例外。
  * 之所以不删除旧记录，是为了保留"为什么当初改成 4 位/2 位"的追溯链，避免后人当 bug 改回。
  *
  * <p>仅用于显示/导出格式化，内部计算精度（engine 全精度 BigDecimal，不做中间截断）不受影响。
@@ -30,14 +30,36 @@ public final class NumberFormatUtil {
     /**
      * @param value      数值（null → 返回空串）
      * @param decimals   显式位数（null=未配）
-     * @param isComputed 计算列（未配兜底 4 位，输入/取数列保留原精度）
+     * @param isComputed 计算列（未配兜底 {@link PrecisionPolicy#DISPLAY_SCALE} 位，输入/取数列保留原精度）
      * @return 已格式化字符串（去末尾 0；0 → "0"；无科学计数法）
      */
     public static String format(BigDecimal value, Integer decimals, boolean isComputed) {
+        return format(value, decimals, isComputed, null);
+    }
+
+    /**
+     * Format a value with an optional computed-result display cap.
+     *
+     * <p>The additional cap only applies when {@code isComputed=true}. Raw/source values retain
+     * the exact behavior of the legacy overload, so quote role precision cannot leak into master
+     * data, rates, user inputs or snapshots.
+     *
+     * @param maxDisplayDecimals optional computed-result cap; {@code null} keeps the legacy 9-digit cap
+     */
+    public static String format(BigDecimal value, Integer decimals, boolean isComputed,
+                                Integer maxDisplayDecimals) {
         if (value == null) return "";
         Integer d = decimals != null ? decimals : (isComputed ? COMPUTED_FALLBACK : null);
         // 计算列的显式位数不能突破统一 9 位显示上限；原始取数列仍保留自身配置。
-        if (isComputed && d != null) d = Math.min(d, PrecisionPolicy.DISPLAY_SCALE);
+        if (isComputed && d != null) {
+            d = Math.min(d, PrecisionPolicy.DISPLAY_SCALE);
+            if (maxDisplayDecimals != null) {
+                if (maxDisplayDecimals < 0) {
+                    throw new IllegalArgumentException("maxDisplayDecimals must be non-negative");
+                }
+                d = Math.min(d, maxDisplayDecimals);
+            }
+        }
         BigDecimal r = (d == null) ? value : value.setScale(d, RoundingMode.HALF_UP);
         r = r.stripTrailingZeros();
         if (r.compareTo(BigDecimal.ZERO) == 0) return "0";

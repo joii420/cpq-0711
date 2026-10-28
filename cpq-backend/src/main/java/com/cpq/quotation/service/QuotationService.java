@@ -596,6 +596,12 @@ public class QuotationService {
             }
         }
 
+        // task-261027 AC-7：先按数值判断折扣是否真的变化。增量保存经常带空三数组；若只是
+        // projectName 等非金额单头变化，绝不能借机把原有 12 位头金额压到 9 位结果边界。
+        boolean finalDiscountRateChanged = request.finalDiscountRate != null
+                && (q.finalDiscountRate == null
+                    || q.finalDiscountRate.compareTo(request.finalDiscountRate) != 0);
+
         // Update header fields
         if (request.name != null) q.name = request.name;
         if (request.contactId != null) q.contactId = request.contactId;
@@ -651,10 +657,14 @@ public class QuotationService {
                     System.getenv().getOrDefault("CPQ_SAVEDRAFT_BATCH_STAGE1", "true")));
 
         DraftDelta delta = resolveDelta(request);
+        // 新增量协议的 added/modified/removed 都为空时只是单头 patch，不是明细变更。
+        // 旧全量协议即使 lineItems=[] 也表示“删除全部行”，因此仍必须走既有明细与总额重算。
+        boolean hasLineMutations = delta.hasLinePayload
+                && (!delta.incremental || !delta.lines.isEmpty() || !delta.removedIds.isEmpty());
         LOG.infof("[saveDraft-diag] id=%s protocol=%s lines=%d removed=%d batchStage1=%b", id,
             delta.hasLinePayload ? (delta.incremental ? "incremental" : "legacy-full") : "header-only",
             delta.lines.size(), delta.removedIds.size(), batchStage1Enabled);
-        if (delta.hasLinePayload) {
+        if (hasLineMutations) {
             if (batchStage1Enabled) {
                 // ── Phase 2-1 批量集合化路径 ──────────────────────────────────────────────
                 // E2/E3/E4/E5/§2.1：把阶段①里的 per-row SQL 合成整单集合 SQL，单线程批量。
@@ -1018,16 +1028,8 @@ public class QuotationService {
                     ex.delete();
                 }
 
-                // task-260901 B-2d（逐行路径，与 batch 路径同口径）：总额从库聚合
-                em.flush();
-                BigDecimal dbTotal = (BigDecimal) em.createNativeQuery(
-                        "SELECT COALESCE(sum(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :q")
-                    .setParameter("q", id).getSingleResult();
-                if (dbTotal == null) dbTotal = BigDecimal.ZERO;
-                // 除法过程保留 12 位；报价总额在独立 QUOTATION_TOTAL_SCALE 结果边界落库。
-                q.originalAmount = quotationTotalResult(dbTotal);
-                q.totalAmount = quotationTotalResult(dbTotal.multiply(q.finalDiscountRate)
-                        .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
+                // task-260901 B-2d（逐行路径，与 batch 路径同口径）：真实行变更后从库聚合。
+                recalculateDraftTotals(id, q, true);
 
                 // task-260901 B-2f（逐行路径，与 batch 路径同口径）：父子关系按 tempParentKey /
                 // parentLineItemId 重链；旧全量协议下仍解释 tempParentIndex。
@@ -1066,6 +1068,13 @@ public class QuotationService {
                 delta.writtenIds = newIdsByIndex;   // task-260901 B-4b
 
             } // end per-row path
+        }
+
+        // task-261027 AC-7：折扣是唯一会直接影响总额的单头字段。没有行变更时保留原
+        // originalAmount 的完整精度，只按既有 QUOTATION_TOTAL_SCALE 重算折后 totalAmount；
+        // 纯 projectName 等单头 patch 则两列都完全不碰。
+        if (!hasLineMutations && finalDiscountRateChanged) {
+            recalculateDraftTotals(id, q, false);
         }
 
         // ── task-260901 B-3c：本次确有用户写入 → user_data_version + 1 ─────────────────────────
@@ -3638,21 +3647,13 @@ public class QuotationService {
             }
         }
 
-        // ── task-260901 B-2d：总额改为从库聚合 ─────────────────────────────────────────────────
+        // ── task-260901 B-2d：真实行变更后总额从库聚合 ─────────────────────────────────────────
         // 原来是「遍历 payload 累加 liDraft.subtotal」。增量协议下 payload 只装被改的那几行，
         // 继续累加会把整单总价打成「只有这几行的和」——AC-4（只改单头）更是会直接归零。
         // 改为写入落库后 SELECT sum(subtotal)：1 条 SQL，与行数无关，且顺带修掉旧口径的一个缺陷
         // （payload 里 subtotal==null 的行原先被排除在总额之外，但它在库里的值是保留的）。
         // 🔒 必须先 flush：本次的 INSERT/UPDATE/DELETE 还在持久化上下文里，原生查询看不到。
-        em.flush();
-        BigDecimal total = (BigDecimal) em.createNativeQuery(
-                "SELECT COALESCE(sum(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :q")
-            .setParameter("q", quotationId).getSingleResult();
-        if (total == null) total = BigDecimal.ZERO;
-        // 除法过程保留 12 位；报价总额在独立 QUOTATION_TOTAL_SCALE 结果边界落库。
-        q.originalAmount = quotationTotalResult(total);
-        q.totalAmount = quotationTotalResult(total.multiply(q.finalDiscountRate)
-                .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
+        recalculateDraftTotals(quotationId, q, true);
 
         // ── E5 V169 父子关系批量 UPDATE ────────────────────────────────────────────────────────
         // 原逐行：per-child UPDATE quotation_line_item SET parent_line_item_id = :pid WHERE id = :cid。
@@ -3766,6 +3767,33 @@ public class QuotationService {
 
     static BigDecimal quotationTotalResult(BigDecimal value, int scale) {
         return PrecisionPolicy.roundForResultScale(value, scale);
+    }
+
+    /**
+     * Recalculate draft header totals without leaking the 9-digit quotation-total boundary into an
+     * unrelated header-only save.
+     *
+     * @param lineAmountsChanged true after real line add/modify/remove; aggregate the authoritative
+     *                           line subtotal and refresh both header amounts. false for a discount-only
+     *                           header patch; preserve the exact original amount and refresh only total.
+     */
+    private void recalculateDraftTotals(UUID quotationId, Quotation q, boolean lineAmountsChanged) {
+        BigDecimal original = q.originalAmount;
+        if (lineAmountsChanged) {
+            // Native aggregation must observe pending INSERT/UPDATE/DELETE operations first.
+            em.flush();
+            original = (BigDecimal) em.createNativeQuery(
+                    "SELECT COALESCE(sum(subtotal), 0) FROM quotation_line_item WHERE quotation_id = :q")
+                .setParameter("q", quotationId).getSingleResult();
+            if (original == null) original = BigDecimal.ZERO;
+            q.originalAmount = quotationTotalResult(original);
+        } else if (original == null) {
+            // Existing rows initialize this column to zero. Keep null-safe behavior for legacy data.
+            original = BigDecimal.ZERO;
+        }
+
+        q.totalAmount = quotationTotalResult(original.multiply(q.finalDiscountRate)
+                .divide(new BigDecimal("100"), PrecisionPolicy.DIVISION_SCALE, RoundingMode.HALF_UP));
     }
 
     private void deleteLineItems(UUID quotationId) {

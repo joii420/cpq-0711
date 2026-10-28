@@ -40,6 +40,8 @@ interface Props {
   onSilentUpdate?: (updater: (prev: LineItem[]) => LineItem[]) => void;
   /** 全局变量定义表（wizard 的 gvDefs）——computeLineDiscount 完整口径求值需与渲染层同源。 */
   globalVariableDefs?: Record<string, import('../../services/globalVariableService').GlobalVariableDefinition>;
+  /** Current-role cap for computed quotation result text only. */
+  maxDisplayDecimals: number;
 }
 
 const QuotationStep3: React.FC<Props> = ({
@@ -52,6 +54,7 @@ const QuotationStep3: React.FC<Props> = ({
   onUpdate,
   onSilentUpdate,
   globalVariableDefs,
+  maxDisplayDecimals,
 }) => {
   // 过滤掉 PART 子件（与 Step2 一致，只展示父级）
   const visibleItems = useMemo(
@@ -139,7 +142,9 @@ const QuotationStep3: React.FC<Props> = ({
       key: 'unitPrice',
       width: 130,
       align: 'right',
-        render: (_v, li) => formatCurrency(li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, _exchangeRate),
+      render: (_v, li) => formatCurrency(
+        li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, _exchangeRate, maxDisplayDecimals,
+      ),
     },
     {
       title: '年用量',
@@ -201,7 +206,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 110,
       align: 'right',
       render: (_v, li) => (
-        <Text type="warning">{formatCurrency(li.lineDiscountAmount ?? '0', baseCurrency, _exchangeRate)}</Text>
+        <Text type="warning">{formatCurrency(li.lineDiscountAmount ?? '0', baseCurrency, _exchangeRate, maxDisplayDecimals)}</Text>
       ),
     },
     {
@@ -210,7 +215,9 @@ const QuotationStep3: React.FC<Props> = ({
       width: 130,
       align: 'right',
       render: (_v, li) => (
-        <Text strong>{formatCurrency(li.lineFinalPrice ?? li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, _exchangeRate)}</Text>
+        <Text strong>{formatCurrency(
+          li.lineFinalPrice ?? li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, _exchangeRate, maxDisplayDecimals,
+        )}</Text>
       ),
     },
     {
@@ -219,7 +226,9 @@ const QuotationStep3: React.FC<Props> = ({
       width: 140,
       align: 'right',
       render: (_v, li) => (
-        <Text strong style={{ color: '#0958d9' }}>{formatCurrency(li.lineTotalAmount ?? '0', baseCurrency, _exchangeRate)}</Text>
+        <Text strong style={{ color: '#0958d9' }}>{formatCurrency(
+          li.lineTotalAmount ?? '0', baseCurrency, _exchangeRate, maxDisplayDecimals,
+        )}</Text>
       ),
     },
     // 「规则」列暂时移除（2026-07-16 需求）：折扣规则引擎未接通，列里恒显示「未匹配」无信息量。
@@ -287,18 +296,20 @@ const QuotationStep3: React.FC<Props> = ({
           >
             <div>
               <Text type="secondary">原始合计</Text>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{formatCurrency(grandOriginal, baseCurrency, _exchangeRate)}</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{formatCurrency(
+                grandOriginal, baseCurrency, _exchangeRate, maxDisplayDecimals,
+              )}</div>
             </div>
             <div>
               <Text type="secondary">总折扣</Text>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#cf1322' }}>
-                -{formatCurrency(grandDiscount, baseCurrency, _exchangeRate)}
+                -{formatCurrency(grandDiscount, baseCurrency, _exchangeRate, maxDisplayDecimals)}
               </div>
             </div>
             <div>
               <Text type="secondary">合计应收</Text>
               <div style={{ fontSize: 18, fontWeight: 700, color: '#0958d9' }}>
-                {formatCurrency(grandTotal, baseCurrency, _exchangeRate)}
+                {formatCurrency(grandTotal, baseCurrency, _exchangeRate, maxDisplayDecimals)}
               </div>
             </div>
           </div>
@@ -310,9 +321,17 @@ const QuotationStep3: React.FC<Props> = ({
 
 // task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
 // 汇率只作为公式变量提供，不在展示层自动换算；币种标识仍使用报价单结算币种。
-function formatCurrency(value: DecimalValue, currency: string, _exchangeRate?: DecimalValue): string {
+function formatCurrency(
+  value: DecimalValue,
+  currency: string,
+  _exchangeRate: DecimalValue | undefined,
+  maxDisplayDecimals: number,
+): string {
   const symbol = `${currency || 'CNY'} `;
-  return `${symbol}${formatNumber(toDecimal(value ?? '0').toString(), { isComputed: true }) ?? '0'}`;
+  return `${symbol}${formatNumber(toDecimal(value ?? '0').toString(), {
+    isComputed: true,
+    maxDisplayDecimals,
+  }) ?? '0'}`;
 }
 
 export default QuotationStep3;

@@ -116,6 +116,8 @@ interface ReadonlyProductCardProps {
   editable?: boolean;
   /** task-0713（F3）：版本切换成功后的增量回调，上抛给 CostingReviewPage 合并到本地状态。 */
   onVersionSwitched?: (result: VersionSwitchResult) => void;
+  /** Current-role cap for computed quotation result text only. */
+  maxDisplayDecimals: number;
 }
 
 function parseJson<T>(value: T | string | null | undefined, fallback: T): T {
@@ -203,8 +205,8 @@ function buildFormulaCache(
 
 // task-0801（AP-50：详情页须与编辑页 QuotationStep2.formatCurrency 同口径）：不再固定 2 位
 // toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
-const formatCurrency = (val: DecimalValue | null | undefined) =>
-  `¥ ${formatNumber(val ?? '0', { isComputed: true }) ?? '0'}`;
+const formatCurrency = (val: DecimalValue | null | undefined, maxDisplayDecimals: number) =>
+  `¥ ${formatNumber(val ?? '0', { isComputed: true, maxDisplayDecimals }) ?? '0'}`;
 
 /** 单元格值格式化 — V197 同 QuotationStep2.formatPathValue 同款逻辑, 支持 JSONB 包装对象 */
 const formatCellValue = (v: any): string => {
@@ -263,6 +265,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   coid,
   editable,
   onVersionSwitched,
+  maxDisplayDecimals,
 }) => {
   const side = sideProp ?? 'QUOTE';
   const isCosting = side === 'COSTING';
@@ -1094,6 +1097,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                                     fieldKey={key}
                                     readonly={true}
                                     context={cellCtx}
+                                    maxDisplayDecimals={maxDisplayDecimals}
                                   />
                                   {showTrace && (
                                     <FieldTraceIcon
@@ -1164,7 +1168,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                         if (isNumericCol && colName && colName in colSums) {
                           const v = colSums[colName] ?? '0';
                           // 页签内小计只展示原始计算值：不做汇率换算，也不显示货币单位。
-                          const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true }) ?? '0');
+                          const plain = toDecimal(v).isZero() ? '0' : (formatNumber(v, { isComputed: true, maxDisplayDecimals }) ?? '0');
                           const text = plain;
                           return (
                             <td key={colName || fi} className="qt-subtotal-cell" style={field.is_amount === true ? undefined : { color: '#595959' }}>
@@ -1195,7 +1199,7 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
                           }
                           if (valueIdx < 0) valueIdx = Math.max(1, fs.length - 1);
                           // 页签合计与小计同口径：保留原始数值，不做汇率换算、不显示货币单位。
-                          const totalText = formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true }) ?? '0';
+                          const totalText = formatNumber(sumTabColumns(activeComp as any, compSubtotals), { isComputed: true, maxDisplayDecimals }) ?? '0';
                           return fs.map((f, fi) => {
                             const k = f.name || f.key || fi;
                             if (fi === 0) return <td key={k} className="qt-subtotal-label-cell">合计</td>;
@@ -1222,15 +1226,23 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         {isCosting ? <>
           <div className="qt-subtotal-line qt-subtotal-total">
             <span className="qt-subtotal-label">产品小计</span>
-            <span className="qt-subtotal-value">{formatCurrency(productSubtotal ?? (lineItem.subtotal ?? '0'))}</span>
+            <span className="qt-subtotal-value">{formatCurrency(
+              productSubtotal ?? (lineItem.subtotal ?? '0'), maxDisplayDecimals,
+            )}</span>
           </div>
           <div className="qt-subtotal-line qt-subtotal-total">
             <span className="qt-subtotal-label">外币小计</span>
-            <span className="qt-subtotal-value" style={{ color: '#1677ff' }}>{formatNumber(foreignProductSubtotal, { isComputed: true }) ?? '0'} {quoteCurrency}</span>
+            <span className="qt-subtotal-value" style={{ color: '#1677ff' }}>{formatNumber(foreignProductSubtotal, {
+              isComputed: true,
+              maxDisplayDecimals,
+            }) ?? '0'} {quoteCurrency}</span>
           </div>
         </> : <div className="qt-subtotal-line qt-subtotal-total">
           <span className="qt-subtotal-label">产品小计</span>
-          <span className="qt-subtotal-value">{formatNumber(toDecimal(productSubtotal ?? (lineItem.subtotal ?? '0')).toString(), { isComputed: true }) ?? '0'} {quoteCurrency}</span>
+          <span className="qt-subtotal-value">{formatNumber(
+            toDecimal(productSubtotal ?? (lineItem.subtotal ?? '0')).toString(),
+            { isComputed: true, maxDisplayDecimals },
+          ) ?? '0'} {quoteCurrency}</span>
         </div>}
       </div>
     </div>

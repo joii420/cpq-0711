@@ -28,6 +28,7 @@ import type { LineItem } from './QuotationStep2';
 import type { VersionSwitchResult } from '../../services/costingOrderService';
 import { usePagedSearch } from './usePagedSearch';
 import PagingBar from './PagingBar';
+import { quotationSurfaceDisplayScale } from './quotationResultDisplayScale';
 
 const { Text } = Typography;
 
@@ -47,9 +48,15 @@ interface Props {
   /** repair-0806：一级视图初始值（深链预选）。不传时保持既有默认 'quote'，
    *  仅作 useState 初值，切换后仍由用户交互接管，不受上层重渲染回拉。 */
   initialMainTab?: 'quote' | 'costing' | 'comparison';
+  /** Explicitly supplied by the owning quotation/costing entry. */
+  maxDisplayDecimals: number;
 }
 
-const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, coid, editable, onVersionSwitched, initialMainTab }) => {
+const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, coid, editable, onVersionSwitched, initialMainTab, maxDisplayDecimals }) => {
+  const effectiveDisplayDecimals = quotationSurfaceDisplayScale(
+    coid ? 'INDEPENDENT_COSTING' : 'QUOTATION',
+    maxDisplayDecimals,
+  );
   // ----------------------------------------------------------------
   // task-0717：比对视图（ComparisonBoard）桶 / 只读判定。
   // 本组件被两个调用方共用：
@@ -267,6 +274,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
           bucket={comparisonBucket}
           readonly={comparisonReadonly}
           frozen
+          maxDisplayDecimals={effectiveDisplayDecimals}
         />
       ) : pgIsSearching && pgMatchedTotal === 0 ? (
         // task-260923（回流修复 1 / AC-10 AC-12）：空态上方保留顶部分页栏（搜索框 + 计数），页码由 PagingBar 在 0 命中时自行隐藏。
@@ -296,6 +304,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
             columns={
               mainTab === 'costing' ? quotation.costingExcelColumns : quotation.quoteExcelColumns
             }
+            maxDisplayDecimals={effectiveDisplayDecimals}
           />
           {renderPagingBar()}
         </div>
@@ -325,6 +334,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
                   coid={mainTab === 'costing' ? coid : undefined}
                   editable={mainTab === 'costing' ? editable : undefined}
                   onVersionSwitched={onVersionSwitched}
+                  maxDisplayDecimals={effectiveDisplayDecimals}
                 />
               </div>
             );
@@ -342,7 +352,10 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
                 原价合计：
                 <Text strong>
                   {/* task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（6 位去尾零兜底） */}
-                  {formatNumber(quotation.originalAmount ?? '0', { isComputed: true }) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
+                  {formatNumber(quotation.originalAmount ?? '0', {
+                    isComputed: true,
+                    maxDisplayDecimals: effectiveDisplayDecimals,
+                  }) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
                 </Text>
               </Text>
               <Text>
@@ -351,7 +364,10 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 报价总金额：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                {formatNumber(quotation.totalAmount ?? '0', { isComputed: true }) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
+                {formatNumber(quotation.totalAmount ?? '0', {
+                  isComputed: true,
+                  maxDisplayDecimals: effectiveDisplayDecimals,
+                }) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
                 </Text>
               </Text>
             </Space>
@@ -374,7 +390,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 核价单据总价：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                  ¥{formatNumber(quotation.costingTotalAmount ?? '0', { isComputed: true }) ?? '0'}
+                  ¥{formatNumber(quotation.costingTotalAmount ?? '0', { isComputed: true, maxDisplayDecimals: effectiveDisplayDecimals }) ?? '0'}
                 </Text>
               </Text>
             </Space>

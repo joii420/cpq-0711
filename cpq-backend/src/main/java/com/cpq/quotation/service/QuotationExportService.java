@@ -1,6 +1,7 @@
 package com.cpq.quotation.service;
 
 import com.cpq.common.NumberFormatUtil;
+import com.cpq.common.PrecisionPolicy;
 import com.cpq.common.exception.BusinessException;
 import com.cpq.quotation.dto.QuotationDTO;
 import io.quarkus.qute.Template;
@@ -40,17 +41,23 @@ public class QuotationExportService {
      * Returns HTML bytes that the frontend can open in a new window for printing.
      */
     public byte[] exportHtml(UUID quotationId, boolean showDiscount, boolean showProcesses, boolean showTabDetails) {
+        return exportHtml(quotationId, showDiscount, showProcesses, showTabDetails,
+                PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    public byte[] exportHtml(UUID quotationId, boolean showDiscount, boolean showProcesses,
+                             boolean showTabDetails, int maxDisplayDecimals) {
         QuotationDTO q = quotationService.getById(quotationId);
         LOG.infof("Generating HTML export for quotation id=%s number=%s", quotationId, q.quotationNumber);
 
         // Build line item view models
-        List<Map<String, Object>> lineItemsData = buildLineItemsData(q);
+        List<Map<String, Object>> lineItemsData = buildLineItemsData(q, maxDisplayDecimals);
 
         String statusLabel = getStatusLabel(q.status);
         String printTime = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
 
         // Build a data object for the template
-        QuotationTemplateData templateData = new QuotationTemplateData(q, statusLabel);
+        QuotationTemplateData templateData = new QuotationTemplateData(q, statusLabel, maxDisplayDecimals);
 
         String html = quotationPdfTemplate
                 .data("quotation", templateData)
@@ -66,13 +73,18 @@ public class QuotationExportService {
      * Export quotation as Excel (xlsx).
      */
     public byte[] exportExcel(UUID quotationId, boolean showDiscount, boolean includeRawData) {
+        return exportExcel(quotationId, showDiscount, includeRawData, PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    public byte[] exportExcel(UUID quotationId, boolean showDiscount, boolean includeRawData,
+                              int maxDisplayDecimals) {
         QuotationDTO q = quotationService.getById(quotationId);
         LOG.infof("Generating Excel export for quotation id=%s number=%s", quotationId, q.quotationNumber);
 
         try (XSSFWorkbook workbook = new XSSFWorkbook()) {
-            createSummarySheet(workbook, q, showDiscount);
+            createSummarySheet(workbook, q, showDiscount, maxDisplayDecimals);
             if (includeRawData) {
-                createRawDataSheet(workbook, q);
+                createRawDataSheet(workbook, q, maxDisplayDecimals);
             }
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             workbook.write(out);
@@ -84,7 +96,8 @@ public class QuotationExportService {
 
     // ---- Private helpers ----
 
-    private void createSummarySheet(XSSFWorkbook workbook, QuotationDTO q, boolean showDiscount) {
+    private void createSummarySheet(XSSFWorkbook workbook, QuotationDTO q, boolean showDiscount,
+                                    int maxDisplayDecimals) {
         Sheet sheet = workbook.createSheet("报价单");
         sheet.setColumnWidth(0, 5000);
         sheet.setColumnWidth(1, 8000);
@@ -165,42 +178,42 @@ public class QuotationExportService {
                 dataRow.createCell(col++).setCellValue(li.productAttributeValues != null ? li.productAttributeValues : "");
                 if (showDiscount) {
                     // 折扣率(%)：行级 discountRateApplied（非整单 finalDiscountRate）
-                    writeAmountCell(dataRow.createCell(col++),
+                    writeDefaultFormattedCell(dataRow.createCell(col++),
                         li.discountRateApplied != null ? li.discountRateApplied : BigDecimal.ZERO);
                     // 单价
                     Cell unitPriceCell = dataRow.createCell(col++);
                     unitPriceCell.setCellStyle(amountStyle);
-                    if (li.lineUnitPrice != null) writeAmountCell(unitPriceCell, li.lineUnitPrice);
+                    if (li.lineUnitPrice != null) writeComputedAmountCell(unitPriceCell, li.lineUnitPrice, maxDisplayDecimals);
                     // 折扣金额
                     Cell discAmtCell = dataRow.createCell(col++);
                     discAmtCell.setCellStyle(amountStyle);
-                    if (li.lineDiscountAmount != null) writeAmountCell(discAmtCell, li.lineDiscountAmount);
+                    if (li.lineDiscountAmount != null) writeComputedAmountCell(discAmtCell, li.lineDiscountAmount, maxDisplayDecimals);
                     // 折后单价
                     Cell finalUnitCell = dataRow.createCell(col++);
                     finalUnitCell.setCellStyle(amountStyle);
-                    if (li.lineFinalPrice != null) writeAmountCell(finalUnitCell, li.lineFinalPrice);
+                    if (li.lineFinalPrice != null) writeComputedAmountCell(finalUnitCell, li.lineFinalPrice, maxDisplayDecimals);
                     // 行合计
                     Cell lineTotalCell = dataRow.createCell(col++);
                     lineTotalCell.setCellStyle(amountStyle);
                     BigDecimal lineTotal = li.lineTotalAmount != null ? li.lineTotalAmount
                             : (li.subtotal != null ? li.subtotal : BigDecimal.ZERO);
-                    writeAmountCell(lineTotalCell, lineTotal);
+                    writeComputedAmountCell(lineTotalCell, lineTotal, maxDisplayDecimals);
                     grandTotal = grandTotal.add(lineTotal);
                 } else {
                     Cell subtotalCell = dataRow.createCell(col++);
                     subtotalCell.setCellStyle(amountStyle);
                     if (li.subtotal != null) {
-                        writeAmountCell(subtotalCell, li.subtotal);
+                        writeComputedAmountCell(subtotalCell, li.subtotal, maxDisplayDecimals);
                         grandTotal = grandTotal.add(li.subtotal);
                     }
                 }
                 BigDecimal untaxed = lineAmount(li);
                 BigDecimal vat = vatAmount(untaxed, li);
                 BigDecimal taxed = untaxed.add(vat);
-                writeAmountCell(dataRow.createCell(col++), li.vatRate);
-                writeAmountCell(dataRow.createCell(col++), untaxed);
-                writeAmountCell(dataRow.createCell(col++), vat);
-                writeAmountCell(dataRow.createCell(col++), taxed);
+                writeDefaultFormattedCell(dataRow.createCell(col++), li.vatRate);
+                writeComputedAmountCell(dataRow.createCell(col++), untaxed, maxDisplayDecimals);
+                writeComputedAmountCell(dataRow.createCell(col++), vat, maxDisplayDecimals);
+                writeComputedAmountCell(dataRow.createCell(col++), taxed, maxDisplayDecimals);
                 untaxedTotal = untaxedTotal.add(untaxed);
                 vatTotal = vatTotal.add(vat);
                 taxedTotal = taxedTotal.add(taxed);
@@ -212,12 +225,13 @@ public class QuotationExportService {
         // Totals
         Row origRow = sheet.createRow(row++);
         origRow.createCell(col - 2).setCellValue("原价合计:");
-        writeAmountCell(origRow.createCell(col - 1), q.originalAmount != null ? q.originalAmount : BigDecimal.ZERO);
+        writeComputedAmountCell(origRow.createCell(col - 1),
+                q.originalAmount != null ? q.originalAmount : BigDecimal.ZERO, maxDisplayDecimals);
 
         if (showDiscount) {
             Row discRow = sheet.createRow(row++);
             discRow.createCell(col - 2).setCellValue("折扣率(%):");
-            writeAmountCell(discRow.createCell(col - 1),
+            writeDefaultFormattedCell(discRow.createCell(col - 1),
                 q.finalDiscountRate != null ? q.finalDiscountRate : new BigDecimal("100"));
         }
 
@@ -226,28 +240,33 @@ public class QuotationExportService {
         totalLabel.setCellValue("未税报价总金额:");
         totalLabel.setCellStyle(boldStyle);
         Cell totalCell = totalRow.createCell(col - 1);
-        writeAmountCell(totalCell, untaxedTotal);
+        writeComputedAmountCell(totalCell, untaxedTotal, maxDisplayDecimals);
         totalCell.setCellStyle(amountStyle);
 
         Row vatRow = sheet.createRow(row++);
         vatRow.createCell(col - 2).setCellValue("税额合计:");
-        writeAmountCell(vatRow.createCell(col - 1), vatTotal);
+        writeComputedAmountCell(vatRow.createCell(col - 1), vatTotal, maxDisplayDecimals);
 
         Row taxedRow = sheet.createRow(row);
         Cell taxedLabel = taxedRow.createCell(col - 2);
         taxedLabel.setCellValue("含税报价总金额:");
         taxedLabel.setCellStyle(boldStyle);
         Cell taxedCell = taxedRow.createCell(col - 1);
-        writeAmountCell(taxedCell, taxedTotal);
+        writeComputedAmountCell(taxedCell, taxedTotal, maxDisplayDecimals);
         taxedCell.setCellStyle(amountStyle);
     }
 
-    /** Precision values are always exported as display-formatted text cells. */
-    private static void writeAmountCell(Cell cell, BigDecimal v) {
-        cell.setCellValue(com.cpq.common.NumberFormatUtil.format(v, null, true));
+    /** Computed amounts are always exported as role-capped, precision-safe text cells. */
+    private static void writeComputedAmountCell(Cell cell, BigDecimal v, int maxDisplayDecimals) {
+        cell.setCellValue(NumberFormatUtil.format(v, null, true, maxDisplayDecimals));
     }
 
-    private void createRawDataSheet(XSSFWorkbook workbook, QuotationDTO q) {
+    /** Rates retain their pre-task formatting and never inherit the quote-result role cap. */
+    private static void writeDefaultFormattedCell(Cell cell, BigDecimal v) {
+        cell.setCellValue(NumberFormatUtil.format(v, null, true));
+    }
+
+    private void createRawDataSheet(XSSFWorkbook workbook, QuotationDTO q, int maxDisplayDecimals) {
         Sheet sheet = workbook.createSheet("原始数据");
         sheet.setColumnWidth(0, 5000);
         sheet.setColumnWidth(1, 5000);
@@ -270,7 +289,8 @@ public class QuotationExportService {
                         Row dataRow = sheet.createRow(row++);
                         dataRow.createCell(0).setCellValue(li.id != null ? li.id.toString() : "");
                         dataRow.createCell(1).setCellValue(cd.tabName != null ? cd.tabName : "");
-                        writeAmountCell(dataRow.createCell(2), cd.subtotal != null ? cd.subtotal : BigDecimal.ZERO);
+                        writeComputedAmountCell(dataRow.createCell(2),
+                                cd.subtotal != null ? cd.subtotal : BigDecimal.ZERO, maxDisplayDecimals);
                         dataRow.createCell(3).setCellValue(cd.rowData != null ? cd.rowData : "");
                     }
                 }
@@ -278,7 +298,7 @@ public class QuotationExportService {
         }
     }
 
-    private List<Map<String, Object>> buildLineItemsData(QuotationDTO q) {
+    private List<Map<String, Object>> buildLineItemsData(QuotationDTO q, int maxDisplayDecimals) {
         if (q.lineItems == null) return List.of();
         return q.lineItems.stream().map(li -> {
             Map<String, Object> m = new HashMap<>();
@@ -286,20 +306,21 @@ public class QuotationExportService {
             m.put("category", li.snapshot != null && li.snapshot.productCategory != null ? li.snapshot.productCategory : "");
             m.put("attributeValues", li.productAttributeValues != null ? li.productAttributeValues : "");
             m.put("discountRate", li.discountRateApplied != null ? li.discountRateApplied.toString() : "0");
-            m.put("subtotal", li.subtotal != null ? NumberFormatUtil.format(li.subtotal, null, true) : "0");
+            m.put("subtotal", li.subtotal != null
+                    ? NumberFormatUtil.format(li.subtotal, null, true, maxDisplayDecimals) : "0");
             // 行级折扣明细字段（Task6）
-            m.put("lineUnitPrice", formatAmount(li.lineUnitPrice));
-            m.put("lineDiscountAmount", formatAmount(li.lineDiscountAmount));
-            m.put("lineFinalPrice", formatAmount(li.lineFinalPrice));
+            m.put("lineUnitPrice", formatAmount(li.lineUnitPrice, maxDisplayDecimals));
+            m.put("lineDiscountAmount", formatAmount(li.lineDiscountAmount, maxDisplayDecimals));
+            m.put("lineFinalPrice", formatAmount(li.lineFinalPrice, maxDisplayDecimals));
             BigDecimal lineTotal = li.lineTotalAmount != null ? li.lineTotalAmount
                     : (li.subtotal != null ? li.subtotal : BigDecimal.ZERO);
-            m.put("lineTotalAmount", formatAmount(lineTotal));
+            m.put("lineTotalAmount", formatAmount(lineTotal, maxDisplayDecimals));
             m.put("vatRate", formatRate(li.vatRate));
             BigDecimal untaxed = lineAmount(li);
             BigDecimal vat = vatAmount(untaxed, li);
-            m.put("untaxedAmount", formatAmount(untaxed));
-            m.put("vatAmount", formatAmount(vat));
-            m.put("amountWithVat", formatAmount(untaxed.add(vat)));
+            m.put("untaxedAmount", formatAmount(untaxed, maxDisplayDecimals));
+            m.put("vatAmount", formatAmount(vat, maxDisplayDecimals));
+            m.put("amountWithVat", formatAmount(untaxed.add(vat), maxDisplayDecimals));
             return m;
         }).toList();
     }
@@ -328,7 +349,11 @@ public class QuotationExportService {
      * 与卡片/API/Excel 显示同一套精度契约；null 返回 "0"（原固定 2 位 "0.00" 已废弃）。
      */
     private static String formatAmount(BigDecimal v) {
-        return v == null ? "0" : NumberFormatUtil.format(v, null, true);
+        return formatAmount(v, PrecisionPolicy.DISPLAY_SCALE);
+    }
+
+    private static String formatAmount(BigDecimal v, int maxDisplayDecimals) {
+        return v == null ? "0" : NumberFormatUtil.format(v, null, true, maxDisplayDecimals);
     }
 
     private String getStatusLabel(String status) {
@@ -430,6 +455,10 @@ public class QuotationExportService {
         public final String taxedTotal;
 
         public QuotationTemplateData(QuotationDTO q, String statusLabel) {
+            this(q, statusLabel, PrecisionPolicy.DISPLAY_SCALE);
+        }
+
+        public QuotationTemplateData(QuotationDTO q, String statusLabel, int maxDisplayDecimals) {
             this.quotationNumber = nvl(q.quotationNumber);
             this.createdAt = q.createdAt != null ? q.createdAt.toLocalDate().toString() : "";
             this.expiryDate = q.expiryDate != null ? q.expiryDate.toString() : "";
@@ -445,9 +474,9 @@ public class QuotationExportService {
             this.paymentTerms = nvl(q.paymentTerms);
             this.deliveryCycle = q.deliveryCycle != null ? q.deliveryCycle.toString() : "";
             // Display precision is shared by UI/API/export: at most 9 digits, HALF_UP, trim zeros.
-            this.originalAmount = formatAmount(q.originalAmount);
+            this.originalAmount = formatAmount(q.originalAmount, maxDisplayDecimals);
             this.finalDiscountRate = q.finalDiscountRate != null ? formatAmount(q.finalDiscountRate) : "100";
-            this.totalAmount = formatAmount(q.totalAmount);
+            this.totalAmount = formatAmount(q.totalAmount, maxDisplayDecimals);
             BigDecimal vat = BigDecimal.ZERO;
             BigDecimal taxed = BigDecimal.ZERO;
             if (q.lineItems != null) {
@@ -458,8 +487,8 @@ public class QuotationExportService {
                     taxed = taxed.add(untaxed).add(lineVat);
                 }
             }
-            this.vatTotal = formatAmount(vat);
-            this.taxedTotal = formatAmount(taxed);
+            this.vatTotal = formatAmount(vat, maxDisplayDecimals);
+            this.taxedTotal = formatAmount(taxed, maxDisplayDecimals);
         }
 
         private static String nvl(String s) { return s != null ? s : ""; }

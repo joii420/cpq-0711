@@ -9,6 +9,7 @@ function renderCell(
   value: string,
   readonly = true,
   priceLocked = false,
+  maxDisplayDecimals?: number,
 ): string {
   const key = field.name;
   const row = { [key]: value };
@@ -32,12 +33,13 @@ function renderCell(
       readonly={readonly}
       context={{
         pathCacheState: {},
-        formulaCache: {},
+        formulaCache: field.field_type === 'FORMULA' ? { [key]: value } : {},
         partNo: 'P-1',
         activeComponent,
         priceLocked,
         priceVersionNo: priceLocked ? 'PV-1' : undefined,
       }}
+      maxDisplayDecimals={maxDisplayDecimals}
     />,
   );
 }
@@ -86,5 +88,17 @@ describe('ReadonlyProductCard shared INPUT precision presentation', () => {
     const html = renderCell({ name: '元素单价', field_type: 'INPUT_NUMBER', is_amount: true }, workValue, true, true);
     expect(html).toContain(`<span>${workValue}</span>`);
     expect(html).toContain('🔒PV-1');
+  });
+
+  it('applies the role cap to computed cells but not raw inputs', () => {
+    expect(renderCell({ name: '公式结果', field_type: 'FORMULA' }, '1.2345678915', true, false, 4))
+      .toBe('<span class="qt-formula-cell-value">1.2346</span>');
+    expect(renderCell({ name: '精度输入', field_type: 'INPUT_NUMBER' }, '1.2345678915', true, false, 4))
+      .toBe('<span>1.2345678915</span>');
+  });
+
+  it('keeps explicit field precision below the role cap', () => {
+    expect(renderCell({ name: '公式结果', field_type: 'FORMULA', decimals: 2 }, '1.2345678915', true, false, 4))
+      .toBe('<span class="qt-formula-cell-value">1.23</span>');
   });
 });

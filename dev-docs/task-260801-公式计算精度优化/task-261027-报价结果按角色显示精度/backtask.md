@@ -14,7 +14,7 @@
 | B-4 | AC-3、AC-5、AC-9 | `ExcelViewService.exportExcelView` 对 `FORMULA`、`CARD_FORMULA`、`TAB_JOIN_FORMULA`、`EXCEL_FORMULA` 的已计算结果应用角色上限；字段显式位数较小时优先，原始/取数列继续原精度。 |
 | B-5 | AC-5、AC-10 | `CostingSheetResource` 以当前会话角色调用 `ComparisonExportService`；比对 Excel 的报价值、核价值使用同一上限，前端请求体不新增角色字段，禁止信任客户端自报角色。 |
 | B-6 | AC-5、AC-10 | `QuotationEmailService` 接收 Resource 显式传入的显示上限，并用同一上限生成 HTML 附件及可选 Excel 附件；邮件发送权限、收件人、状态流转不变。 |
-| B-7 | AC-7、AC-8 | 确认所有角色相关处理都位于只读输出边界，不修改 `QuotationDTO`、实体、保存、重算、快照、对账与历史单读取逻辑；同一报价换角色导出不得产生数据库写入（发送邮件既有 `SENT` 状态流转除外）。 |
+| B-7 | AC-7、AC-8 | 角色格式化仍只位于只读输出边界，不修改 `QuotationDTO`、实体、快照、对账与历史单读取口径；同一报价换角色导出不得产生数据库写入（发送邮件既有 `SENT` 状态流转除外）。S-FLOW 若暴露既有纯单头保存会无条件重算头金额，只允许增加与角色无关的最小保真守卫：无行变化且非折扣变化时不触碰头金额，真实行/折扣变化仍按既有口径重算。 |
 | B-8 | AC-1、AC-2、AC-3、AC-5、AC-6、AC-7、AC-8、AC-9、AC-10、AC-11 | 补角色策略、格式化器、HTML/Excel/邮件/比对导出和 HTTP 鉴权测试；执行后端定向与相关回归，测试完成后按实际契约回写 `dev-docs/main-api.md`。 |
 
 ## 接口与会话传播
