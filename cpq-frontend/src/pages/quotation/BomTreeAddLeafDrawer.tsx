@@ -10,6 +10,7 @@
 // message 三秒就消失了，用户抄不到环路径）。
 import React, { useMemo, useState } from 'react';
 import { Alert, Button, Drawer, Empty, Input, List, Space, Tag, message } from 'antd';
+import { SearchOutlined } from '@ant-design/icons';
 import type { ApiError } from '../../services/api';
 import { quotationService } from '../../services/quotationService';
 import type { LineItem } from './QuotationStep2';
@@ -17,6 +18,7 @@ import { collectBomLeafCandidates } from './bomTreeLeaf';
 // task-260904 F-5：拒绝态的错误码/环路径解析（独立模块——本文件只导出组件，
 // 否则 react-refresh/only-export-components 报错，且纯函数放这儿也不好单测）
 import { readBizCode, readCyclePath, type LeafRejectionCode } from './bomTreeLeafError';
+import ListQueryButton from '../../components/ListQueryButton';
 
 export interface BomTreeAddLeafRequest {
   componentId: string;
@@ -50,6 +52,7 @@ interface LeafRejection {
 
 const BomTreeAddLeafDrawer: React.FC<Props> = ({ item, quotationId, request, onClose, onApplied }) => {
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
   const [selected, setSelected] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [conflictTabs, setConflictTabs] = useState<string[] | null>(null);
@@ -67,6 +70,7 @@ const BomTreeAddLeafDrawer: React.FC<Props> = ({ item, quotationId, request, onC
 
   const reset = () => {
     setKeyword('');
+    setKeywordDraft('');
     setSelected(null);
     setConflictTabs(null);
     setRejection(null);
@@ -210,13 +214,22 @@ const BomTreeAddLeafDrawer: React.FC<Props> = ({ item, quotationId, request, onC
           />
         );
       })()}
-      <Input.Search
-        placeholder="按料号 / 页签名称过滤"
-        allowClear
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
-        style={{ marginBottom: 12 }}
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder="按料号 / 页签名称过滤"
+          allowClear
+          value={keywordDraft}
+          onChange={(e) => {
+            const value = e.target.value;
+            setKeywordDraft(value);
+            if (!value) setKeyword('');
+          }}
+          onPressEnter={() => setKeyword(keywordDraft)}
+          style={{ flex: 1 }}
+        />
+        <ListQueryButton onClick={() => setKeyword(keywordDraft)} />
+      </div>
       {filtered.length === 0 ? (
         <Empty description={candidates.length === 0 ? '当前报价单尚无可用料号（各页签暂无渲染行）' : '无匹配结果'} />
       ) : (

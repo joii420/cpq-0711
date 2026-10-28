@@ -23,6 +23,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { SystemConfigDTO, ConfigCategory, DataType } from '../../types/system-config';
 import { systemConfigService } from '../../services/systemConfigService';
 import EditConfigDrawer from './EditConfigDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 import { useAuthStore } from '../../stores/authStore';
 
 const { Title, Text } = Typography;
@@ -263,6 +264,7 @@ const SystemConfigPage: React.FC = () => {
               <Option key={key} value={key}>{CATEGORY_LABELS[key]}</Option>
             ))}
           </Select>
+          <ListQueryButton onClick={() => void loadConfigs(selectedCategory)} loading={loading} />
           <Button icon={<ReloadOutlined />} onClick={() => loadConfigs(selectedCategory)}>
             刷新
           </Button>

@@ -17,9 +17,9 @@
 //                                      └─ FAILED  ─▶ 整份拒收错误清单（可重新上传）
 //   Step2 建单 ──POST──▶ materializing=true ─▶ 轮询物化 ─▶ 进编辑页
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Button, Drawer, Descriptions, Empty, Form, Progress, Space, Spin,
+  Alert, Button, Drawer, Descriptions, Empty, Form, Progress, Select, Space, Spin,
   Steps, Table, Tag, Tooltip, Typography, Upload, message,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
@@ -29,7 +29,7 @@ import { useNavigate } from 'react-router-dom';
 
 import api from '../../services/api';
 import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
 import { quotationService } from '../../services/quotationService';
 import { templateService } from '../../services/templateService';
 import {
@@ -99,7 +99,7 @@ const QuotationDatasetImportDrawer: React.FC<Props> = ({ open, onClose, defaultC
 
   // ── Step 1 ────────────────────────────────────────────────────────────────
   const [step, setStep] = useState<1 | 2>(1);
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerOption | undefined>();
+  const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [customerId, setCustomerId] = useState<string | undefined>(defaultCustomerId);
   const [fileList, setFileList] = useState<UploadFile[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -141,7 +141,6 @@ const QuotationDatasetImportDrawer: React.FC<Props> = ({ open, onClose, defaultC
   const resetAll = () => {
     setStep(1);
     setCustomerId(defaultCustomerId);
-    setSelectedCustomer(undefined);
     setFileList([]);
     setSubmitting(false);
     setImporting(false);
@@ -175,25 +174,21 @@ const QuotationDatasetImportDrawer: React.FC<Props> = ({ open, onClose, defaultC
   useEffect(() => {
     if (!open) return;
     if (!hasLiveSession) resetAll();
+    if (defaultCustomerId) {
+      customerService.getById(defaultCustomerId)
+        .then((r: any) => {
+          const c = r.data;
+          if (c?.id) setCustomers([{ id: c.id, name: c.name, code: c.code, productCategoryId: c.productCategoryId }]);
+        })
+        .catch(() => message.error('加载客户信息失败'));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, defaultCustomerId]);
 
-  useEffect(() => {
-    if (!open || !defaultCustomerId || selectedCustomer?.id === defaultCustomerId) return;
-    let active = true;
-    customerService.getById(defaultCustomerId)
-      .then((response: any) => {
-        if (!active) return;
-        const customer = (response?.data ?? response) as CustomerOption;
-        if (customer?.id) setSelectedCustomer(customer);
-      })
-      .catch(() => {
-        // 默认客户详情加载失败不阻断用户重新搜索选择；提交仍以后端 customerId 校验为准。
-      });
-    return () => { active = false; };
-  }, [defaultCustomerId, open, selectedCustomer?.id]);
-
-  const currentCustomer = selectedCustomer;
+  const currentCustomer = useMemo(
+    () => customers.find((c) => c.id === customerId),
+    [customers, customerId],
+  );
   const customerName = currentCustomer?.name ?? '';
   const customerCode = currentCustomer?.code ?? '';
   const customerLabel = customerCode ? `${customerName}（${customerCode}）` : customerName;
@@ -861,31 +856,19 @@ const QuotationDatasetImportDrawer: React.FC<Props> = ({ open, onClose, defaultC
                 required
                 extra="导入的数据按销售料号入库；客户决定本次建出哪些产品行。"
               >
-                <RemoteInfiniteSelect<any>
+                <CustomerSelect
                   placeholder="请选择客户"
                   value={customerId}
-                  initialOptions={selectedCustomer ? [{
-                    value: selectedCustomer.id,
-                    label: selectedCustomer.code
-                      ? `${selectedCustomer.name}（${selectedCustomer.code}）`
-                      : selectedCustomer.name,
-                    item: selectedCustomer,
-                  }] : []}
-                  onChange={(v) => {
+                  onChange={(v, option) => {
                     setCustomerId(v);
-                    if (!v) setSelectedCustomer(undefined);
+                    setCustomers(v && option ? [{
+                      id: v,
+                      name: option.name,
+                      code: option.code,
+                      productCategoryId: option.productCategoryId,
+                    }] : []);
                     setAutoFilled(false);
                   }}
-                  onSelect={(_value, option) => {
-                    const item = (option as any)?.item as CustomerOption | undefined;
-                    setSelectedCustomer(item);
-                  }}
-                  fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
-                  mapOption={(c: CustomerOption) => ({
-                    value: c.id,
-                    label: c.code ? `${c.name}（${c.code}）` : c.name,
-                    item: c,
-                  })}
                 />
               </Form.Item>
 

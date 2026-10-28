@@ -7,6 +7,7 @@ import { customerLeadService } from '../../services/customerLeadService';
 import { customerService } from '../../services/customerService';
 import StatCard from '../../components/StatCard';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import ListQueryButton from '../../components/ListQueryButton';
 import type { CustomerLead, LeadStatus, LeadReviewAction } from '../../types/customer-lead';
 
 const CustomerLeadList: React.FC = () => {
@@ -86,6 +87,7 @@ const CustomerLeadList: React.FC = () => {
                     { value: 'REJECTED', label: 'REJECTED 已拒绝' },
                   ]}
                   value={status} onChange={setStatus} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
         </Space>
       }>
         {/* 状态统计 */}

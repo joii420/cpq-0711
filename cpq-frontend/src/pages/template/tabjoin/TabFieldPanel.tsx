@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Input } from 'antd';
 import type { TabDef } from '../../../services/tabJoinFormulaService';
 import TabFieldMatrix from './TabFieldMatrix';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 // ──────────────────────────────────────────────
 // Props
@@ -54,6 +55,7 @@ function filterTabDefs(tabDefs: TabDef[], keyword: string): TabDef[] {
 // ──────────────────────────────────────────────
 const TabFieldPanel: React.FC<Props> = ({ tabDefs, selfRowKeyFields, onInsert }) => {
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
 
   const filtered = useMemo(() => filterTabDefs(tabDefs, keyword), [tabDefs, keyword]);
   const isSearching = keyword.trim().length > 0;
@@ -70,14 +72,22 @@ const TabFieldPanel: React.FC<Props> = ({ tabDefs, selfRowKeyFields, onInsert })
       </div>
 
       {/* 搜索框 */}
-      <Input
-        allowClear
-        size="small"
-        placeholder="搜索页签或字段名"
-        value={keyword}
-        onChange={(e) => setKeyword(e.target.value)}
-        style={{ marginBottom: 10 }}
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Input
+          allowClear
+          size="small"
+          placeholder="搜索页签或字段名"
+          value={keywordDraft}
+          onChange={(e) => {
+            const value = e.target.value;
+            setKeywordDraft(value);
+            if (!value) setKeyword('');
+          }}
+          onPressEnter={() => setKeyword(keywordDraft)}
+          style={{ flex: 1 }}
+        />
+        <ListQueryButton onClick={() => setKeyword(keywordDraft)} />
+      </div>
 
       {showNoMatch ? (
         <div style={{ padding: '12px 0', color: '#8a909a', fontSize: 12 }}>

@@ -7,6 +7,7 @@
 import React from 'react';
 import { Button, Switch, Input, Space } from 'antd';
 import { SearchOutlined, PlusOutlined } from '@ant-design/icons';
+import ListQueryButton from '../../components/ListQueryButton';
 
 export interface ComparisonToolbarProps {
   readonly: boolean;
@@ -42,6 +43,7 @@ export const ComparisonToolbar: React.FC<ComparisonToolbarProps> = ({
           onChange={(e) => onFilterChange(e.target.value)}
           style={{ width: 240, marginLeft: 'auto' }}
         />
+        <ListQueryButton onClick={() => onFilterChange(filterText)} />
       </div>
       <div style={{ margin: '0 24px 10px', fontSize: 12.5, color: 'rgba(0,0,0,.45)' }}>
         共 {totalParts} 个销售料号，{totalColumns} 个比对列

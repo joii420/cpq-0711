@@ -60,17 +60,12 @@ public class CustomerImportService {
 
         // Every customer write path uses the same transaction-scoped advisory lock.
         customerService.lockCustomerWrites();
-        Map<String, Customer> existingByName = new HashMap<>();
         Map<String, Customer> existingByCode = new HashMap<>();
         for (Customer c : Customer.<Customer>listAll()) {
-            existingByName.putIfAbsent(CustomerService.normalizeIdentity(c.name), c);
             existingByCode.putIfAbsent(CustomerService.normalizeIdentity(c.code), c);
         }
-        Set<String> seenNames = new HashSet<>();
         Set<String> seenCodes = new HashSet<>();
-        Map<String, Integer> firstNameRows = new HashMap<>();
         Map<String, Integer> firstCodeRows = new HashMap<>();
-        Set<String> reportedNameDuplicates = new HashSet<>();
         Set<String> reportedCodeDuplicates = new HashSet<>();
         List<CustomerImportReportDTO.ImportError> errors = new ArrayList<>();
         Map<String, UUID> categoryIds = categoryIds();
@@ -78,9 +73,8 @@ public class CustomerImportService {
         UUID defaultCategoryId = ProductCategory.requireDefaultId();
 
         for (ParsedRow row : rows) {
-            validateRow(row, existingByName, existingByCode, seenNames, seenCodes,
-                    categoryIds, industries, firstNameRows, firstCodeRows,
-                    reportedNameDuplicates, reportedCodeDuplicates, defaultCategoryId, errors);
+            validateRow(row, existingByCode, seenCodes, categoryIds, industries,
+                    firstCodeRows, reportedCodeDuplicates, defaultCategoryId, errors);
         }
         if (!errors.isEmpty()) {
             throw new CustomerImportException(409, "客户导入校验失败，文件未写入", rows.size(), errors);
@@ -138,13 +132,10 @@ public class CustomerImportService {
         return report;
     }
 
-    private void validateRow(ParsedRow row, Map<String, Customer> existingByName,
-                             Map<String, Customer> existingByCode, Set<String> seenNames,
+    private void validateRow(ParsedRow row, Map<String, Customer> existingByCode,
                              Set<String> seenCodes, Map<String, UUID> categoryIds,
                              Map<String, Industry> industries,
-                             Map<String, Integer> firstNameRows,
                              Map<String, Integer> firstCodeRows,
-                             Set<String> reportedNameDuplicates,
                              Set<String> reportedCodeDuplicates,
                              UUID defaultCategoryId,
                              List<CustomerImportReportDTO.ImportError> errors) {
@@ -169,17 +160,6 @@ public class CustomerImportService {
         else {
             if (!row.name.equals(row.name.trim())) errors.add(error(row.rowNum, "客户名称", "首尾不能有空格"));
             if (row.name.length() > 200) errors.add(error(row.rowNum, "客户名称", "长度不能超过200个字符"));
-            String normalized = CustomerService.normalizeIdentity(row.name);
-            Integer firstRow = firstNameRows.putIfAbsent(normalized, row.rowNum);
-            if (firstRow != null) {
-                if (reportedNameDuplicates.add(normalized)) {
-                    errors.add(error(firstRow, "客户名称", "文件内客户名称重复"));
-                }
-                errors.add(error(row.rowNum, "客户名称", "文件内客户名称重复"));
-            } else {
-                seenNames.add(normalized);
-            }
-            if (existingByName.containsKey(normalized)) errors.add(error(row.rowNum, "客户名称", "客户名称已存在"));
         }
         String normalizedLevel = row.level.toUpperCase(Locale.ROOT);
         if (!LEVELS.contains(normalizedLevel))

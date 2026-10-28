@@ -25,6 +25,7 @@ import { apiErrorMessage } from '../../utils/apiError';
 import type { ProcessMasterDTO, ProcessMasterUpsert, ProcessSortBy } from '../../services/v6MasterDataService';
 import V6ProcessDetailDrawer from './V6ProcessDetailDrawer';
 import ProcessMasterImportDrawer from './ProcessMasterImportDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 import {
   SEARCH_WIDTH,
   FILTER_MIN_WIDTH,
@@ -375,6 +376,7 @@ const V6ProcessCrudTab: React.FC = () => {
             />
           </span>
         </Tooltip>
+        <ListQueryButton onClick={handleRefresh} loading={loading} />
       </Space>
       <Space wrap>
         <Button icon={<ReloadOutlined />} onClick={handleRefresh}>刷新</Button>

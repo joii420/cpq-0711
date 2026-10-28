@@ -89,7 +89,7 @@ interface ReadonlyProductCardProps {
   quotationStatus?: string;
   /** 报价单客户 ID（用于 driver 展开 cache key；缺省时 driver 不区分客户） */
   customerId?: string;
-  /** 报价单币种快照；报价侧金额展示按 CNY / exchangeRate 转换。 */
+  /** 报价单币种及汇率快照；汇率仅供公式变量使用，展示只切换币种标识。 */
   currency?: string;
   exchangeRate?: DecimalValue;
   /** B-GV-2 修复: 动态 key 全局变量定义字典, 供 FORMULA 字段 evaluateExpression 使用 */
@@ -1217,15 +1217,21 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         <div className="qt-no-component-data">暂无组件数据</div>
       )}
 
-      {/* 卡片底部只保留「产品小计」；各页签小计在各自页签内（本页签金额合计行）。 */}
-      <div className="qt-subtotal-bar">
-        <span className="qt-subtotal-label">产品小计</span>
-        <span className="qt-subtotal-value">
-          {isCosting ? <>
-            <span>{formatCurrency(productSubtotal ?? (lineItem.subtotal ?? '0'))}</span>
-            <span style={{ marginLeft: 12, color: '#1677ff' }}>{formatNumber(foreignProductSubtotal, { isComputed: true }) ?? '0'} {quoteCurrency}</span>
-          </> : <>{formatNumber(foreignProductSubtotal, { isComputed: true }) ?? '0'} {quoteCurrency}</>}
-        </span>
+      {/* 卡片底部：报价侧一行；核价侧按裁决拆成 CNY / 外币两行。 */}
+      <div className={isCosting ? 'qt-subtotal-bar qt-subtotal-bar-multi' : 'qt-subtotal-bar'}>
+        {isCosting ? <>
+          <div className="qt-subtotal-line qt-subtotal-total">
+            <span className="qt-subtotal-label">产品小计</span>
+            <span className="qt-subtotal-value">{formatCurrency(productSubtotal ?? (lineItem.subtotal ?? '0'))}</span>
+          </div>
+          <div className="qt-subtotal-line qt-subtotal-total">
+            <span className="qt-subtotal-label">外币小计</span>
+            <span className="qt-subtotal-value" style={{ color: '#1677ff' }}>{formatNumber(foreignProductSubtotal, { isComputed: true }) ?? '0'} {quoteCurrency}</span>
+          </div>
+        </> : <div className="qt-subtotal-line qt-subtotal-total">
+          <span className="qt-subtotal-label">产品小计</span>
+          <span className="qt-subtotal-value">{formatNumber(toDecimal(productSubtotal ?? (lineItem.subtotal ?? '0')).toString(), { isComputed: true }) ?? '0'} {quoteCurrency}</span>
+        </div>}
       </div>
     </div>
   );

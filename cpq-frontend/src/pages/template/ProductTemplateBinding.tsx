@@ -33,6 +33,7 @@ import { templateService } from '../../services/templateService';
 import { bindingService } from '../../services/bindingService';
 import { processService } from '../../services/processService';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Sider, Content } = Layout;
 const { Search } = Input;
@@ -80,6 +81,7 @@ interface BindingRecord {
 const ProductTemplateBinding: React.FC = () => {
   const [products, setProducts] = useState<any[]>([]);
   const [productSearch, setProductSearch] = useState('');
+  const [productSearchInput, setProductSearchInput] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [loadingProducts, setLoadingProducts] = useState(false);
 
@@ -100,10 +102,10 @@ const ProductTemplateBinding: React.FC = () => {
   const [creating, setCreating] = useState(false);
 
   // Load products
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (keyword = productSearch) => {
     setLoadingProducts(true);
     try {
-      const res = await productService.list({ keyword: productSearch || undefined, size: 100 });
+      const res = await productService.list({ keyword: keyword || undefined, size: 100 });
       const data = res.data;
       setProducts(Array.isArray(data) ? data : (data?.content || []));
     } catch {
@@ -112,6 +114,11 @@ const ProductTemplateBinding: React.FC = () => {
       setLoadingProducts(false);
     }
   }, [productSearch]);
+
+  const submitProductSearch = (value = productSearchInput) => {
+    setProductSearchInput(value);
+    setProductSearch(value);
+  };
 
   useEffect(() => { loadProducts(); }, [loadProducts]);
 
@@ -485,13 +492,22 @@ const ProductTemplateBinding: React.FC = () => {
       >
         <div style={{ padding: '0 12px 12px' }}>
           <Title level={5} style={{ margin: '0 0 8px' }}>产品列表</Title>
-          <Search
-            placeholder="搜索产品"
-            size="small"
-            onSearch={setProductSearch}
-            onChange={(e) => !e.target.value && setProductSearch('')}
-            allowClear
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Search
+              placeholder="搜索产品"
+              size="small"
+              value={productSearchInput}
+              onSearch={submitProductSearch}
+              onChange={(e) => {
+                const value = e.target.value;
+                setProductSearchInput(value);
+                if (!value) submitProductSearch('');
+              }}
+              allowClear
+              style={{ flex: 1 }}
+            />
+            <ListQueryButton onClick={() => submitProductSearch()} loading={loadingProducts} />
+          </div>
         </div>
         <Spin spinning={loadingProducts}>
           <List

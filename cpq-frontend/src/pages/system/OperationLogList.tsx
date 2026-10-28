@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Table, Select, DatePicker, Space, Card, message } from 'antd';
 import api from '../../services/api';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { RangePicker } = DatePicker;
 
@@ -115,6 +116,7 @@ const OperationLogList: React.FC = () => {
           onChange={v => { setFilters((f: any) => ({ ...f, targetType: v || '' })); setPage(0); }}
         />
         <RangePicker onChange={handleDateChange} />
+        <ListQueryButton onClick={() => void fetchData(0, filters)} loading={loading} />
       </Space>
       <Table
         rowKey="id"

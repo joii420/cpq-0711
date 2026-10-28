@@ -29,6 +29,11 @@
 | `task-261026-生产环境上传文件解密/` | 🟡 **待验收 · 已合并 master `1c71348c`，闸门 B 待用户真机验收**（路径 A 标准档；13 个功能点 / 20 个操作；仅精确 `prod` 解密；失败关闭；`file.encryption.server` 仅配 IP／主机＋端口） | `需求文档.md`、`fronttask.md`、`backtask.md`、`api.md`、`test.md`、`test-report.md`、`main-verify.md`；依据 `docs/文件加解密服务接口调用文档.md` |
 | `task-261026-物料利润字段/` | ✅ **已交付 · 用户验收通过（2026-10-27）**（已合并 master `cb361d08`；已部署 `2026102701`；V455；远端专项 Playwright 4/4） | `需求文档.md`、`fronttask.md`、`backtask.md`、`api.md`、`test.md`、`test-report.md`、`原型图/index.html` |
 
+### 新立项（2026-10-23）
+| 任务 | 状态 | 入口文档 |
+|---|---|---|
+| `task-261022-自制加工费工序名称字段/` | ✅ **已交付 · 用户验收通过 · 已打包（2026-10-23）**（路径 A；合 master `221f6e17`；V452 已在 `cpq_db_test` 与 `cpq_db_0724` 成功应用；部署包 `deploy/2026102301/`） | `需求文档.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md`、`test-report.md` |
+
 ### 新立项（2026-10-15）
 | 任务 | 状态 | 入口文档 |
 |---|---|---|
@@ -50,6 +55,11 @@
 | 任务 | 状态 | 入口文档 |
 |---|---|---|
 | `task-261004-客户产品结算单位与单位管理/` | 🟡 单位/结算单位实现完成；动态下拉已统一后端模糊搜索+滚动分页，待用户验收 · 闸门 A 已通过 · 2026-10-05 用户确认开工 | `需求文档.md`；`test-report.md`；关联 `BL-0321` |
+
+### 立项设计（2026-10-19）
+| 任务 | 状态 | 入口文档 |
+|---|---|---|
+| `task-261019-报价单级元素价格表/` | 🟡 **闸门 A 待用户确认（2026-10-26）：六项工程实查和四项用户裁决均已回写；性能采用兼容大单基线，摘要采用 CPQ-JCS-1，复制采用不可变输入快照包，未生效技术数据采用 90/365/30/180 天平衡保留。** | `需求文档.md`；`方案设计.md`；`配置管理模块补充设计.md`；`闸门A工程实查记录.md`；`fronttask.md`；`backtask.md`；`api.md`；`test.md`；`原型图/index.html` |
 
 ### 活跃主线（近 10 天有提交）
 | 主线 | 状态 | 最近动作 |
@@ -518,7 +528,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 
 | 目录 | 一句话 | 状态 | 主战场文件 |
 |---|---|---|---|
-| `task-260927-增值税税率模块/` | 产品税率优先于报价单默认税率；报价明细 VAT 快照；公式 `[增值税]`；含税元素单价；产品导入默认税务分类 | 🟡 **原型评审前置阶段**（2026-09-27）· 路径 A · 标准档 · 尚未闸门 A | 公式编辑器、产品导入、元素 BOM 价格策略、报价明细渲染及 VAT 数据模型（待 A0/A 定稿） |
+| `task-260927-增值税税率模块/` | 产品税率优先于报价单默认税率；报价明细 VAT 快照；公式 `[增值税]`；含税元素单价；产品导入默认税务分类 | 🟡 **A0 已裁决，闸门 A 文档编制中**（2026-09-28）· 路径 A · 标准档 · 尚未闸门 A | 9 份真实入口原型已获认可；`a0-技术勘察.md`、`api.md`、`backtask.md`、`fronttask.md`、`test.md` 已形成初稿；待主线自检并请用户确认闸门 A |
 | `task-260926-客户编号与客户Excel导入/` | 客户编号可选手填、客户名称/编号规范化唯一校验、一行一个客户的 Excel 模板与全量拒绝导入 | 🟡 **待验收 · 已合并 master `624473dc`，闸门 B 待用户验收**（2026-09-27） | `CustomerManagement.tsx` `CustomerService.java` `CustomerResource.java` `CustomerImportService.java` 新增客户导入服务/DTO |
 | `task-260914-报价单列表料号搜索与扩列/` | 【报价单管理】独立料号搜索框（销售 + 客户料号）+ 产品分类 / 报价模板 / 创建日期三列与服务端筛选（2026-09-22 补登：此前只在 §0.0 有行） | ✅ 合 master `e74065ae`（闸门 B 状态见 §0.0） | `QuotationList.tsx` `QuotationService.java` `QuotationResource.java` |
 | └ `task-260922-料号搜索加生产料号/` | 料号搜索再匹配生产料号（卡片徽标同源链路，按本单客户过滤）+ 搜索框提示文字改短 | ✅ 合 master `30f2641b`（已交付，2026-09-22 验收通过） | `QuotationService.java` `ProductionPartInfoService.java` `QuotationList.tsx` |
@@ -576,6 +586,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | ~~`feat/quote-material-no`~~ | 报价料号 Spec 1 收尾 | ❌ **2026-08-17 废弃**（落后 master 922 提交；独有 diff 仅 `BACKLOG.md` +15 行、**零代码**）。内容**未丢**：其 `BL-0020`（7 项技术债）经实测复核后以 **[[BL-0175]]** 转录进 master 的 `BACKLOG.md`（原编号已被占用故改号）。**Major-2 按 P1 定级** —— 实测 `MaterialNoResolver.java:71` 的 `ensureRegistered` 位于 per-row 的 `resolve()` 内，被 8 个 handler 在行循环体内调用 = 活的 N+1 违规；Minor-6 的迁移编号洞（V308→V310 缺 V309）亦仍成立 |
 | `feat/task-260926-customer-code-import` | `task-260926-客户编号与客户Excel导入` | ✅ 已合并 master `624473dc`，worktree 已移除；**分支实体待用户执行 `git branch -d feat/task-260926-customer-code-import`** |
 | `feat/task-261026-material-profit` | `task-261026-物料利润字段` | ✅ 已合并 master `48505f24`，worktree 已移除；**分支实体待用户执行 `git branch -d feat/task-261026-material-profit`**。 |
+| `feat/task-261022-self-process-name` | `task-261022-自制加工费工序名称字段` | ✅ 用户验收通过，已合并 master；分支与 worktree 按规则保留，待用户另行授权回收。 |
 
 > 已合并分支实体按规则保留，待用户执行删除命令后再清零。
 

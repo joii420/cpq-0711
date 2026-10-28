@@ -22,7 +22,6 @@ import ReadonlyProductCard from './ReadonlyProductCard';
 import ReadonlyExcelView from './ReadonlyExcelView';
 import ComparisonBoard from './ComparisonBoard';
 import { formatNumber } from '../../utils/formatNumber';
-import { toDecimal, isDecimalString, formatQuotationTotal } from '../../utils/precision';
 import { usePathFormulaCache } from './usePathFormulaCache';
 import { enrichComponentData } from './enrichComponentData';
 import type { LineItem } from './QuotationStep2';
@@ -343,12 +342,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
                 原价合计：
                 <Text strong>
                   {/* task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（6 位去尾零兜底） */}
-                  {formatNumber(
-                    isDecimalString(quotation.exchangeRate) && !toDecimal(quotation.exchangeRate).isZero()
-                      ? formatQuotationTotal(toDecimal(quotation.originalAmount ?? '0').dividedBy(toDecimal(quotation.exchangeRate)))
-                      : quotation.originalAmount ?? '0',
-                    { isComputed: true },
-                  ) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
+                  {formatNumber(quotation.originalAmount ?? '0', { isComputed: true }) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
                 </Text>
               </Text>
               <Text>
@@ -357,12 +351,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
               <Text style={{ fontSize: 16 }}>
                 报价总金额：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>
-                {formatNumber(
-                  isDecimalString(quotation.exchangeRate) && !toDecimal(quotation.exchangeRate).isZero()
-                    ? formatQuotationTotal(toDecimal(quotation.totalAmount ?? '0').dividedBy(toDecimal(quotation.exchangeRate)))
-                    : quotation.totalAmount ?? '0',
-                  { isComputed: true },
-                ) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
+                {formatNumber(quotation.totalAmount ?? '0', { isComputed: true }) ?? '0'} {quotation.currency || quotation.baseCurrency || 'CNY'}
                 </Text>
               </Text>
             </Space>

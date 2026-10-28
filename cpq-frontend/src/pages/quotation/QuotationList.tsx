@@ -22,34 +22,17 @@ import { useAuthStore } from '../../stores/authStore';
 //    已于 2026-09-07 一并删除（用户批准），**仓库里不再有这两个文件**；需要参照请查 git history。
 import CopyQuotationDrawer from './CopyQuotationDrawer';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 // task-260907 · F-2（AC-13 / AC-19）：「导入报价数据」改开**建单专用**抽屉（选客户 → 上传 → 建单）。
 // 🚫 不再是 `master-data/dataset/DatasetImportDrawer`（那个被【基础资料维护】共用，本任务一个字节不碰）。
 import QuotationDatasetImportDrawer from './QuotationDatasetImportDrawer';
 import { QUOTE_IMPORT_ROLES, QUOTE_IMPORT_NO_PERMISSION_TIP } from './quoteDatasetImportConfig';
 import { formatNumber } from '../../utils/formatNumber';
-import { toDecimal } from '../../utils/precision';
 // task-260914 · F-4（C-4）：创建日期按**浏览器本地时区**换算。dayjs 是项目既有依赖
 // （package.json:24 `^1.11.20`，master-data / config 等多处在用），🚫 不另造日期工具。
 import dayjs from 'dayjs';
 
 const { Search } = Input;
-
-/**
- * 列表金额与报价卡片统一使用报价币种展示。
- * 后端 quotation.totalAmount 保存 CNY 基准金额；报价币种为外币时按建单时冻结汇率换回报价币种。
- */
-function formatQuotationListAmount(
-  value: string | number | null | undefined,
-  currency?: string | null,
-  exchangeRate?: string | number | null,
-): string {
-  if (value == null) return '—';
-  const quoteCurrency = currency || 'CNY';
-  const rate = quoteCurrency !== 'CNY' && exchangeRate != null && !toDecimal(String(exchangeRate)).isZero()
-    ? toDecimal(String(exchangeRate))
-    : toDecimal('1');
-  return formatNumber(toDecimal(String(value)).dividedBy(rate).toString(), { isComputed: true }) ?? '0';
-}
 
 const statusMap: Record<string, { label: string; color: string }> = {
   DRAFT: { label: '草稿', color: 'default' },
@@ -73,6 +56,13 @@ const statusTabs = [
   { key: 'REJECTED', label: '客户已拒绝' },
   { key: 'EXPIRED', label: '已过期' },
 ];
+
+/** 列表金额使用公式计算结果原值，仅将展示币种标识切换为报价单结算币种。 */
+function formatQuotationListAmount(record: { totalAmount?: string | number | null; currency?: string | null }): string {
+  if (record.totalAmount == null) return '-';
+  const currency = record.currency || 'CNY';
+  return `${formatNumber(String(record.totalAmount), { isComputed: true }) ?? '0'} ${currency}`;
+}
 
 /**
  * task-260914 · F-3（C-3）：模板版本号比较 —— 只用于「同一系列内各版本**名字不同**时取哪个名字」的消歧，
@@ -102,8 +92,10 @@ const QuotationList: React.FC = () => {
   const [page, setPage] = useState(0);
   const [size] = useState(20);
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
   // task-260914 · F-2（AC-1~7）：独立料号搜索条件，与 keyword 是两个互不干扰的 state（两者 AND）。
   const [partNo, setPartNo] = useState('');
+  const [partNoDraft, setPartNoDraft] = useState('');
   // task-260914 · F-3（AC-12~17）：分类 / 模板筛选条件。categoryId 取字面量 'NONE' 表示「未分类」。
   const [categoryId, setCategoryId] = useState<string | undefined>(undefined);
   // 🚫 不是 templateId —— C-3 裁决：模板筛选按**系列**，命中该系列全部版本（AC-15）。
@@ -111,6 +103,8 @@ const QuotationList: React.FC = () => {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [templates, setTemplates] = useState<Array<{ id: string; name: string; templateSeriesId?: string; version?: string }>>([]);
   const [statusFilter, setStatusFilter] = useState<string>('');
+  // 查询按钮需要在条件值未变化时也能重新发起请求，因此使用提交序号作为显式触发器。
+  const [queryVersion, setQueryVersion] = useState(0);
   const [loading, setLoading] = useState(false);
   // task-260907 · F-2：建单专用导入抽屉
   const [quoteDatasetImportOpen, setQuoteDatasetImportOpen] = useState(false);
@@ -144,7 +138,16 @@ const QuotationList: React.FC = () => {
     }
   };
 
-  useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, statusFilter, keyword, partNo, categoryId, templateSeriesId]);
+  useEffect(() => { loadData(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [page, statusFilter, keyword, partNo, categoryId, templateSeriesId, queryVersion]);
+
+  const submitFilters = (nextKeyword = keywordDraft, nextPartNo = partNoDraft) => {
+    setKeywordDraft(nextKeyword);
+    setPartNoDraft(nextPartNo);
+    setKeyword(nextKeyword);
+    setPartNo(nextPartNo);
+    setPage(0);
+    setQueryVersion((version) => version + 1);
+  };
 
   // task-260914 · F-3（AC-12）：两个筛选下拉的字典，挂载时各拉一次（分类 5 条 / 报价模板 21 条，
   // 规模小，一次性拉全量做本地下拉可行 —— 见任务.md §3 的规模前提）。
@@ -237,14 +240,8 @@ const QuotationList: React.FC = () => {
     },
     {
       title: '总金额', dataIndex: 'totalAmount', key: 'totalAmount', width: 130,
-      // 金额不再拼接货币符号；与报价卡片保持同一报价币种金额口径。
-      render: (_v: string | null | undefined, record: any) => formatQuotationListAmount(
-        record.totalAmount, record.currency, record.exchangeRate,
-      ),
-    },
-    {
-      title: '货币', dataIndex: 'currency', key: 'currency', width: 80,
-      render: (v: string | null | undefined) => v || 'CNY',
+      // 列表与详情统一使用报价单结算币种标识，避免 USD 报价单仍显示 ¥。
+      render: (_v: string | null | undefined, record: any) => formatQuotationListAmount(record),
     },
     // task-260914 · F-4（AC-8 / AC-11 / C-4）：创建日期列插在「总金额」之后、「到期日」之前。
     // 🕐 **按浏览器本地时区换算**后再格式化成 YYYY-MM-DD（D-9：不带时分秒）。
@@ -455,7 +452,9 @@ const QuotationList: React.FC = () => {
     <Space wrap>
       <Search
         placeholder="搜索报价单号/名称/客户"
-        onSearch={(v) => { setKeyword(v); setPage(0); }}
+        value={keywordDraft}
+        onChange={(e) => setKeywordDraft(e.target.value)}
+        onSearch={(v) => submitFilters(v, partNoDraft)}
         allowClear
         style={{ width: 300 }}
       />
@@ -465,7 +464,9 @@ const QuotationList: React.FC = () => {
           框宽 240 不变 —— 内容区仅 169px，旧文案 214px 已被截断，新文案 148px 可完整显示（任务.md D-4）。 */}
       <Search
         placeholder="搜索销售/客户/生产料号"
-        onSearch={(v) => { setPartNo(v); setPage(0); }}
+        value={partNoDraft}
+        onChange={(e) => setPartNoDraft(e.target.value)}
+        onSearch={(v) => submitFilters(keywordDraft, v)}
         allowClear
         style={{ width: 240 }}
       />
@@ -488,6 +489,7 @@ const QuotationList: React.FC = () => {
         onChange={(v) => { setTemplateSeriesId(v); setPage(0); }}
         options={templateOptions}
       />
+      <ListQueryButton onClick={() => submitFilters()} loading={loading} />
     </Space>
   );
 

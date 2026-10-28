@@ -5,6 +5,7 @@ import { userService } from '../../services/userService';
 import { regionService } from '../../services/regionService';
 import { departmentService } from '../../services/departmentService';
 import UserImportDrawer from './UserImportDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 import { EXPORT_EMPTY_TOOLTIP } from '../../utils/exportDownload';
 import { apiErrorMessage } from '../../utils/apiError';
 
@@ -22,6 +23,7 @@ const UserManagement: React.FC = () => {
   const [editingUser, setEditingUser] = useState<any>(null);
   const [form] = Form.useForm();
   const [params, setParams] = useState({ page: 0, size: 20, role: '', status: '', keyword: '' });
+  const [keywordDraft, setKeywordDraft] = useState('');
   const [regions, setRegions] = useState<any[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   // task-260902 · F-3 / F-4
@@ -47,6 +49,10 @@ const UserManagement: React.FC = () => {
     setLoading(true);
     try { const res = await userService.list(params); setData(res.data); }
     finally { setLoading(false); }
+  };
+
+  const submitKeyword = (value = keywordDraft) => {
+    setParams((prev) => ({ ...prev, keyword: value.trim(), page: 0 }));
   };
 
   useEffect(() => { fetchData(); }, [params]);
@@ -137,7 +143,14 @@ const UserManagement: React.FC = () => {
     <div>
       <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'space-between' }}>
         <Space>
-          <Input.Search placeholder="搜索用户名/姓名/邮箱" onSearch={v => setParams(p => ({ ...p, keyword: v, page: 0 }))} allowClear style={{ width: 250 }} />
+          <Input.Search
+            placeholder="搜索用户名/姓名/邮箱"
+            value={keywordDraft}
+            onChange={(e) => setKeywordDraft(e.target.value)}
+            onSearch={submitKeyword}
+            allowClear
+            style={{ width: 250 }}
+          />
           <Select placeholder="角色" allowClear style={{ width: 130 }} onChange={v => setParams(p => ({ ...p, role: v || '', page: 0 }))}>
             {Object.entries(roleMap).map(([k, v]) => <Select.Option key={k} value={k}>{v.label}</Select.Option>)}
           </Select>
@@ -145,6 +158,7 @@ const UserManagement: React.FC = () => {
             <Select.Option value="ACTIVE">启用</Select.Option>
             <Select.Option value="INACTIVE">停用</Select.Option>
           </Select>
+          <ListQueryButton onClick={() => submitKeyword()} loading={loading} />
         </Space>
         {/* 右组顺序（原型图 3 状态 A）：导出用户 → 导入用户 → 新增用户 */}
         <Space>

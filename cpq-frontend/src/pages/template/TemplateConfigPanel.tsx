@@ -24,8 +24,7 @@ import type { TemplateData, VersionHistoryItem } from './types';
 import { STATUS_COLORS, STATUS_LABELS } from './types';
 import { canCreateNewDraftFromTemplate } from './softDeleteRules';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
-import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
 import GvBindingPanel from './GvBindingPanel';
 import './styles.css';
 
@@ -66,16 +65,6 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
   const [majorVersion, setMajorVersion] = useState<number | undefined>(undefined);
   const [categories, setCategories] = useState<ProductCategory[]>([]);
 
-  const fetchCustomers = React.useCallback(
-    ({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
-      customerService.list({ page, size, keyword: keyword || undefined }),
-    [],
-  );
-  const mapCustomerOption = React.useCallback(
-    (customer: { id: string; name: string }) => ({ value: customer.id, label: customer.name }),
-    [],
-  );
-
   useEffect(() => {
     productCategoryService.list('ACTIVE')
       .then(res => setCategories(res.data || []))
@@ -83,13 +72,13 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
   }, []);
 
   const categoryOptions = categories.map(c => ({ value: c.id, label: c.name }));
-  const customerInitialOptions = (template.customers?.length
+  const customerInitialOptions = React.useMemo(() => (template.customers?.length
     ? template.customers
     : (template.customerIds || (template.customerId ? [template.customerId] : [])).map((id, index) => ({
       id,
       name: template.customerNames?.[index] || (template.customerId === id ? template.customerName : undefined) || id,
     })))
-    .map(customer => ({ value: String(customer.id), label: customer.name }));
+    .map(customer => ({ value: String(customer.id), label: customer.name })), [template]);
 
   return (
     <>
@@ -129,12 +118,10 @@ const TemplateConfigPanel: React.FC<TemplateConfigPanelProps> = ({
             <Input disabled={!isDraft} />
           </Form.Item>
           <Form.Item name="customerIds" label="适用客户">
-            <RemoteInfiniteSelect
+            <CustomerSelect
               mode="multiple"
               placeholder="留空表示对所有客户通用"
               allowClear
-              fetchPage={fetchCustomers}
-              mapOption={mapCustomerOption}
               disabled={!isDraft}
               initialOptions={customerInitialOptions}
             />

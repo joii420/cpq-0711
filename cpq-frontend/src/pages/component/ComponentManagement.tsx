@@ -48,6 +48,7 @@ import {
 import { getBuilder } from '../../services/sqlViewBuilderService';
 import { SortableTable, DragHandle } from '../../components/SortableTable';
 import { runBatch } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 import './styles.css';
 
 /**
@@ -311,6 +312,7 @@ const DataSourceModal: React.FC<{
             onChange={(e) => handleSearchChange(e.target.value)}
             onSearch={(v) => handleSearchChange(v)}
           />
+          <ListQueryButton onClick={() => void loadDsList(dsPage, dsSearch)} loading={dsLoading} />
           <Table
             rowKey="id"
             columns={dsColumns}
@@ -895,8 +897,10 @@ const MasterList: React.FC<MasterListProps> = ({
             allowClear
             value={searchKeyword}
             onChange={(e) => onSearchChange(e.target.value)}
+            onPressEnter={onRefresh}
             style={{ flex: 1 }}
           />
+          <ListQueryButton onClick={onRefresh} loading={loading} />
           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => onCreate()}>
             新建
           </Button>

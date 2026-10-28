@@ -30,6 +30,7 @@ import {
 } from '../../../services/materialRecipeService';
 import { formatPctText } from '../../../utils/precision';
 import { EmptyBlock, Ellipsis, Mono, NoteBlock, ReasonedButton, pickerPanelStyle } from './configureUi';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 interface Props {
   /** 全量 ACTIVE 材质（调用方已按 status 过滤）。 */
@@ -64,6 +65,7 @@ function firstConfigContentText(detail: MaterialRecipeDetail | undefined, lite: 
 
 const MaterialPicker: React.FC<Props> = ({ materials, loading, loadError, addedCodes, onSelect, onClose }) => {
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
   const [page, setPage] = useState(1);
   const [detailCache, setDetailCache] = useState<Record<string, MaterialRecipeDetail>>({});
   const inflight = useRef<Set<string>>(new Set());
@@ -172,9 +174,15 @@ const MaterialPicker: React.FC<Props> = ({ materials, loading, loadError, addedC
           allowClear
           placeholder="输入材质编号或材质名过滤，如 00006 / AgNi / AgZnO12/Cu"
           value={keyword}
-          onChange={(e) => setKeyword(e.target.value)}
+          onChange={(e) => {
+            const value = e.target.value;
+            setKeywordDraft(value);
+            if (!value) setKeyword('');
+          }}
+          onPressEnter={() => setKeyword(keywordDraft)}
           style={{ maxWidth: 320 }}
         />
+        <ListQueryButton onClick={() => setKeyword(keywordDraft)} loading={loading} />
         <span style={{ fontSize: 12, color: '#909399' }}>{filtered.length} / {materials.length} 条</span>
         <div style={{ flex: 1 }} />
         <Button size="small" onClick={onClose}>取消</Button>

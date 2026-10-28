@@ -12,6 +12,7 @@ import {
   type TaxCategorySaveRequest,
   type TaxVatVersion,
 } from '../../services/taxCategoryService';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Title, Text } = Typography;
 
@@ -160,6 +161,7 @@ const TaxCategoryManagement: React.FC = () => {
           <Input.Search allowClear placeholder="搜索编码 / 分类名称" style={{ width: 230 }} onSearch={(value) => setKeyword(value)} />
           <Select value={status} allowClear placeholder="全部状态" style={{ width: 110 }} onChange={setStatus}
             options={[{ value: 'ACTIVE', label: '启用' }, { value: 'INACTIVE', label: '停用' }]} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
           <Button icon={<ReloadOutlined />} onClick={() => void load()}>刷新</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建分类</Button>
         </Space>

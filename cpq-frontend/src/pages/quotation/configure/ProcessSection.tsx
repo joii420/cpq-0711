@@ -25,6 +25,7 @@ import type { SelectedProcess } from '../../../types/configure';
 import type { SelParamCandidate } from '../../../services/selParamCandidateService';
 import { genUUID } from '../../../utils/uuid';
 import { EmptyBlock, Ellipsis, Mono, NoteBlock, ReasonedButton, hintStyle, pickerPanelStyle, sectionTitleStyle } from './configureUi';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 export interface ProcessSectionLabels {
   /** 区块标题，如「工序」「这次用哪些工序」「组合工序」 */
@@ -63,6 +64,7 @@ const ProcessSection: React.FC<Props> = ({
 }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
 
   const filtered = useMemo(() => {
     const kw = keyword.trim().toLowerCase();
@@ -199,9 +201,15 @@ const ProcessSection: React.FC<Props> = ({
               allowClear
               placeholder={labels.searchPlaceholder}
               value={keyword}
-              onChange={(e) => setKeyword(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setKeywordDraft(value);
+                if (!value) setKeyword('');
+              }}
+              onPressEnter={() => setKeyword(keywordDraft)}
               style={{ maxWidth: 300 }}
             />
+            <ListQueryButton onClick={() => setKeyword(keywordDraft)} loading={loading} />
             <span style={{ fontSize: 12, color: '#909399' }}>{filtered.length} / {candidates.length} 条</span>
             <div style={{ flex: 1 }} />
             <Button size="small" onClick={() => setPickerOpen(false)}>取消</Button>

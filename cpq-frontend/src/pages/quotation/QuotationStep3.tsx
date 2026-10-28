@@ -46,7 +46,7 @@ const QuotationStep3: React.FC<Props> = ({
   quotationId: _quotationId,
   lineItems,
   baseCurrency,
-  exchangeRate,
+  exchangeRate: _exchangeRate,
   driverExpansions,
   customerId,
   onUpdate,
@@ -139,7 +139,7 @@ const QuotationStep3: React.FC<Props> = ({
       key: 'unitPrice',
       width: 130,
       align: 'right',
-        render: (_v, li) => formatCurrency(li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, exchangeRate),
+        render: (_v, li) => formatCurrency(li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, _exchangeRate),
     },
     {
       title: '年用量',
@@ -201,7 +201,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 110,
       align: 'right',
       render: (_v, li) => (
-        <Text type="warning">{formatCurrency(li.lineDiscountAmount ?? '0', baseCurrency, exchangeRate)}</Text>
+        <Text type="warning">{formatCurrency(li.lineDiscountAmount ?? '0', baseCurrency, _exchangeRate)}</Text>
       ),
     },
     {
@@ -210,7 +210,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 130,
       align: 'right',
       render: (_v, li) => (
-        <Text strong>{formatCurrency(li.lineFinalPrice ?? li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, exchangeRate)}</Text>
+        <Text strong>{formatCurrency(li.lineFinalPrice ?? li.lineUnitPrice ?? li.subtotal ?? '0', baseCurrency, _exchangeRate)}</Text>
       ),
     },
     {
@@ -219,7 +219,7 @@ const QuotationStep3: React.FC<Props> = ({
       width: 140,
       align: 'right',
       render: (_v, li) => (
-        <Text strong style={{ color: '#0958d9' }}>{formatCurrency(li.lineTotalAmount ?? '0', baseCurrency, exchangeRate)}</Text>
+        <Text strong style={{ color: '#0958d9' }}>{formatCurrency(li.lineTotalAmount ?? '0', baseCurrency, _exchangeRate)}</Text>
       ),
     },
     // 「规则」列暂时移除（2026-07-16 需求）：折扣规则引擎未接通，列里恒显示「未匹配」无信息量。
@@ -287,18 +287,18 @@ const QuotationStep3: React.FC<Props> = ({
           >
             <div>
               <Text type="secondary">原始合计</Text>
-              <div style={{ fontSize: 16, fontWeight: 600 }}>{formatCurrency(grandOriginal, baseCurrency, exchangeRate)}</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>{formatCurrency(grandOriginal, baseCurrency, _exchangeRate)}</div>
             </div>
             <div>
               <Text type="secondary">总折扣</Text>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#cf1322' }}>
-                -{formatCurrency(grandDiscount, baseCurrency, exchangeRate)}
+                -{formatCurrency(grandDiscount, baseCurrency, _exchangeRate)}
               </div>
             </div>
             <div>
               <Text type="secondary">合计应收</Text>
               <div style={{ fontSize: 18, fontWeight: 700, color: '#0958d9' }}>
-                {formatCurrency(grandTotal, baseCurrency, exchangeRate)}
+                {formatCurrency(grandTotal, baseCurrency, _exchangeRate)}
               </div>
             </div>
           </div>
@@ -308,13 +308,11 @@ const QuotationStep3: React.FC<Props> = ({
   );
 };
 
-// task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零），
-// 保留原有货币符号选择逻辑（CNY ¥ / USD $ / 其它币种代码前缀）。
-function formatCurrency(value: DecimalValue, currency: string, exchangeRate?: DecimalValue): string {
+// task-0801：不再固定 2 位 toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
+// 汇率只作为公式变量提供，不在展示层自动换算；币种标识仍使用报价单结算币种。
+function formatCurrency(value: DecimalValue, currency: string, _exchangeRate?: DecimalValue): string {
   const symbol = `${currency || 'CNY'} `;
-  const rate = currency !== 'CNY' && exchangeRate && !toDecimal(exchangeRate).isZero() ? toDecimal(exchangeRate) : toDecimal('1');
-  const shown = toDecimal(value ?? '0').dividedBy(rate);
-  return `${symbol}${formatNumber(shown.toString(), { isComputed: true }) ?? '0'}`;
+  return `${symbol}${formatNumber(toDecimal(value ?? '0').toString(), { isComputed: true }) ?? '0'}`;
 }
 
 export default QuotationStep3;

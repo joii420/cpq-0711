@@ -21,6 +21,7 @@ import ElementPriceTableDrawer from '../element-price/ElementPriceTableDrawer';
 import { useAuthStore } from '../../stores/authStore';
 import { EXPORT_EMPTY_TOOLTIP } from '../../utils/exportDownload';
 import { apiErrorMessage } from '../../utils/apiError';
+import ListQueryButton from '../../components/ListQueryButton';
 
 /** 时间格式化 YYYY-MM-DD HH:mm；空值回退 '—' */
 const fmtTime = (v?: string) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm') : '—');
@@ -274,6 +275,7 @@ const ElementManagement: React.FC = () => {
             { value: 'INACTIVE', label: '停用' },
           ]}
         />
+        <ListQueryButton onClick={() => void refresh(keyword.trim() || undefined)} loading={loading} />
       </Space>
       <Space wrap>
         {/* task-0722 · F1 的 3 个入口，可见性沿用本页现有权限，不新增权限判断 */}

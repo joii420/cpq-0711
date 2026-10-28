@@ -28,6 +28,7 @@ import {
   commonPagination,
   TOOLBAR_ROW_STYLE,
 } from '../listConventions';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 const { Search } = Input;
 
@@ -218,6 +219,7 @@ function SheetPartListTab<T>(props: SheetPartListTabProps<T>) {
             options={configuredOptions}
             onChange={(v) => { setConfiguredFilter(v ?? 'ALL'); setPage(1); }}
           />
+          <ListQueryButton onClick={() => { void fetchList(); }} loading={loading} />
         </Space>
         <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); }}>刷新</Button>

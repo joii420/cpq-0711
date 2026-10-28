@@ -3,6 +3,7 @@ import { Card, Table, Tag, Button, Input, Select, Space, message, Drawer, Form, 
 import { useNavigate } from 'react-router-dom';
 import { configuratorTemplateService } from '../../services/configuratorService';
 import type { ConfiguratorTemplate, TemplateStatus } from '../../types/configurator';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const ConfiguratorTemplateList: React.FC = () => {
   const navigate = useNavigate();
@@ -64,6 +65,7 @@ const ConfiguratorTemplateList: React.FC = () => {
                     { value: 'ARCHIVED', label: 'ARCHIVED' },
                   ]}
                   value={status} onChange={setStatus} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
           <Button onClick={() => message.info('复制模板 — 后续切片：选源模板 → 改 code → 提交复制')}>📋 复制模板</Button>
           <Button onClick={() => message.info('导入 JSON 模板 — 后续切片')}>📥 导入</Button>
           <Button type="primary" onClick={openCreate}>+ 新建模板</Button>

@@ -5,6 +5,7 @@ import { priceAdjustService } from '../../../services/priceAdjustService';
 import type { ElementRowDTO, VersionColumnDTO } from '../../../types/price-adjust';
 import { formatNumber } from '../../../utils/formatNumber';
 import { ELEMENT_PRICE_SCALE, formatChangeRate, type DecimalString } from '../../../utils/precision';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 const PAGE_SIZE = 20;
 
@@ -164,7 +165,7 @@ const ElementMatrix: React.FC<ElementMatrixProps> = ({ customerNo, selected, onC
         <Checkbox checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)}>只看已选</Checkbox>
         <Space>
           {/* 「只看已选」是纯前端视图，查询按钮此时无意义（同 MaterialRangeMatrix） */}
-          <Button size="small" onClick={handleQuery} disabled={onlySelected}>查询</Button>
+          <ListQueryButton onClick={handleQuery} disabled={onlySelected} loading={loading} />
           <Button size="small" onClick={handleReset}>重置</Button>
         </Space>
       </div>

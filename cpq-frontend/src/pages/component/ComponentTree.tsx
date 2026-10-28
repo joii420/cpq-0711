@@ -6,6 +6,7 @@ import type { DirectoryNode, ComponentItem } from './types';
 import { componentService } from '../../services/componentService';
 import { message } from 'antd';
 import ComponentImportDrawer from './ComponentImportDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 import './styles.css';
 
 interface ComponentTreeProps {
@@ -413,7 +414,9 @@ const ComponentTree: React.FC<ComponentTreeProps> = ({
           allowClear
           value={searchKeyword}
           onChange={(e) => onSearchChange?.(e.target.value)}
+          onPressEnter={onRefresh}
         />
+        <ListQueryButton onClick={onRefresh} loading={_loading} />
       </div>
 
       <div className="cm-tree-container">

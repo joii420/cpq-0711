@@ -6,8 +6,8 @@ import {
 import { DownloadOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { importService } from '../../services/importService';
-import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { RangePicker } = DatePicker;
 const { Text } = Typography;
@@ -126,13 +126,11 @@ const ImportHistoryList: React.FC = () => {
       title="导入历史"
     >
       <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <RemoteInfiniteSelect<any>
+        <CustomerSelect
           placeholder="筛选客户"
           allowClear
           style={{ width: 180 }}
           onChange={v => { setCustomerFilter(v || ''); setPage(0); }}
-          fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
-          mapOption={(c: any) => ({ value: c.id, label: c.name })}
         />
         <Select
           placeholder="筛选状态"
@@ -151,6 +149,7 @@ const ImportHistoryList: React.FC = () => {
             setPage(0);
           }}
         />
+        <ListQueryButton onClick={() => void fetchData()} loading={loading} />
       </div>
       <Table
         rowKey="id"

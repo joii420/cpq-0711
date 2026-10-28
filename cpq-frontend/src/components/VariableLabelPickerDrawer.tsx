@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Drawer, Input, Tabs, List, Tag, Typography, Empty, Space, Button, Spin, Modal, Form, Select, message } from 'antd';
 import { ReloadOutlined, PlusOutlined } from '@ant-design/icons';
 import { variableLabelService, type VariableLabel, type GroupedLabels } from '../services/variableLabelService';
+import ListQueryButton from './ListQueryButton';
 
 const KNOWN_CATEGORIES = ['成本汇总', '费用比率', '物料属性', '单位标签', '汇率'];
 const KNOWN_DATATYPES = ['DECIMAL', 'INTEGER', 'PERCENT', 'STRING', 'DATE'];
@@ -31,6 +32,7 @@ const VariableLabelPickerDrawer: React.FC<Props> = ({ open, onClose, onPick, tit
   const [grouped, setGrouped] = useState<GroupedLabels>({});
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
   const [activeCategory, setActiveCategory] = useState<string>('');
   // P1.5: 渐进式起名 modal
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -128,13 +130,21 @@ const VariableLabelPickerDrawer: React.FC<Props> = ({ open, onClose, onPick, tit
         </Space>
       }
     >
-      <Input.Search
-        placeholder="按中文名 / 视图列 / 说明搜索"
-        value={keyword}
-        onChange={e => setKeyword(e.target.value)}
-        style={{ marginBottom: 12 }}
-        allowClear
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Input
+          placeholder="按中文名 / 视图列 / 说明搜索"
+          value={keywordDraft}
+          onChange={e => {
+            const value = e.target.value;
+            setKeywordDraft(value);
+            if (!value) setKeyword('');
+          }}
+          onPressEnter={() => setKeyword(keywordDraft)}
+          style={{ flex: 1 }}
+          allowClear
+        />
+        <ListQueryButton onClick={() => setKeyword(keywordDraft)} loading={loading} />
+      </div>
       <Spin spinning={loading}>
         {categories.length === 0 ? (
           <Empty description={keyword ? '没有匹配的字段' : '注册表为空'} />
@@ -187,7 +197,7 @@ const VariableLabelPickerDrawer: React.FC<Props> = ({ open, onClose, onPick, tit
             } else {
               message.error('入库失败 (权限或重复?)');
             }
-          } catch (e) {
+          } catch {
             // form validate error
           } finally {
             setAdding(false);

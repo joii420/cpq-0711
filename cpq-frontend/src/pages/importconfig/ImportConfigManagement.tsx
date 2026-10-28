@@ -6,9 +6,9 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, SettingOutlined } from '@an
 import { useNavigate } from 'react-router-dom';
 import { excelTemplateService } from '../../services/excelTemplateService';
 import { importMappingService } from '../../services/importMappingService';
-import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
 import ExcelTemplateDrawer from './ExcelTemplateDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Title, Text } = Typography;
 
@@ -159,14 +159,13 @@ const ImportConfigManagement: React.FC = () => {
           </Button>
         </div>
         <div style={{ marginBottom: 12 }}>
-          <RemoteInfiniteSelect<any>
+          <CustomerSelect
             placeholder="筛选客户"
             allowClear
             style={{ width: '100%' }}
             onChange={v => setCustomerFilter(v || '')}
-            fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
-            mapOption={(c: any) => ({ value: c.id, label: c.name })}
           />
+          <ListQueryButton onClick={() => void fetchTemplates()} loading={templatesLoading} />
         </div>
         <Table
           rowKey="id"

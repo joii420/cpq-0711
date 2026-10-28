@@ -18,6 +18,7 @@ import TableOverviewCard from './TableOverviewCard';
 import TableDataDrawer from './TableDataDrawer';
 import { customerService } from '../../services/customerService';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Title, Text } = Typography;
 const GROUP_CONFIG: {
@@ -144,6 +145,7 @@ const MasterDataPage: React.FC = () => {
             fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
             mapOption={(c: any) => ({ value: c.id, label: c.name })}
           />
+          <ListQueryButton onClick={() => void loadOverview(customerId)} loading={loading} />
         </Space>
       </div>
 

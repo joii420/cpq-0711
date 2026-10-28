@@ -14,6 +14,7 @@ import React from 'react';
 import { Pagination, Input } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { isSubmitEnterKey } from './usePagedSearch';
+import ListQueryButton from '../../components/ListQueryButton';
 
 /**
  * 实测发现：本项目 antd 版本下，`<Pagination>` 独立使用（不经 `<Table>`）时未能从
@@ -108,6 +109,7 @@ const PagingBar: React.FC<PagingBarProps> = ({
         style={{ maxWidth: 320 }}
         data-testid="paging-search-input"
       />
+      <ListQueryButton onClick={() => onSearchSubmit(searchValue)} />
       <span style={{ color: 'rgba(0,0,0,.65)', fontSize: 13, whiteSpace: 'nowrap' }}>{totalText}</span>
       <div style={{ flex: 1 }} />
       {showPaginationControls && matchedTotal > 0 && (

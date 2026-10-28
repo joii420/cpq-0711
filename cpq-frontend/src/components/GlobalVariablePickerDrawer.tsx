@@ -7,6 +7,7 @@ import {
   type GlobalVariableDefinition,
   type GlobalVariableKeyOption,
 } from '../services/globalVariableService';
+import ListQueryButton from './ListQueryButton';
 
 interface GlobalVariablePickerDrawerProps {
   open: boolean;
@@ -43,9 +44,10 @@ const GlobalVariablePickerDrawer: React.FC<GlobalVariablePickerDrawerProps> = ({
   const [keys, setKeys] = useState<GlobalVariableKeyOption[]>([]);
   const [keysLoading, setKeysLoading] = useState(false);
   const [filter, setFilter] = useState('');
+  const [filterDraft, setFilterDraft] = useState('');
 
   useEffect(() => {
-    if (!open) { setSelected(null); setKeys([]); setFilter(''); return; }
+    if (!open) { setSelected(null); setKeys([]); setFilter(''); setFilterDraft(''); return; }
     setDefsLoading(true);
     globalVariableService.list()
       .then((res: any) => {
@@ -228,13 +230,21 @@ const GlobalVariablePickerDrawer: React.FC<GlobalVariablePickerDrawerProps> = ({
                   ? '或绑定到具体值（适用于"始终用这个值"的场景）:'
                   : '选择具体 key:'}
               </div>
-              <Input
-                allowClear
-                placeholder="搜索 key (如 Cu / 1610010128 / CNY)"
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                style={{ marginBottom: 8 }}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Input
+                  allowClear
+                  placeholder="搜索 key (如 Cu / 1610010128 / CNY)"
+                  value={filterDraft}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setFilterDraft(value);
+                    if (!value) setFilter('');
+                  }}
+                  onPressEnter={() => setFilter(filterDraft)}
+                  style={{ flex: 1 }}
+                />
+                <ListQueryButton onClick={() => setFilter(filterDraft)} loading={keysLoading} />
+              </div>
               <Card size="small" style={{ flex: 1, overflow: 'auto' }} loading={keysLoading}>
                 {filteredKeys.length === 0 ? (
                   <Empty description="无候选 key" />

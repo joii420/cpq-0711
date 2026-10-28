@@ -15,6 +15,7 @@ import {
 } from '../../../services/compositeProcessService';
 import type { CompositeSelectionState } from '../../../types/configure';
 import { toDecimal, type DecimalString } from '../../../utils/precision';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 interface Props {
   sumQty: DecimalString;
@@ -25,6 +26,7 @@ interface Props {
 const CompositeProcessSection: React.FC<Props> = ({ sumQty, selections, onChange }) => {
   const [defs, setDefs] = useState<CompositeProcessCandidateDTO[]>([]);
   const [q, setQ] = useState('');
+  const [qDraft, setQDraft] = useState('');
 
   useEffect(() => {
     compositeProcessService.list().then(setDefs).catch(() => setDefs([]));
@@ -73,14 +75,22 @@ const CompositeProcessSection: React.FC<Props> = ({ sumQty, selections, onChange
       <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
         🔗 组合工艺 <Tag color="blue">数量合计 ≥ 2</Tag>
       </div>
-      <Input
-        prefix={<SearchOutlined />}
-        placeholder="搜索组合工艺名称，如「焊接」…"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        style={{ marginBottom: 12 }}
-        allowClear
-      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <Input
+          prefix={<SearchOutlined />}
+          placeholder="搜索组合工艺名称，如「焊接」…"
+          value={qDraft}
+          onChange={(e) => {
+            const value = e.target.value;
+            setQDraft(value);
+            if (!value) setQ('');
+          }}
+          onPressEnter={() => setQ(qDraft)}
+          style={{ flex: 1 }}
+          allowClear
+        />
+        <ListQueryButton onClick={() => setQ(qDraft)} />
+      </div>
       {filtered.length === 0 ? (
         <Empty description="未找到匹配的组合工艺" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (

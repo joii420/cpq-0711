@@ -3,6 +3,7 @@ import { Table, Input, Checkbox, Button, Space, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import type { MaterialRowDTO } from '../../../types/price-adjust';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 const PAGE_SIZE = 20;
 
@@ -115,7 +116,7 @@ const MaterialRangeMatrix: React.FC<MaterialRangeMatrixProps> = ({ customerNo, s
         <Input placeholder="销售料号名称" style={{ width: 150 }} value={materialName} onChange={(e) => setMaterialName(e.target.value)} onPressEnter={handleQuery} allowClear />
         <Checkbox checked={onlySelected} onChange={(e) => setOnlySelected(e.target.checked)}>只看已选</Checkbox>
         <Space>
-          <Button size="small" onClick={handleQuery} disabled={onlySelected}>查询</Button>
+          <ListQueryButton onClick={handleQuery} disabled={onlySelected} loading={loading} />
           <Button size="small" onClick={handleReset}>重置</Button>
         </Space>
       </div>

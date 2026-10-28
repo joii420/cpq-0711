@@ -318,11 +318,6 @@ public class CustomerService {
         if (name.length() > 200) {
             throw new BusinessException(400, "客户名称长度不能超过200个字符");
         }
-        String normalized = normalizeIdentity(name);
-        List<Customer> matches = Customer.<Customer>find("lower(trim(name)) = ?1", normalized).list();
-        if (matches.stream().anyMatch(c -> excludeId == null || !excludeId.equals(c.id))) {
-            throw new BusinessException(409, "客户名称已存在: " + name);
-        }
     }
 
     /** Serialize all customer writes without adding a functional DB unique index. */

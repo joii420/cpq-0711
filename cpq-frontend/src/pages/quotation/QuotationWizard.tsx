@@ -12,7 +12,7 @@ import dayjs from 'dayjs';
 import { quotationService } from '../../services/quotationService';
 import { quotationSnapshotService } from '../../services/quotationSnapshotService';
 import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
 import QuotationStep2, {
   computeProductSubtotal, computeAllFormulas, buildSnapshotExpansions, EMPTY_LINEITEMS,
   computeTabFormulasTree, usesTreeTokensTab, buildLineItemEvalContext,
@@ -914,7 +914,8 @@ const QuotationWizard: React.FC = () => {
     }
   };
 
-  const handleCustomerSelect = (custId: string) => {
+  const handleCustomerSelect = (custId: string | undefined) => {
+    if (!custId) return;
     const prevCustomerId = form.getFieldValue('customerId');
     form.setFieldValue('customerId', custId);
     // 切换客户时(prev !== curr)清空旧联系人字段,让 loadContacts 自动选新客户的主要联系人.
@@ -2035,19 +2036,9 @@ const QuotationWizard: React.FC = () => {
         <Col span={16}>
           <Card title="报价单基本信息" size="small">
             <Form.Item name="customerId" label="客户" rules={[{ required: true, message: '请选择客户' }]}>
-              <RemoteInfiniteSelect<any>
+              <CustomerSelect
                 placeholder="搜索并选择客户"
                 onChange={handleCustomerSelect}
-                fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
-                mapOption={(c: any) => ({
-                  value: c.id,
-                  label: `${c.name} (${c.code || ''})`,
-                  item: c,
-                })}
-                onSelect={(_value, option) => setSelectedCustomer((option as any)?.item ?? null)}
-                initialOptions={selectedCustomer
-                  ? [{ value: selectedCustomer.id, label: `${selectedCustomer.name} (${selectedCustomer.code || ''})`, item: selectedCustomer }]
-                  : []}
                 // 2026-05-18: 报价单一旦生成 (quotationId 非空), 客户绑定不可改 — 与 lineItems / 模板锁定一致, 避免客户错位.
                 // 基础数据导入流程同样不允许换客户 (导入抽屉已选定).
                 disabled={isImportFlow || !!quotationId}
@@ -2354,9 +2345,10 @@ const QuotationWizard: React.FC = () => {
     const quoteCurrency = quotation?.currency || quotation?.baseCurrency || 'CNY';
     const quoteRateRaw = quotation?.exchangeRate;
     const quoteRate = isDecimalString(quoteRateRaw) && !toDecimal(quoteRateRaw).isZero() ? quoteRateRaw : '1';
-    const foreignOriginalAmount = formatQuotationTotal(toDecimal(originalAmount).dividedBy(toDecimal(quoteRate)));
-    const foreignTotalAmount = formatQuotationTotal(toDecimal(totalAmount).dividedBy(toDecimal(quoteRate)));
-    const foreignSubtotal = (li: LineItem) => formatQuotationTotal(toDecimal(computeProductSubtotal(li, driverExpansions, customerIdValue)).dividedBy(toDecimal(quoteRate)));
+    // 汇率仅作为公式变量和单头快照展示，不自动参与报价侧金额换算。
+    const displayOriginalAmount = originalAmount;
+    const displayTotalAmount = totalAmount;
+    const displaySubtotal = (li: LineItem) => formatQuotationTotal(computeProductSubtotal(li, driverExpansions, customerIdValue));
     const isDraft = !quotation || quotation.status === 'DRAFT';
 
     return (
@@ -2419,7 +2411,7 @@ const QuotationWizard: React.FC = () => {
                 title: '小计',
                 key: 'subtotal',
                 render: (_: unknown, li: LineItem) =>
-                  `${formatNumber(foreignSubtotal(li), { isComputed: true }) ?? '0'} ${quoteCurrency}`,
+                  `${formatNumber(displaySubtotal(li), { isComputed: true }) ?? '0'} ${quoteCurrency}`,
               },
             ]}
             summary={() => (
@@ -2427,7 +2419,7 @@ const QuotationWizard: React.FC = () => {
                 <Table.Summary.Row>
                   <Table.Summary.Cell index={0} colSpan={2}><Text strong>合计</Text></Table.Summary.Cell>
                   <Table.Summary.Cell index={1}>
-                    <Text strong>{formatNumber(foreignOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
+                    <Text strong>{formatNumber(displayOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
                   </Table.Summary.Cell>
                 </Table.Summary.Row>
               </Table.Summary>
@@ -2437,10 +2429,10 @@ const QuotationWizard: React.FC = () => {
 
         <Card title="定价" size="small" style={{ marginTop: 16 }}>
           <Descriptions column={2} bordered size="small">
-            <Descriptions.Item label="原始总金额">{formatNumber(foreignOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Descriptions.Item>
+            <Descriptions.Item label="原始总金额">{formatNumber(displayOriginalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Descriptions.Item>
             <Descriptions.Item label="折扣率">{discountRate}%</Descriptions.Item>
             <Descriptions.Item label="最终总金额">
-              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>{formatNumber(foreignTotalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
+              <Text strong style={{ color: '#1890ff', fontSize: 16 }}>{formatNumber(displayTotalAmount, { isComputed: true }) ?? '0'} {quoteCurrency}</Text>
             </Descriptions.Item>
           </Descriptions>
         </Card>

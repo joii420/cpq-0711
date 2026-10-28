@@ -14,6 +14,7 @@ import type { ColumnsType } from 'antd/es/table';
 import type { DdlOperationDTO, DdlStatus } from '../../types/ddl-extension';
 import { ddlExtensionService } from '../../services/ddlExtensionService';
 import dayjs from 'dayjs';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Text } = Typography;
 const { Option } = Select;
@@ -190,6 +191,7 @@ const DdlHistoryList: React.FC<Props> = ({ refreshTrigger }) => {
             <Option value="SUCCESS">成功</Option>
             <Option value="FAILED">失败</Option>
           </Select>
+          <ListQueryButton onClick={() => void fetchData(1, statusFilter)} loading={loading} />
         </Space>
         <Button
           icon={<ReloadOutlined />}

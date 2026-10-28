@@ -15,19 +15,16 @@ import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { templateService } from '../../services/templateService';
 import { productCategoryService, type ProductCategory } from '../../services/productCategoryService';
-import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
+import ListQueryButton from '../../components/ListQueryButton';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
 import { useAuthStore } from '../../stores/authStore';
 import { STATUS_COLORS, STATUS_LABELS, type TemplateData } from './types';
 import { canEditTemplate, canDeleteTemplate, deletedTemplateStatusOption } from './softDeleteRules';
 
-interface CustomerLite { id: string; name: string }
-
 const getTemplateCustomerIds = (template: Pick<TemplateData, 'customerIds' | 'customerId'>): string[] => Array.isArray(template.customerIds)
   ? template.customerIds.filter(Boolean)
   : (template.customerId ? [template.customerId] : []);
-
 const { Title } = Typography;
 const { Search } = Input;
 
@@ -63,6 +60,7 @@ const TemplateList: React.FC = () => {
   const [templates, setTemplates] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
+  const [keywordInput, setKeywordInput] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>();
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -79,21 +77,11 @@ const TemplateList: React.FC = () => {
     return m;
   }, [categories]);
 
-  const fetchCustomers = React.useCallback(
-    ({ page, size, keyword }: { page: number; size: number; keyword: string }) =>
-      customerService.list({ page, size, keyword: keyword || undefined }),
-    [],
-  );
-  const mapCustomerOption = React.useCallback(
-    (customer: CustomerLite) => ({ value: customer.id, label: customer.name }),
-    [],
-  );
-
-  const loadTemplates = async () => {
+  const loadTemplates = async (keywordValue = keyword) => {
     setLoading(true);
     try {
       const res = await templateService.list({
-        keyword: keyword || undefined,
+        keyword: keywordValue || undefined,
         categoryId: categoryFilter,
         customerId: scopeFilter === 'SPECIFIC' ? customerFilter : undefined,
         status: statusFilter,
@@ -134,6 +122,11 @@ const TemplateList: React.FC = () => {
     // user on the privileged historical status query.
     if (!isSystemAdmin && statusFilter === 'DELETED') setStatusFilter(undefined);
   }, [isSystemAdmin, statusFilter]);
+
+  const submitKeyword = (value = keywordInput) => {
+    setKeywordInput(value);
+    setKeyword(value);
+  };
 
   const handleCreate = async (values: any) => {
     try {
@@ -265,8 +258,13 @@ const TemplateList: React.FC = () => {
         <Col span={6}>
           <Search
             placeholder="搜索模板名称"
-            onSearch={setKeyword}
-            onChange={(e) => !e.target.value && setKeyword('')}
+            value={keywordInput}
+            onSearch={submitKeyword}
+            onChange={(e) => {
+              const value = e.target.value;
+              setKeywordInput(value);
+              if (!value) submitKeyword('');
+            }}
             allowClear
           />
         </Col>
@@ -296,13 +294,11 @@ const TemplateList: React.FC = () => {
         </Col>
         {scopeFilter === 'SPECIFIC' && (
           <Col span={5}>
-            <RemoteInfiniteSelect<CustomerLite>
+            <CustomerSelect
               placeholder="选择客户"
               allowClear
               style={{ width: '100%' }}
-              fetchPage={fetchCustomers}
-              mapOption={mapCustomerOption}
-              onChange={setCustomerFilter}
+              onChange={(value) => setCustomerFilter(typeof value === 'string' ? value : undefined)}
               value={customerFilter}
             />
           </Col>
@@ -326,6 +322,9 @@ const TemplateList: React.FC = () => {
             style={{ width: '100%' }}
             onChange={setStatusFilter}
           />
+        </Col>
+        <Col flex="none">
+          <ListQueryButton onClick={() => submitKeyword()} loading={loading} />
         </Col>
       </Row>
 
@@ -383,12 +382,10 @@ const TemplateList: React.FC = () => {
                     ? '核价模板：留空表示对所有客户可用（推荐）；选择特定客户则只对该客户生效'
                     : '报价模板：留空 = 通用模板；选择客户 = 该客户专属模板。匹配时客户专属优先，无则回退通用'}
                 >
-                  <RemoteInfiniteSelect<CustomerLite>
+                  <CustomerSelect
                     mode="multiple"
                     placeholder={isCosting ? '默认所有客户可用，可选择特定客户' : '不选则为通用模板，选择则为客户专属'}
                     allowClear
-                    fetchPage={fetchCustomers}
-                    mapOption={mapCustomerOption}
                   />
                 </Form.Item>
               );

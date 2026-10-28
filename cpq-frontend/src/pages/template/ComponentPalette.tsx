@@ -3,6 +3,7 @@ import { Input, Select, Tag } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import { useDraggable } from '@dnd-kit/core';
 import { componentService } from '../../services/componentService';
+import ListQueryButton from '../../components/ListQueryButton';
 // task-260907 F-5（AC-14②）：卡片徽章已改读 dataSourceLabel，不再按 tabType 上色 ⇒
 // 这里不再 import TAB_TYPE_COLOR（该映射在 component/types.ts 保留导出，未删）。
 import './styles.css';
@@ -155,14 +156,19 @@ const ComponentPalette: React.FC<ComponentPaletteProps> = ({ onAddComponent: _on
           }
           options={directories.map(d => ({ value: d.id, label: d.name }))}
         />
-        <Input
-          size="small"
-          placeholder="搜索组件"
-          prefix={<SearchOutlined style={{ color: '#bbb' }} />}
-          allowClear
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Input
+            size="small"
+            placeholder="搜索组件"
+            prefix={<SearchOutlined style={{ color: '#bbb' }} />}
+            allowClear
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onPressEnter={() => { void loadComponents(); }}
+            style={{ flex: 1 }}
+          />
+          <ListQueryButton onClick={() => void loadComponents()} loading={loading} />
+        </div>
       </div>
 
       {/* Component lists */}

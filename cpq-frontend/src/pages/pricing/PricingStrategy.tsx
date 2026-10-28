@@ -10,6 +10,7 @@ import { customerService } from '../../services/customerService';
 import { pricingService } from '../../services/pricingService';
 import ElementPriceStrategyTab from './element-strategy/ElementPriceStrategyTab';
 import PriceAdjustStrategyTab from './price-adjust/PriceAdjustStrategyTab';
+import ListQueryButton from '../../components/ListQueryButton';
 import ExchangeRateStrategyTab from './exchange-rate/ExchangeRateStrategyTab';
 
 const { Sider, Content } = Layout;
@@ -277,6 +278,12 @@ const PricingStrategy: React.FC = () => {
           tabBarStyle={{ paddingLeft: 12, marginBottom: 0 }}
           tabBarGutter={4}
         />
+        <div style={{ padding: '0 12px 8px' }}>
+          <ListQueryButton
+            onClick={() => fetchCustomers(0, customerKeyword, levelFilter)}
+            loading={loadingCustomers}
+          />
+        </div>
         <List
           loading={loadingCustomers}
           dataSource={customers}

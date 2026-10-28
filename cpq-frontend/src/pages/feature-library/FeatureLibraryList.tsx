@@ -3,6 +3,7 @@ import { Card, Table, Tag, Button, Input, Select, Space, message, Drawer, Form, 
 import { useNavigate } from 'react-router-dom';
 import { featureLibraryService } from '../../services/featureLibraryService';
 import type { FeatureGroup, FeatureGroupStatus } from '../../types/feature-library';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const FeatureLibraryList: React.FC = () => {
   const navigate = useNavigate();
@@ -104,6 +105,7 @@ const FeatureLibraryList: React.FC = () => {
                     { value: 'ARCHIVED', label: 'ARCHIVED' },
                   ]}
                   value={status} onChange={setStatus} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
           <Button type="primary" onClick={openCreate}>+ 新建群组</Button>
         </Space>
       }>

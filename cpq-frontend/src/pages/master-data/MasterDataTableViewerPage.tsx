@@ -17,6 +17,7 @@ import { Card, Select, Switch, Input, Table, Space, Typography, Tag, Alert } fro
 import { DatabaseOutlined, SearchOutlined } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 import { masterDataService, type PagedTableDataDTO, type ColumnMetadataDTO } from '../../services/masterDataService';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Title, Text } = Typography;
 
@@ -149,8 +150,19 @@ const MasterDataTableViewerPage: React.FC = () => {
             placeholder="搜索关键词 (按表主键 / 业务字段)"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onPressEnter={() => {
+              setPage(0);
+              void loadData(selectedTable, 0, pageSize, search);
+            }}
             style={{ width: 280 }}
             allowClear
+          />
+          <ListQueryButton
+            onClick={() => {
+              setPage(0);
+              void loadData(selectedTable, 0, pageSize, search);
+            }}
+            loading={loading}
           />
           <Space>
             <Text>显示系统字段:</Text>

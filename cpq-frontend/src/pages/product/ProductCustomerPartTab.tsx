@@ -32,6 +32,7 @@ import type { CustomerPartItem } from './productHubTypes';
 import { renderTextCell } from './productHubCells';
 import ZeroTotalFooter from './ZeroTotalFooter';
 import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import ListQueryButton from '../../components/ListQueryButton';
 import { useAuthStore } from '../../stores/authStore';
 import {
   SEARCH_WIDTH,
@@ -219,6 +220,7 @@ const ProductCustomerPartTab: React.FC<ProductCustomerPartTabProps> = ({
             onChange={(e) => onKeywordChange(e.target.value)}
             onSearch={onKeywordSearch}
           />
+          <ListQueryButton onClick={() => onKeywordSearch(inputValue)} loading={loading} />
         </Space>
         <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); }}>刷新</Button>

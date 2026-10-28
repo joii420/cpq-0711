@@ -5,6 +5,7 @@ import {
 } from 'antd';
 import { configuratorShareService } from '../../services/configuratorService';
 import StatCard from '../../components/StatCard';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const ConfiguratorSharesPage: React.FC = () => {
   const [data, setData] = useState<any[]>([]);
@@ -94,6 +95,7 @@ const ConfiguratorSharesPage: React.FC = () => {
                     { value: 'REVOKED', label: 'REVOKED' },
                   ]}
                   value={status} onChange={setStatus} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
         </Space>
       }>
         <Row gutter={10} style={{ marginBottom: 14 }}>

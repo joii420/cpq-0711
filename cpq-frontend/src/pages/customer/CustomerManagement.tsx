@@ -11,6 +11,7 @@ import SelectableTable, { runBatch, type ToolbarAction } from '../../components/
 import { formatDisplayDecimal, isDecimalString } from '../../utils/precision';
 import { currencyService } from '../../services/currencyService';
 import type { CurrencyDTO } from '../../types/currency';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Text } = Typography;
 
@@ -57,6 +58,7 @@ const CustomerManagement: React.FC = () => {
   const [form] = Form.useForm();
   const [contactForm] = Form.useForm();
   const [params, setParams] = useState({ page: 0, size: 20, level: '', status: '', keyword: '' });
+  const [keywordDraft, setKeywordDraft] = useState('');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [contactDrawerOpen, setContactDrawerOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
@@ -89,6 +91,10 @@ const CustomerManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const submitKeyword = (value = keywordDraft) => {
+    setParams((prev) => ({ ...prev, keyword: value.trim(), page: 0 }));
   };
 
   useEffect(() => { fetchData(); }, [params]);
@@ -449,7 +455,9 @@ const CustomerManagement: React.FC = () => {
       <Space wrap>
         <Input.Search
           placeholder="搜索客户名称/编码"
-          onSearch={v => setParams(p => ({ ...p, keyword: v, page: 0 }))}
+          value={keywordDraft}
+          onChange={(e) => setKeywordDraft(e.target.value)}
+          onSearch={submitKeyword}
           allowClear
           style={{ width: 260 }}
         />
@@ -462,6 +470,7 @@ const CustomerManagement: React.FC = () => {
           <Select.Option value="ACTIVE">启用</Select.Option>
           <Select.Option value="INACTIVE">停用</Select.Option>
         </Select>
+        <ListQueryButton onClick={() => submitKeyword()} loading={loading} />
         <Button icon={<UploadOutlined />} onClick={openImportDrawer}>导入客户</Button>
       </Space>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openDrawer()}>新增客户</Button>

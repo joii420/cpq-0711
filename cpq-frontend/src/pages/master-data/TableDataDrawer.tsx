@@ -12,7 +12,7 @@ import {
   message,
   Tooltip,
 } from 'antd';
-import { SearchOutlined, CopyOutlined } from '@ant-design/icons';
+import { CopyOutlined } from '@ant-design/icons';
 import type { ColumnsType, TablePaginationConfig } from 'antd/es/table';
 import dayjs from 'dayjs';
 import type {
@@ -22,6 +22,7 @@ import type {
 } from '../../services/masterDataService';
 import { masterDataService } from '../../services/masterDataService';
 import RowDetailDrawer from './RowDetailDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Text } = Typography;
 const { Search } = Input;
@@ -256,10 +257,12 @@ const TableDataDrawer: React.FC<Props> = ({ open, onClose, summary, customerId }
                 <Search
                   placeholder={`搜索 ${summary?.primaryKeyField || '主键'}…`}
                   allowClear
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
                   onSearch={handleSearch}
                   style={{ width: 280 }}
-                  enterButton={<SearchOutlined />}
                 />
+                <ListQueryButton onClick={() => handleSearch(search)} loading={loading} />
                 {summary?.primaryKeyField && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
                     按主键字段 <code>{summary.primaryKeyField}</code> 模糊搜索

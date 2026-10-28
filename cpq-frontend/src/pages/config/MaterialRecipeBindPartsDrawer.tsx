@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Drawer, Input, Switch, Space, Button, Table, Tag, message, Alert } from 'antd';
 import { SearchOutlined } from '@ant-design/icons';
 import {
   materialRecipeService,
   type MaterialRecipePart,
 } from '../../services/materialRecipeService';
+import ListQueryButton from '../../components/ListQueryButton';
 
 interface Props {
   open: boolean;
@@ -40,18 +41,28 @@ const MaterialRecipeBindPartsDrawer: React.FC<Props> = ({
     }
   }, [open]);
 
+  const searchNow = useCallback(async (value = q) => {
+    if (!value.trim()) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const result = await materialRecipeService.searchParts(value, { onlyUnbound, size: 100 });
+      setResults(result);
+    } catch {
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [onlyUnbound, q]);
+
   useEffect(() => {
     if (!open) return;
     if (!q.trim()) { setResults([]); return; }
-    setLoading(true);
-    const t = setTimeout(() => {
-      materialRecipeService.searchParts(q, { onlyUnbound, size: 100 })
-        .then(setResults)
-        .catch(() => setResults([]))
-        .finally(() => setLoading(false));
-    }, 300);
+    const t = setTimeout(() => { void searchNow(q); }, 300);
     return () => clearTimeout(t);
-  }, [q, onlyUnbound, open]);
+  }, [q, onlyUnbound, open, searchNow]);
 
   const handleConfirm = async () => {
     if (selectedKeys.length === 0) {
@@ -130,14 +141,19 @@ const MaterialRecipeBindPartsDrawer: React.FC<Props> = ({
       }
     >
       <Space direction="vertical" style={{ width: '100%' }} size="middle">
-        <Input
-          prefix={<SearchOutlined />}
-          placeholder="搜索料号 / 品名 / 规格 / 尺寸…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          allowClear
-          size="large"
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Input
+            prefix={<SearchOutlined />}
+            placeholder="搜索料号 / 品名 / 规格 / 尺寸…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onPressEnter={() => void searchNow()}
+            allowClear
+            size="large"
+            style={{ flex: 1 }}
+          />
+          <ListQueryButton onClick={() => void searchNow()} loading={loading} />
+        </div>
         <Space>
           <Switch checked={onlyUnbound} onChange={setOnlyUnbound} />
           <span style={{ color: '#666' }}>仅显示未绑材质的料号</span>

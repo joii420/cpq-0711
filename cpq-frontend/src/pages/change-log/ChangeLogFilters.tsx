@@ -10,11 +10,10 @@ import {
   Space,
 } from 'antd';
 import type { Dayjs } from 'dayjs';
-import type { ChangeLogSearchParams } from '../../services/changeLogService';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
-const { Search } = Input;
 
 // 数据表选项
 const TABLE_OPTIONS = [
@@ -103,6 +102,7 @@ const ChangeLogFilters: React.FC<ChangeLogFiltersProps> = ({
             allowClear
             value={value.hfPartNo}
             onChange={(e) => update({ hfPartNo: e.target.value })}
+            onPressEnter={onSearch}
           />
         </Col>
         <Col xs={24} sm={12} md={6}>
@@ -124,6 +124,7 @@ const ChangeLogFilters: React.FC<ChangeLogFiltersProps> = ({
             allowClear
             value={value.fieldName}
             onChange={(e) => update({ fieldName: e.target.value })}
+            onPressEnter={onSearch}
           />
         </Col>
         <Col xs={24} sm={12} md={8}>
@@ -166,9 +167,7 @@ const ChangeLogFilters: React.FC<ChangeLogFiltersProps> = ({
         </Col>
         <Col xs={24}>
           <Space>
-            <Button type="primary" onClick={onSearch} loading={loading}>
-              查询
-            </Button>
+            <ListQueryButton onClick={onSearch} loading={loading} />
             <Button onClick={handleReset}>重置</Button>
           </Space>
         </Col>

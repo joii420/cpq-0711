@@ -3,6 +3,7 @@ import { Input, Select, Checkbox, Space, Tag, Spin, Alert, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import SelectableTable, { runBatch } from '../../../components/SelectableTable';
+import ListQueryButton from '../../../components/ListQueryButton';
 import type { ToolbarAction } from '../../../components/SelectableTable';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import ReviewStatusCell from './ReviewStatusCell';
@@ -277,9 +278,9 @@ const PriceAdjustReviewPage: React.FC = () => {
         <Select style={{ width: 130 }} value={status} onChange={setStatus} options={REVIEW_STATUS_OPTIONS} />
         <Checkbox checked={breachedOnly} onChange={(e) => setBreachedOnly(e.target.checked)}>只看标红</Checkbox>
         <Space>
-          <a onClick={handleQuery}>查询</a>
           <a onClick={handleReset}>重置</a>
         </Space>
+        <ListQueryButton onClick={handleQuery} loading={loading} />
         {status === 'PENDING' && notComputedTotal > 0 && (
           <span style={{ fontSize: 12.5, color: 'rgba(0,0,0,.45)', marginLeft: 4 }}>
             共 {total} 条，其中 <b style={{ color: '#d46b08' }}>{notComputedTotal} 条未计算</b>，正在后台计算…

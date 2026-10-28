@@ -22,6 +22,7 @@ import {
   SEARCH_WIDTH, SEARCH_DEBOUNCE_MS, DEFAULT_PAGE_SIZE, commonPagination, TOOLBAR_ROW_STYLE,
 } from '../listConventions';
 import { normalizeDecimalString, isDecimalString } from '../../../utils/precision';
+import ListQueryButton from '../../../components/ListQueryButton';
 
 const { Search } = Input;
 const { Text } = Typography;
@@ -148,6 +149,7 @@ const PlatingSchemeTab: React.FC = () => {
             onChange={(e) => onKeywordChange(e.target.value)}
             onSearch={onKeywordSearch}
           />
+          <ListQueryButton onClick={() => { void fetchList(); }} loading={loading} />
         </Space>
         <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); }}>刷新</Button>

@@ -9,6 +9,7 @@ import type { ConfiguratorInstance, InstanceStatus } from '../../types/configura
 import StatCard from '../../components/StatCard';
 import { formatNumber } from '../../utils/formatNumber';
 import type { DecimalString } from '../../utils/precision';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const ConfiguratorInstanceList: React.FC = () => {
   const navigate = useNavigate();
@@ -104,6 +105,7 @@ const ConfiguratorInstanceList: React.FC = () => {
                   value={status} onChange={setStatus} />
           <DatePicker.RangePicker placeholder={['创建起', '创建止']} style={{ width: 220 }}
                                   onChange={() => message.info('日期筛选 — 后端待实现')} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
           {selectedRowKeys.length > 0 && (
             <>
               <span style={{ fontSize: 12, color: '#666' }}>已选 {selectedRowKeys.length}</span>

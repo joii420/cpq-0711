@@ -12,6 +12,7 @@ import { productService } from '../../services/productService';
 import { productCategoryService } from '../../services/productCategoryService';
 import type { ProductCategory } from '../../services/productCategoryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Dragger } = Upload;
 const { Text } = Typography;
@@ -32,6 +33,8 @@ const ProductManagement: React.FC = () => {
     keyword: '',
   });
   const [activeTab, setActiveTab] = useState('ALL');
+  const [keywordDraft, setKeywordDraft] = useState('');
+  const [statusDraft, setStatusDraft] = useState('');
 
   // Import state
   const [importModalOpen, setImportModalOpen] = useState(false);
@@ -71,6 +74,9 @@ const ProductManagement: React.FC = () => {
 
   const handleSearch = (keyword: string) => setParams((prev: any) => ({ ...prev, page: 0, keyword }));
   const handleStatusFilter = (status: string) => setParams((prev: any) => ({ ...prev, page: 0, status }));
+  const submitFilters = () => {
+    setParams((prev: any) => ({ ...prev, page: 0, keyword: keywordDraft.trim(), status: statusDraft }));
+  };
 
   const openCreate = () => {
     setEditingProduct(null);
@@ -192,14 +198,23 @@ const ProductManagement: React.FC = () => {
     <>
       <Typography.Title level={4} style={{ margin: 0 }}>产品管理</Typography.Title>
       <Space>
-        <Input.Search placeholder="搜索产品名称/料号" allowClear style={{ width: 240 }} onSearch={handleSearch} />
+        <Input.Search
+          placeholder="搜索产品名称/料号"
+          allowClear
+          style={{ width: 240 }}
+          value={keywordDraft}
+          onChange={(e) => setKeywordDraft(e.target.value)}
+          onSearch={(value) => { setKeywordDraft(value); handleSearch(value); }}
+        />
         <Select
           placeholder="状态筛选" allowClear style={{ width: 120 }}
-          onChange={(val) => handleStatusFilter(val ?? '')}
+          value={statusDraft || undefined}
+          onChange={(val) => setStatusDraft(val ?? '')}
         >
           <Select.Option value="ACTIVE">启用</Select.Option>
           <Select.Option value="INACTIVE">停用</Select.Option>
         </Select>
+        <ListQueryButton onClick={submitFilters} loading={loading} />
         <Button icon={<LinkOutlined />} onClick={() => navigate('/template-bindings')}>模板绑定</Button>
         <Button
           icon={<UploadOutlined />}

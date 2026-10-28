@@ -8,6 +8,7 @@ import {
   type MaterialRecipePart,
 } from '../../services/materialRecipeService';
 import MaterialRecipeBindPartsDrawer from './MaterialRecipeBindPartsDrawer';
+import ListQueryButton from '../../components/ListQueryButton';
 
 interface Props {
   recipeId: string;
@@ -120,6 +121,7 @@ const MaterialRecipePartsTab: React.FC<Props> = ({ recipeId, recipeCode, recipeN
           allowClear
           style={{ width: 320 }}
         />
+        <ListQueryButton onClick={() => void refresh()} loading={loading} />
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setBindDrawerOpen(true)}>
           绑定料号
         </Button>

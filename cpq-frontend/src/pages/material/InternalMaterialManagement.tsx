@@ -5,6 +5,7 @@ import {
 import { PlusOutlined, DeleteOutlined, EditOutlined } from '@ant-design/icons';
 import { materialMasterService, type MaterialMaster } from '../../services/materialMasterService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 import { formatDisplayDecimal, normalizeDecimalString, type DecimalString } from '../../utils/precision';
 
 const { Search } = Input;
@@ -31,6 +32,7 @@ const InternalMaterialManagement: React.FC = () => {
   const [editingRecord, setEditingRecord] = useState<MaterialMaster | null>(null);
   const [form] = Form.useForm();
   const [params, setParams] = useState({ page: 0, size: 20, keyword: '' });
+  const [keywordDraft, setKeywordDraft] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -50,6 +52,10 @@ const InternalMaterialManagement: React.FC = () => {
   };
 
   useEffect(() => { fetchData(); }, [params]);
+
+  const submitKeyword = (value = keywordDraft) => {
+    setParams((prev) => ({ ...prev, keyword: value.trim(), page: 0 }));
+  };
 
   const openDrawer = (record?: MaterialMaster) => {
     setEditingRecord(record || null);
@@ -126,10 +132,13 @@ const InternalMaterialManagement: React.FC = () => {
     <Space wrap>
       <Search
         placeholder="搜索料号/名称"
-        onSearch={v => setParams(p => ({ ...p, keyword: v, page: 0 }))}
+        value={keywordDraft}
+        onChange={(e) => setKeywordDraft(e.target.value)}
+        onSearch={submitKeyword}
         allowClear
         style={{ width: 260 }}
       />
+      <ListQueryButton onClick={() => submitKeyword()} loading={loading} />
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openDrawer()}>新增料号</Button>
     </Space>
   );

@@ -19,6 +19,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -92,15 +93,17 @@ class CustomerCodeApiTest {
     }
 
     @Test
-    @DisplayName("AC-4: customer name uniqueness is case-insensitive")
-    void duplicateName_caseInsensitive_returns409() {
+    @DisplayName("AC-4: duplicate customer names are allowed when codes differ")
+    void duplicateName_caseInsensitive_isAllowedWithDifferentCode() {
         String name = PREFIX + "Ac4-Name-" + System.nanoTime();
-        createCustomer(name, PREFIX + "AC4-BASE-" + System.nanoTime());
+        String firstId = createCustomer(name, PREFIX + "AC4-BASE-" + System.nanoTime());
 
         Response duplicate = createResponse(
-                name.toLowerCase(), PREFIX + "AC4-DUP-" + System.nanoTime());
-        assertEquals(409, duplicate.statusCode(), duplicate.asString());
-        assertEquals(1, searchTotal(name), "duplicate name must not create another customer");
+            name.toLowerCase(), PREFIX + "AC4-DUP-" + System.nanoTime());
+        assertEquals(200, duplicate.statusCode(), duplicate.asString());
+        String secondId = duplicate.jsonPath().getString("data.id");
+        assertNotNull(secondId);
+        assertNotEquals(firstId, secondId, "same name with a different code should create a second customer");
     }
 
     @Test
@@ -128,8 +131,8 @@ class CustomerCodeApiTest {
     }
 
     @Test
-    @DisplayName("AC-6: renaming a customer to another customer's name returns 409 and keeps original")
-    void updateToExistingName_returns409AndPreservesOriginal() {
+    @DisplayName("AC-6: renaming a customer to another customer's name is allowed")
+    void updateToExistingName_isAllowed() {
         String firstName = PREFIX + "AC6-FIRST-" + System.nanoTime();
         String secondName = PREFIX + "AC6-SECOND-" + System.nanoTime();
         String firstId = createCustomer(firstName, PREFIX + "AC6-FIRST-CODE-" + System.nanoTime());
@@ -140,16 +143,16 @@ class CustomerCodeApiTest {
                 .body("{\"name\":\"" + secondName + "\"}")
                 .when().put("/api/cpq/customers/" + firstId)
                 .then().extract().response();
-        assertEquals(409, response.statusCode(), response.asString());
+        assertEquals(200, response.statusCode(), response.asString());
 
         RestAssured.given().when().get("/api/cpq/customers/" + firstId)
                 .then().statusCode(200)
-                .body("data.name", equalTo(firstName));
+                .body("data.name", equalTo(secondName));
     }
 
     @Test
-    @DisplayName("AC-15: concurrent normalized-name creates allow at most one new row")
-    void concurrentSameName_atMostOneSucceeds() throws Exception {
+    @DisplayName("AC-15: concurrent same-name creates are allowed when codes differ")
+    void concurrentSameName_bothSucceedWithDifferentCodes() throws Exception {
         String sharedName = PREFIX + "AC15-CONCURRENT-" + System.nanoTime();
         ExecutorService pool = Executors.newFixedThreadPool(2);
         try {
@@ -164,9 +167,8 @@ class CustomerCodeApiTest {
             }
             long successes = statuses.stream().filter(s -> s == 200).count();
             long conflicts = statuses.stream().filter(s -> s == 409).count();
-            assertEquals(1, successes, "exactly one concurrent create should succeed: " + statuses);
-            assertEquals(1, conflicts, "the losing concurrent create should be a conflict: " + statuses);
-            assertEquals(1, searchTotal(sharedName), "concurrent writes must leave one new normalized name");
+            assertEquals(2, successes, "both same-name creates should succeed when codes differ: " + statuses);
+            assertEquals(0, conflicts, "same-name creates should not conflict: " + statuses);
         } finally {
             pool.shutdownNow();
         }

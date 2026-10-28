@@ -3118,13 +3118,9 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   }, [item.componentData, executeDsQuery]);
 
-  // 金额显示：统一走 formatNumber（task-0801：不再固定 2 位，走 DISPLAY_SCALE=6 兜底去尾零），
-  // 保留 ¥ 前缀与空值兜底 ¥0。
+  // 金额显示：公式结果不自动套汇率；报价侧只把结果标记为报价单结算币种。
   const formatCurrency = (val: DecimalValue | null | undefined) => {
-    const rate = cardSide === 'QUOTE' && quoteCurrency && quoteCurrency !== 'CNY' && quoteExchangeRate
-      ? toDecimal(quoteExchangeRate) : toDecimal('1');
-    const shown = rate.isZero() ? toDecimal(val ?? '0') : toDecimal(val ?? '0').dividedBy(rate);
-    return `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${formatNumber(shown.toString(), { isComputed: true }) ?? '0'}`;
+    return `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${formatNumber(toDecimal(val ?? '0').toString(), { isComputed: true }) ?? '0'}`;
   };
 
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
@@ -4133,23 +4129,31 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       )}
 
-      {/* Subtotal Bar：卡片底部只保留「产品小计」总计；各页签小计移入各自页签内（本页签金额合计行）。 */}
+      {/* Subtotal Bar：报价侧一行；核价侧按裁决拆成 CNY / 外币两行。 */}
       <div className="qt-subtotal-bar-multi">
-        <div className="qt-subtotal-line qt-subtotal-total">
-          <span className="qt-subtotal-label">产品小计</span>
-          <span className="qt-subtotal-value">
-            {(() => {
-              const subtotal = item.componentData.length > 0
-                ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
-                : item.subtotal;
-              const rate = quoteExchangeRate && !toDecimal(quoteExchangeRate).isZero() ? toDecimal(quoteExchangeRate) : toDecimal('1');
-              return <>
-                {formatCurrency(subtotal)}
-                {cardSide === 'COSTING' && quoteCurrency && quoteCurrency !== 'CNY' && <span style={{ marginLeft: 12, color: '#1677ff' }}>{formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), { isComputed: true }) ?? '0'} {quoteCurrency}</span>}
-              </>;
-            })()}
-          </span>
-        </div>
+        {(() => {
+          const subtotal = item.componentData.length > 0
+            ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
+            : item.subtotal;
+          const rate = quoteExchangeRate && !toDecimal(quoteExchangeRate).isZero() ? toDecimal(quoteExchangeRate) : toDecimal('1');
+          const foreignSubtotal = formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), { isComputed: true }) ?? '0';
+          if (cardSide === 'COSTING') {
+            return <>
+              <div className="qt-subtotal-line qt-subtotal-total">
+                <span className="qt-subtotal-label">产品小计</span>
+                <span className="qt-subtotal-value">{formatCurrency(subtotal)}</span>
+              </div>
+              <div className="qt-subtotal-line qt-subtotal-total">
+                <span className="qt-subtotal-label">外币小计</span>
+                <span className="qt-subtotal-value" style={{ color: '#1677ff' }}>{foreignSubtotal} {quoteCurrency || 'CNY'}</span>
+              </div>
+            </>;
+          }
+          return <div className="qt-subtotal-line qt-subtotal-total">
+            <span className="qt-subtotal-label">产品小计</span>
+            <span className="qt-subtotal-value">{formatCurrency(subtotal)}</span>
+          </div>;
+        })()}
       </div>
       </>
       )}

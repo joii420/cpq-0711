@@ -7,6 +7,7 @@ import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import SelectableTable from '../../components/SelectableTable';
 import type { ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 import {
   SEARCH_WIDTH, FILTER_MIN_WIDTH, SEARCH_DEBOUNCE_MS, DEFAULT_PAGE_SIZE, commonPagination,
 } from '../master-data/listConventions';
@@ -426,6 +427,10 @@ const MaterialRecipeManagement: React.FC = () => {
             { value: 'ACTIVE', label: '启用' },
             { value: 'INACTIVE', label: '停用' },
           ]}
+        />
+        <ListQueryButton
+          onClick={() => { setPage(1); void refresh(keyword.trim() || undefined); }}
+          loading={loading}
         />
       </Space>
       <Space wrap>

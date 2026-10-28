@@ -12,6 +12,7 @@ import { PlusOutlined, DeleteOutlined, InboxOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import { costingSummaryService, type CostingSummary, type CostingSummaryStatus } from '../../services/costingSummaryService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Title } = Typography;
 
@@ -148,6 +149,7 @@ const CostingSummaryListPage: React.FC = () => {
               value={statusFilter} onChange={setStatusFilter}
               options={['DRAFT','COMPUTED','PUBLISHED','ARCHIVED'].map(s => ({ value: s, label: STATUS_LABEL[s] }))}
             />
+            <ListQueryButton onClick={() => void load()} loading={loading} />
             <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建核价单</Button>
           </Space>
         }

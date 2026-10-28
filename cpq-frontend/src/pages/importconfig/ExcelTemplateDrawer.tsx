@@ -5,8 +5,7 @@ import {
 } from 'antd';
 import { UploadOutlined } from '@ant-design/icons';
 import { excelTemplateService } from '../../services/excelTemplateService';
-import { customerService } from '../../services/customerService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
+import CustomerSelect from '../../components/CustomerSelect';
 
 interface ExcelTemplateDrawerProps {
   open: boolean;
@@ -137,13 +136,8 @@ const ExcelTemplateDrawer: React.FC<ExcelTemplateDrawerProps> = ({
             <Input />
           </Form.Item>
           <Form.Item name="customerId" label="所属客户" rules={[{ required: true, message: '请选择客户' }]}>
-            <RemoteInfiniteSelect<any>
+            <CustomerSelect
               placeholder="输入关键词搜索客户"
-              fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
-              mapOption={(c: any) => ({ value: c.id, label: c.name })}
-              initialOptions={editingRecord?.customerId && editingRecord?.customerName
-                ? [{ value: editingRecord.customerId, label: editingRecord.customerName }]
-                : []}
             />
           </Form.Item>
           <Form.Item name="description" label="描述">

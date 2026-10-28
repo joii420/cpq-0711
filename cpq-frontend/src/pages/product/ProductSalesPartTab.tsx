@@ -43,6 +43,7 @@ import ZeroTotalFooter from './ZeroTotalFooter';
 import ProductSalesPartDrawer from './ProductSalesPartDrawer';
 import EditableProductionNoCell from './EditableProductionNoCell';
 import EditableProfitCell from './EditableProfitCell';
+import ListQueryButton from '../../components/ListQueryButton';
 import {
   SEARCH_WIDTH,
   SEARCH_DEBOUNCE_MS,
@@ -305,6 +306,7 @@ const ProductSalesPartTab: React.FC<ProductSalesPartTabProps> = ({
             onChange={(e) => onKeywordChange(e.target.value)}
             onSearch={onKeywordSearch}
           />
+          <ListQueryButton onClick={() => onKeywordSearch(inputValue)} loading={loading} />
         </Space>
         <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={() => { void fetchList(); }}>刷新</Button>

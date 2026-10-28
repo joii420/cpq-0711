@@ -3,6 +3,7 @@ import { Input, Select, Space, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import SelectableTable, { runBatch } from '../../../components/SelectableTable';
+import ListQueryButton from '../../../components/ListQueryButton';
 import type { ToolbarAction } from '../../../components/SelectableTable';
 import { priceAdjustService } from '../../../services/priceAdjustService';
 import JobProgressDrawer from './JobProgressDrawer';
@@ -108,9 +109,9 @@ const UpdateJobsPage: React.FC = () => {
           onChange={(e) => setCustomerNo(e.target.value)} onPressEnter={handleQuery} allowClear />
         <Select placeholder="全部状态" allowClear style={{ width: 140 }} value={status} onChange={setStatus} options={STATUS_OPTIONS} />
         <Space>
-          <a onClick={handleQuery}>查询</a>
           <a onClick={handleReset}>重置</a>
         </Space>
+        <ListQueryButton onClick={handleQuery} loading={loading} />
       </div>
 
       <SelectableTable<UpdateJobDTO>

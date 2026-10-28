@@ -16,6 +16,7 @@ import {
   type CostingOrderListItem,
 } from '../../services/costingOrderService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Title } = Typography;
 
@@ -240,6 +241,7 @@ const CostingOrderListPage: React.FC = () => {
               onSearch={(v) => setKeyword(v)}
               onChange={(e) => { if (!e.target.value) setKeyword(''); }}
             />
+            <ListQueryButton onClick={() => void load()} loading={loading} />
           </Space>
         }
         actions={actions}

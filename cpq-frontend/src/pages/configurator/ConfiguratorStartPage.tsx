@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, Row, Col, Tag, Button, message, Empty, Input, Select, Space } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { configuratorTemplateService } from '../../services/configuratorService';
+import ListQueryButton from '../../components/ListQueryButton';
 
 /**
  * v0.4 销售路径起点：模板挑选页（骨架）
@@ -81,6 +82,7 @@ const ConfiguratorStartPage: React.FC = () => {
                     { value: '端子', label: '端子' },
                     { value: '电机', label: '电机' },
                   ]} />
+          <ListQueryButton onClick={() => void load()} loading={loading} />
           <Button type={onlyFav ? 'primary' : 'default'} onClick={() => setOnlyFav(!onlyFav)}>
             ⭐ 我的收藏 ({favorites.size})
           </Button>

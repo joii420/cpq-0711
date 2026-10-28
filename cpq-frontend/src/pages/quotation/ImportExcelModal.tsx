@@ -5,10 +5,9 @@ import {
 } from 'antd';
 import { UploadOutlined, CheckCircleOutlined, CloseCircleOutlined, FileExcelOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
-import { customerService } from '../../services/customerService';
+import CustomerSelect from '../../components/CustomerSelect';
 import { templateService } from '../../services/templateService';
 import { quotationService } from '../../services/quotationService';
-import RemoteInfiniteSelect from '../../components/RemoteInfiniteSelect';
 
 const { Text } = Typography;
 
@@ -164,13 +163,11 @@ const ImportExcelModal: React.FC<ImportExcelModalProps> = ({ open, onClose }) =>
         return (
           <div>
             <div style={{ marginBottom: 8 }}>选择要为哪个客户导入报价数据：</div>
-            <RemoteInfiniteSelect<any>
+            <CustomerSelect
               style={{ width: '100%' }}
               placeholder="请选择客户"
               value={selectedCustomerId || undefined}
-              onChange={v => { setSelectedCustomerId(v); setSelectedTemplateId(''); }}
-              fetchPage={({ page, size, keyword }) => customerService.list({ page, size, keyword: keyword || undefined })}
-              mapOption={(c: any) => ({ value: c.id, label: c.name })}
+              onChange={v => { setSelectedCustomerId(v || ''); setSelectedTemplateId(''); }}
             />
           </div>
         );

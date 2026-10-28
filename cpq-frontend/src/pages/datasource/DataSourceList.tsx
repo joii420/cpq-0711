@@ -4,6 +4,7 @@ import { PlusOutlined, EditOutlined, DeleteOutlined, PlayCircleOutlined } from '
 import { useNavigate } from 'react-router-dom';
 import { datasourceService } from '../../services/datasourceService';
 import SelectableTable, { runBatch, type ToolbarAction } from '../../components/SelectableTable';
+import ListQueryButton from '../../components/ListQueryButton';
 
 const { Search } = Input;
 const { Text } = Typography;
@@ -23,6 +24,8 @@ const DataSourceList: React.FC = () => {
   const [data, setData] = useState<any>({ content: [], totalElements: 0 });
   const [loading, setLoading] = useState(false);
   const [params, setParams] = useState({ page: 0, size: 20, type: '', keyword: '' });
+  const [typeDraft, setTypeDraft] = useState('');
+  const [keywordDraft, setKeywordDraft] = useState('');
 
   const fetchData = async () => {
     setLoading(true);
@@ -42,6 +45,10 @@ const DataSourceList: React.FC = () => {
   };
 
   useEffect(() => { fetchData(); }, [params]);
+
+  const submitFilters = (keyword = keywordDraft, type = typeDraft) => {
+    setParams((prev) => ({ ...prev, page: 0, type, keyword: keyword.trim() }));
+  };
 
   const columns = [
     {
@@ -109,8 +116,8 @@ const DataSourceList: React.FC = () => {
           placeholder="类型筛选"
           allowClear
           style={{ width: 120 }}
-          value={params.type || undefined}
-          onChange={(val) => setParams(p => ({ ...p, type: val || '', page: 0 }))}
+          value={typeDraft || undefined}
+          onChange={(val) => setTypeDraft(val || '')}
           options={[
             { label: 'SQL', value: 'SQL' },
             { label: 'API', value: 'API' },
@@ -120,8 +127,11 @@ const DataSourceList: React.FC = () => {
           placeholder="搜索编码或名称"
           allowClear
           style={{ width: 240 }}
-          onSearch={(val) => setParams(p => ({ ...p, keyword: val, page: 0 }))}
+          value={keywordDraft}
+          onChange={(e) => setKeywordDraft(e.target.value)}
+          onSearch={(val) => { setKeywordDraft(val); submitFilters(val); }}
         />
+        <ListQueryButton onClick={submitFilters} loading={loading} />
       </div>
     </>
   );
