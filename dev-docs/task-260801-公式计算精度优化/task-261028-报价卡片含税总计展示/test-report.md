@@ -71,3 +71,16 @@
 - 本次用户仅要求合并，未生成/更新 `deploy/`，未部署。固定测试环境真实 UI 亲验仍是闸门 B 前置。
 
 > 已自检（合并后）：master 定向 Vitest 30/30 ✅；专项 ESLint ✅；TypeScript clean/build ✅；Vite 生产构建 ✅；Playwright 4/4 装载 ✅；未部署、未将用例装载冒充真实页面验证 ✅。
+
+## 9. master 打包（2026-10-29）
+
+- 用户明确要求打包后，从干净 `master@b760ec10150497e893f7ab4575c13e5839febcf2` 构建新流水目录 `deploy/2026102901/`，未覆盖历史包。
+- 前端 `npx tsc -b --clean && npm run build` 通过，3445 modules transformed；后端 `./mvnw -B -ntp -DskipTests clean package` 为 `BUILD SUCCESS`。
+- 包内含 `dist/`、`quarkus-app/`、`Dockerfile.backend`、`README.txt`；Dockerfile 使用 `eclipse-temurin:21-jre`，启动参数与上次部署包逐字一致。
+- 上次包 `2026102702` 已到 V455；当前 master 最新迁移仍为 V455，本次 V455 → V455，不执行 SQL。
+- `dist/` 与构建输出逐文件一致，24 文件，hash-of-hashes `bba90f5f1eb38a11a0e47eb7c828a3c03d3815f849e879e0c7bad85c34c0c3a8`。
+- `quarkus-app/` 与构建输出逐文件一致，213 文件，hash-of-hashes `7b307595fcf3035398e68510f39d550d6d77c2ba5ba90cfef1faed7b6e73680f`。
+- 按用户要求，Git 仅忽略 `deploy/**/dist/`、`deploy/**/quarkus-app/`与 `deploy/**/*.rar`；包内 README、Dockerfile 和 SQL 继续入库。
+- 本轮只打包，未连接、上传或启动测试服务器。
+
+> 已自检（打包）；前端生产构建 ✅；后端 fast-jar 构建 ✅；四件套完整 ✅；产物逐文件同源 ✅；SQL 基线 V455 复核 ✅；新流水目录不覆盖历史包 ✅；未部署 ✅。

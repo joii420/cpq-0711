@@ -24,6 +24,11 @@ cpq-frontend/node_modules/
 cpq-frontend/dist/
 cpq-frontend/.tsbuildinfo
 
+# deploy 只忽略可重建的前后端产物与压缩包；README / Dockerfile / SQL 继续入库
+deploy/**/quarkus-app/
+deploy/**/dist/
+deploy/**/*.rar
+
 # OS
 .DS_Store
 Thumbs.db

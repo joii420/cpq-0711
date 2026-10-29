@@ -246,6 +246,7 @@ bash deploy/db/refresh-test-db.sh --yes    # 跳过确认（明确授权时）
 | 2026-10-23 | 第七份增量 | `update-261023-self-process-name-lookup.sql`，基线 V451 → **V452**。新增 `PROCESS_NAME_LK` 薄查名节点、`process_name` 字段及 `SELF_PROCESS_FEE.operation_no → process_master.process_no` LOOKUP 边；零业务表 DDL。临时库从 V439 全量脚本按清单升至 V452 成功，V452 连续执行两遍均为 exit 0 / stderr 0 字节，节点/字段/边/连接键均保持 1 条；GUI 模拟切分 10 片段、非法开头 0、引号闭合、无美元引用 / psql 元命令。 |
 | 2026-10-26 | 第八份增量 | `update-261026-material-profit.sql`，基线 V452 → **V454**。新增报价物料利润物理列和语义列；V453 不属于当前代码基线。脚本使用静态 DDL / INSERT、无 psql 元命令或美元引用，末尾包含结构、核价边界、语义字段和基线四项自检。 |
 | 2026-10-27 | 第九份增量 | `update-261027-quotation-profit-snapshot.sql`，基线 V454 → **V455**。新增报价行利润快照列；脚本为静态幂等 DDL，无 psql 元命令或美元引用，末尾包含列定义、默认值、历史行和基线四项自检。 |
+| 2026-10-29 | 部署包基线复核 | `deploy/2026102901` 从上一部署包 `2026102702` 的 V455 基线构建；当前 master 最新迁移仍为 V455，本次 **V455 → V455，不执行 SQL**。 |
 
 ---
 
