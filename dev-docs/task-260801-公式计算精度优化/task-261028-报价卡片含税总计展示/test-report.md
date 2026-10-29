@@ -3,7 +3,7 @@
 | 项 | 值 |
 |---|---|
 | 执行日期 | 2026-10-28 |
-| 分支 | `feat/task-261028-quote-card-vat-total`（尚未合并） |
+| 分支 / 合并 | `feat/task-261028-quote-card-vat-total` → `master@96cc0241` |
 | 代码基线 | `cb7f449b34942356203b33d38a62ad4f25105a21` |
 | Browser | Browser plugin 不可用；依规则改用仓库 Playwright + 系统 Chrome |
 | 数据库 / 服务 | 本轮未启动服务、未连接或写入共享库 |
@@ -62,3 +62,12 @@
 ## 7. 已自检
 
 > 已自检：主线复跑定向 Vitest 30/30 ✅；新实现/测试 ESLint ✅；TypeScript ✅；生产构建 ✅；Playwright 4/4 装载 ✅；后端/API/DB 零改动审核 ✅；真实 S-FLOW 与固定测试环境主线亲验未执行 ⚠️，未假称达成。
+
+## 8. 合并与 master 复验
+
+- 特性分支 tip `483c5537` 以无冲突 merge commit `96cc0241` 合入 master；没有业务冲突或手工取舍。
+- 合并后先执行 `npx tsc -b --clean`，再在主工作区复跑：Vitest 3 files / 30 tests passed，专项 ESLint exit 0，`npm run build` exit 0（3445 modules，仅既有 chunk-size warning）。
+- Playwright 前检查无其他测试进程；隔离虚拟配置下 T-04~T-07 共 4 个用例成功装载，未连接服务或数据库。
+- 本次用户仅要求合并，未生成/更新 `deploy/`，未部署。固定测试环境真实 UI 亲验仍是闸门 B 前置。
+
+> 已自检（合并后）：master 定向 Vitest 30/30 ✅；专项 ESLint ✅；TypeScript clean/build ✅；Vite 生产构建 ✅；Playwright 4/4 装载 ✅；未部署、未将用例装载冒充真实页面验证 ✅。
