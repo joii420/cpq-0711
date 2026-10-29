@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3fbfd"/>
+      <stop offset="1" stop-color="#eaf0ff"/>
+    </linearGradient>
+    <linearGradient id="number" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0bbbd6"/>
+      <stop offset="1" stop-color="#4776e6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#163d57" flood-opacity="0.15"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#56cfe1"/></marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#4776e6"/></marker>
+    <style>
+      .eyebrow { font: 700 18px 'Noto Sans SC', sans-serif; letter-spacing: 4px; fill: #0b87a5; }
+      .number { font: 700 26px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .title { font: 700 58px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .subtitle { font: 500 28px 'Noto Sans SC', sans-serif; fill: #315a70; }
+      .body { font: 400 25px 'Noto Sans SC', sans-serif; fill: #4c687a; }
+      .tag { font: 500 19px 'Noto Sans SC', sans-serif; fill: #087f9f; }
+      .visualTitle { font: 700 27px 'Noto Sans SC', sans-serif; fill: #0b3049; }
+      .miniTitle { font: 700 19px 'Noto Sans SC', sans-serif; fill: #173e55; }
+      .mini { font: 400 17px 'Noto Sans SC', sans-serif; fill: #557486; }
+      .whiteMini { font: 600 18px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .whiteTiny { font: 500 16px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .metric { font: 700 37px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .delta { font: 700 19px 'Noto Sans SC', sans-serif; fill: #e26363; }
+      .greenTitle { font: 700 18px 'Noto Sans SC', sans-serif; fill: #168667; }
+      .oldMetric { font: 700 31px 'Noto Sans SC', sans-serif; fill: #869da9; text-decoration: line-through; }
+      .newMetric { font: 700 43px 'Noto Sans SC', sans-serif; fill: #0b9cb8; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <circle cx="1510" cy="70" r="280" fill="#0bbbd6" opacity="0.08"/>
+  <circle cx="70" cy="880" r="330" fill="#4776e6" opacity="0.07"/>
+  <rect x="48" y="48" width="1504" height="804" rx="42" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.8"/>
+  <circle cx="118" cy="104" r="34" fill="url(#number)"/>
+  <text x="118" y="113" text-anchor="middle" class="number">03</text>
+  <text x="172" y="111" class="eyebrow">BOM AND PROCESS</text>
+  <text x="84" y="235" class="title">BOM 与工艺一体化</text>
+  <text x="84" y="293" class="subtitle">料件、材料、元素、组装和电镀进入同一模型</text>
+  <rect x="84" y="342" width="92" height="6" rx="3" fill="#0bbbd6"/>
+  <text x="84" y="410" class="body">BOM 结构与工艺路线协同计算，</text>
+<text x="84" y="453" class="body">由系统执行关系与完整性校验，</text>
+<text x="84" y="496" class="body">减少复杂报价中的遗漏和错报。</text>
+  
+    <rect x="84" y="640" width="124" height="46" rx="23" fill="#dff7fb"/>
+    <text x="146.0" y="670" text-anchor="middle" class="tag">统一模型</text>
+    
+    <rect x="226" y="640" width="150" height="46" rx="23" fill="#dff7fb"/>
+    <text x="301.0" y="670" text-anchor="middle" class="tag">系统强校验</text>
+    
+    <rect x="394" y="640" width="136" height="46" rx="23" fill="#dff7fb"/>
+    <text x="462.0" y="670" text-anchor="middle" class="tag">复杂报价</text>
+    
+  <text x="84" y="786" class="mini">CPQ SYSTEM · BUSINESS HIGHLIGHT</text>
+  <g filter="url(#shadow)">
+    <rect x="870" y="144" width="610" height="604" rx="34" fill="#ffffff" opacity="0.97"/>
+    <text x="914" y="204" class="visualTitle">BOM 结构</text>
+    <text x="1210" y="204" class="visualTitle">工艺路线</text>
+    <line x1="1010" y1="264" x2="1010" y2="552" stroke="#b4d0da" stroke-width="4"/>
+    <line x1="1010" y1="320" x2="930" y2="320" stroke="#b4d0da" stroke-width="4"/>
+    <line x1="1010" y1="420" x2="930" y2="420" stroke="#b4d0da" stroke-width="4"/>
+    <line x1="1010" y1="520" x2="930" y2="520" stroke="#b4d0da" stroke-width="4"/>
+    <circle cx="1010" cy="264" r="34" fill="#0bbbd6"/><text x="1010" y="273" text-anchor="middle" class="whiteMini">成品</text>
+    <rect x="890" y="291" width="104" height="58" rx="18" fill="#e9f8fb"/><text x="942" y="328" text-anchor="middle" class="miniTitle">料件</text>
+    <rect x="890" y="391" width="104" height="58" rx="18" fill="#edf1ff"/><text x="942" y="428" text-anchor="middle" class="miniTitle">材料</text>
+    <rect x="890" y="491" width="104" height="58" rx="18" fill="#e9f8fb"/><text x="942" y="528" text-anchor="middle" class="miniTitle">元素</text>
+    <path d="M1080 320 L1400 320" stroke="#56cfe1" stroke-width="5" marker-end="url(#arrow)"/>
+    <circle cx="1130" cy="320" r="38" fill="#e9f8fb" stroke="#0bbbd6" stroke-width="4"/><text x="1130" y="328" text-anchor="middle" class="miniTitle">来料</text>
+    <circle cx="1240" cy="320" r="38" fill="#edf1ff" stroke="#4776e6" stroke-width="4"/><text x="1240" y="328" text-anchor="middle" class="miniTitle">加工</text>
+    <circle cx="1350" cy="320" r="38" fill="#e9f8fb" stroke="#0bbbd6" stroke-width="4"/><text x="1350" y="328" text-anchor="middle" class="miniTitle">组装</text>
+    <path d="M1130 400 L1400 400" stroke="#6f8fe8" stroke-width="5" marker-end="url(#arrowBlue)"/>
+    <circle cx="1190" cy="400" r="38" fill="#edf1ff" stroke="#4776e6" stroke-width="4"/><text x="1190" y="408" text-anchor="middle" class="miniTitle">电镀</text>
+    <circle cx="1330" cy="400" r="38" fill="#e9f8fb" stroke="#0bbbd6" stroke-width="4"/><text x="1330" y="408" text-anchor="middle" class="miniTitle">检验</text>
+    <path d="M1234 496 l35 35 l74 -86" fill="none" stroke="#0bbbd6" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="1288" y="584" text-anchor="middle" class="visualTitle">系统强校验</text>
+    <text x="1288" y="624" text-anchor="middle" class="mini">缺项提醒 · 关系校验 · 结果汇总</text>
+    <rect x="914" y="666" width="522" height="46" rx="23" fill="#0b3049"/>
+    <text x="1175" y="696" text-anchor="middle" class="whiteMini">结构与工艺同源，减少遗漏与错报</text>
+    </g>
+</svg>

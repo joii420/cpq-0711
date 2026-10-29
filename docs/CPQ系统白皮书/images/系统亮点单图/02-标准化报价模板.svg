@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3fbfd"/>
+      <stop offset="1" stop-color="#eaf0ff"/>
+    </linearGradient>
+    <linearGradient id="number" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0bbbd6"/>
+      <stop offset="1" stop-color="#4776e6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#163d57" flood-opacity="0.15"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#56cfe1"/></marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#4776e6"/></marker>
+    <style>
+      .eyebrow { font: 700 18px 'Noto Sans SC', sans-serif; letter-spacing: 4px; fill: #0b87a5; }
+      .number { font: 700 26px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .title { font: 700 58px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .subtitle { font: 500 28px 'Noto Sans SC', sans-serif; fill: #315a70; }
+      .body { font: 400 25px 'Noto Sans SC', sans-serif; fill: #4c687a; }
+      .tag { font: 500 19px 'Noto Sans SC', sans-serif; fill: #087f9f; }
+      .visualTitle { font: 700 27px 'Noto Sans SC', sans-serif; fill: #0b3049; }
+      .miniTitle { font: 700 19px 'Noto Sans SC', sans-serif; fill: #173e55; }
+      .mini { font: 400 17px 'Noto Sans SC', sans-serif; fill: #557486; }
+      .whiteMini { font: 600 18px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .whiteTiny { font: 500 16px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .metric { font: 700 37px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .delta { font: 700 19px 'Noto Sans SC', sans-serif; fill: #e26363; }
+      .greenTitle { font: 700 18px 'Noto Sans SC', sans-serif; fill: #168667; }
+      .oldMetric { font: 700 31px 'Noto Sans SC', sans-serif; fill: #869da9; text-decoration: line-through; }
+      .newMetric { font: 700 43px 'Noto Sans SC', sans-serif; fill: #0b9cb8; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <circle cx="1510" cy="70" r="280" fill="#0bbbd6" opacity="0.08"/>
+  <circle cx="70" cy="880" r="330" fill="#4776e6" opacity="0.07"/>
+  <rect x="48" y="48" width="1504" height="804" rx="42" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.8"/>
+  <circle cx="118" cy="104" r="34" fill="url(#number)"/>
+  <text x="118" y="113" text-anchor="middle" class="number">02</text>
+  <text x="172" y="111" class="eyebrow">STANDARDIZED TEMPLATE</text>
+  <text x="84" y="235" class="title">标准化报价模板</text>
+  <text x="84" y="293" class="subtitle">报价与核价字段统一，每一行成本都可追溯</text>
+  <rect x="84" y="342" width="92" height="6" rx="3" fill="#0bbbd6"/>
+  <text x="84" y="410" class="body">统一报价、核价与 Excel 视图字段，</text>
+<text x="84" y="453" class="body">模板版本固定业务口径，</text>
+<text x="84" y="496" class="body">审查从翻表格变成看数据链。</text>
+  
+    <rect x="84" y="640" width="124" height="46" rx="23" fill="#dff7fb"/>
+    <text x="146.0" y="670" text-anchor="middle" class="tag">字段统一</text>
+    
+    <rect x="226" y="640" width="124" height="46" rx="23" fill="#dff7fb"/>
+    <text x="288.0" y="670" text-anchor="middle" class="tag">版本固定</text>
+    
+    <rect x="368" y="640" width="136" height="46" rx="23" fill="#dff7fb"/>
+    <text x="436.0" y="670" text-anchor="middle" class="tag">逐行溯源</text>
+    
+  <text x="84" y="786" class="mini">CPQ SYSTEM · BUSINESS HIGHLIGHT</text>
+  <g filter="url(#shadow)">
+    <rect x="890" y="150" width="570" height="590" rx="34" fill="#ffffff" opacity="0.97"/>
+    <text x="930" y="208" class="visualTitle">统一模板字段</text>
+    <text x="1406" y="208" text-anchor="end" class="mini">v3.2 · 已发布</text>
+    
+        <rect x="930" y="262" width="476" height="92" rx="18" fill="#e9f8fb"/>
+        <rect x="956" y="282" width="94" height="16" rx="8" fill="#0bbbd6" opacity="0.75"/>
+        <rect x="1068" y="282" width="132" height="16" rx="8" fill="#6c8be8" opacity="0.55"/>
+        <rect x="1218" y="282" width="74" height="16" rx="8" fill="#0bbbd6" opacity="0.45"/>
+        <rect x="1310" y="282" width="70" height="16" rx="8" fill="#6c8be8" opacity="0.45"/>
+        <rect x="956" y="316" width="312" height="12" rx="6" fill="#a9c2ce" opacity="0.55"/>
+        <circle cx="1350" cy="320" r="16" fill="#ffffff" stroke="#0bbbd6" stroke-width="4"/>
+        <path d="M1342 320 l6 6 l12 -14" fill="none" stroke="#0bbbd6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        
+        <rect x="930" y="382" width="476" height="92" rx="18" fill="#edf1ff"/>
+        <rect x="956" y="402" width="94" height="16" rx="8" fill="#0bbbd6" opacity="0.75"/>
+        <rect x="1068" y="402" width="132" height="16" rx="8" fill="#6c8be8" opacity="0.55"/>
+        <rect x="1218" y="402" width="74" height="16" rx="8" fill="#0bbbd6" opacity="0.45"/>
+        <rect x="1310" y="402" width="70" height="16" rx="8" fill="#6c8be8" opacity="0.45"/>
+        <rect x="956" y="436" width="312" height="12" rx="6" fill="#a9c2ce" opacity="0.55"/>
+        <circle cx="1350" cy="440" r="16" fill="#ffffff" stroke="#0bbbd6" stroke-width="4"/>
+        <path d="M1342 440 l6 6 l12 -14" fill="none" stroke="#0bbbd6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        
+        <rect x="930" y="502" width="476" height="92" rx="18" fill="#e9f8fb"/>
+        <rect x="956" y="522" width="94" height="16" rx="8" fill="#0bbbd6" opacity="0.75"/>
+        <rect x="1068" y="522" width="132" height="16" rx="8" fill="#6c8be8" opacity="0.55"/>
+        <rect x="1218" y="522" width="74" height="16" rx="8" fill="#0bbbd6" opacity="0.45"/>
+        <rect x="1310" y="522" width="70" height="16" rx="8" fill="#6c8be8" opacity="0.45"/>
+        <rect x="956" y="556" width="312" height="12" rx="6" fill="#a9c2ce" opacity="0.55"/>
+        <circle cx="1350" cy="560" r="16" fill="#ffffff" stroke="#0bbbd6" stroke-width="4"/>
+        <path d="M1342 560 l6 6 l12 -14" fill="none" stroke="#0bbbd6" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        
+    <line x1="912" y1="308" x2="912" y2="548" stroke="#0bbbd6" stroke-width="4"/>
+    <circle cx="912" cy="308" r="10" fill="#0bbbd6"/>
+    <circle cx="912" cy="428" r="10" fill="#4776e6"/>
+    <circle cx="912" cy="548" r="10" fill="#0bbbd6"/>
+    <rect x="930" y="640" width="476" height="60" rx="18" fill="#0b3049"/>
+    <text x="1168" y="679" text-anchor="middle" class="whiteMini">字段统一 · 版本固定 · 每行可追溯</text>
+    </g>
+</svg>

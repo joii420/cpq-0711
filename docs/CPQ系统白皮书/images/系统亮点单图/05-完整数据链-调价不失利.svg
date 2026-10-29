@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f3fbfd"/>
+      <stop offset="1" stop-color="#eaf0ff"/>
+    </linearGradient>
+    <linearGradient id="number" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0bbbd6"/>
+      <stop offset="1" stop-color="#4776e6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#163d57" flood-opacity="0.15"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#56cfe1"/></marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="#4776e6"/></marker>
+    <style>
+      .eyebrow { font: 700 18px 'Noto Sans SC', sans-serif; letter-spacing: 4px; fill: #0b87a5; }
+      .number { font: 700 26px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .title { font: 700 58px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .subtitle { font: 500 28px 'Noto Sans SC', sans-serif; fill: #315a70; }
+      .body { font: 400 25px 'Noto Sans SC', sans-serif; fill: #4c687a; }
+      .tag { font: 500 19px 'Noto Sans SC', sans-serif; fill: #087f9f; }
+      .visualTitle { font: 700 27px 'Noto Sans SC', sans-serif; fill: #0b3049; }
+      .miniTitle { font: 700 19px 'Noto Sans SC', sans-serif; fill: #173e55; }
+      .mini { font: 400 17px 'Noto Sans SC', sans-serif; fill: #557486; }
+      .whiteMini { font: 600 18px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .whiteTiny { font: 500 16px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .metric { font: 700 37px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .delta { font: 700 19px 'Noto Sans SC', sans-serif; fill: #e26363; }
+      .greenTitle { font: 700 18px 'Noto Sans SC', sans-serif; fill: #168667; }
+      .oldMetric { font: 700 31px 'Noto Sans SC', sans-serif; fill: #869da9; text-decoration: line-through; }
+      .newMetric { font: 700 43px 'Noto Sans SC', sans-serif; fill: #0b9cb8; }
+    </style>
+  </defs>
+  <rect width="1600" height="900" fill="url(#background)"/>
+  <circle cx="1510" cy="70" r="280" fill="#0bbbd6" opacity="0.08"/>
+  <circle cx="70" cy="880" r="330" fill="#4776e6" opacity="0.07"/>
+  <rect x="48" y="48" width="1504" height="804" rx="42" fill="none" stroke="#ffffff" stroke-width="2" opacity="0.8"/>
+  <circle cx="118" cy="104" r="34" fill="url(#number)"/>
+  <text x="118" y="113" text-anchor="middle" class="number">05</text>
+  <text x="172" y="111" class="eyebrow">TRACEABLE DATA CHAIN</text>
+  <text x="84" y="235" class="title">完整数据链 · 调价不失利</text>
+  <text x="84" y="293" class="subtitle">自动捕获材料、汇率和工费变化，回溯影响范围</text>
+  <rect x="84" y="342" width="92" height="6" rx="3" fill="#0bbbd6"/>
+  <text x="84" y="410" class="body">连接数据来源、版本、计算与报价，</text>
+<text x="84" y="453" class="body">价格变化后快速定位受影响对象，</text>
+<text x="84" y="496" class="body">让调价有据、利润持续可控。</text>
+  
+    <rect x="84" y="640" width="136" height="46" rx="23" fill="#dff7fb"/>
+    <text x="152.0" y="670" text-anchor="middle" class="tag">自动捕获</text>
+    
+    <rect x="238" y="640" width="136" height="46" rx="23" fill="#dff7fb"/>
+    <text x="306.0" y="670" text-anchor="middle" class="tag">一键回溯</text>
+    
+    <rect x="392" y="640" width="136" height="46" rx="23" fill="#dff7fb"/>
+    <text x="460.0" y="670" text-anchor="middle" class="tag">调价有据</text>
+    
+  <text x="84" y="786" class="mini">CPQ SYSTEM · BUSINESS HIGHLIGHT</text>
+  <g filter="url(#shadow)">
+    <rect x="858" y="144" width="630" height="604" rx="34" fill="#ffffff" opacity="0.97"/>
+    <text x="908" y="204" class="visualTitle">价格变化影响链</text>
+    <rect x="908" y="244" width="152" height="80" rx="20" fill="#e9f8fb"/><text x="984" y="278" text-anchor="middle" class="miniTitle">材料价格</text><text x="984" y="307" text-anchor="middle" class="delta">+3.2%</text>
+    <rect x="1080" y="244" width="152" height="80" rx="20" fill="#edf1ff"/><text x="1156" y="278" text-anchor="middle" class="miniTitle">汇率</text><text x="1156" y="307" text-anchor="middle" class="delta">-1.1%</text>
+    <rect x="1252" y="244" width="152" height="80" rx="20" fill="#e9f8fb"/><text x="1328" y="278" text-anchor="middle" class="miniTitle">工费</text><text x="1328" y="307" text-anchor="middle" class="delta">+0.8%</text>
+    <path d="M984 344 L984 380 L1328 380 L1328 344" fill="none" stroke="#56cfe1" stroke-width="4"/>
+    <path d="M1156 380 L1156 420" fill="none" stroke="#56cfe1" stroke-width="4" marker-end="url(#arrow)"/>
+    <rect x="944" y="426" width="424" height="92" rx="22" fill="#0b3049"/>
+    <text x="1156" y="464" text-anchor="middle" class="whiteMini">自动识别影响范围</text>
+    <text x="1156" y="494" text-anchor="middle" class="whiteTiny">客户 · 产品 · 报价单 · 利润变化</text>
+    <line x1="936" y1="580" x2="1388" y2="580" stroke="#b7ced8" stroke-width="4"/>
+    <circle cx="958" cy="580" r="16" fill="#0bbbd6"/><text x="958" y="628" text-anchor="middle" class="mini">来源</text>
+    <circle cx="1090" cy="580" r="16" fill="#2aa8d5"/><text x="1090" y="628" text-anchor="middle" class="mini">版本</text>
+    <circle cx="1222" cy="580" r="16" fill="#4776e6"/><text x="1222" y="628" text-anchor="middle" class="mini">计算</text>
+    <circle cx="1366" cy="580" r="16" fill="#19b78a"/><text x="1366" y="628" text-anchor="middle" class="mini">调价依据</text>
+    <rect x="944" y="668" width="424" height="48" rx="24" fill="#e3f8f3"/>
+    <text x="1156" y="700" text-anchor="middle" class="greenTitle">一键回溯 · 调价有据</text>
+    </g>
+</svg>
