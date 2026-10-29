@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1120" viewBox="0 0 1600 1120">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f5fbfd"/>
+      <stop offset="1" stop-color="#eef3ff"/>
+    </linearGradient>
+    <linearGradient id="icon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0bbbd6"/>
+      <stop offset="1" stop-color="#4776e6"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#163d57" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .title { font: 700 50px 'Noto Sans SC', sans-serif; fill: #092b43; }
+      .subtitle { font: 400 22px 'Noto Sans SC', sans-serif; fill: #557286; }
+      .cardTitle { font: 700 28px 'Noto Sans SC', sans-serif; fill: #0b2d46; }
+      .body { font: 400 20px 'Noto Sans SC', sans-serif; fill: #4b687b; }
+      .tag { font: 500 17px 'Noto Sans SC', sans-serif; fill: #087e9e; }
+      .iconText { font: 700 30px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .num { font: 700 18px 'Noto Sans SC', sans-serif; fill: #8aa2b2; letter-spacing: 2px; }
+    </style>
+  </defs>
+  <rect width="1600" height="1120" fill="url(#bg2)"/>
+  <circle cx="1490" cy="80" r="260" fill="#0bbbd6" opacity="0.07"/>
+  <circle cx="100" cy="1100" r="300" fill="#4776e6" opacity="0.06"/>
+  <text x="80" y="92" class="title">系统亮点</text>
+  <text x="82" y="132" class="subtitle">从“依赖个人经验”转向“配置驱动、过程透明、结果可复现”的企业报价能力</text>
+
+  <!-- row 1 -->
+  <g filter="url(#cardShadow)">
+    <rect x="80" y="190" width="455" height="370" rx="28" fill="#fff"/>
+    <rect x="573" y="190" width="455" height="370" rx="28" fill="#fff"/>
+    <rect x="1065" y="190" width="455" height="370" rx="28" fill="#fff"/>
+    <rect x="80" y="600" width="455" height="370" rx="28" fill="#fff"/>
+    <rect x="573" y="600" width="455" height="370" rx="28" fill="#fff"/>
+    <rect x="1065" y="600" width="455" height="370" rx="28" fill="#fff"/>
+  </g>
+
+  <!-- 01 -->
+  <text x="450" y="238" class="num">01</text>
+  <circle cx="142" cy="270" r="40" fill="url(#icon)"/>
+  <text x="142" y="281" text-anchor="middle" class="iconText">配</text>
+  <text x="202" y="280" class="cardTitle">配置化报价</text>
+  <text x="120" y="347" class="body">组件、模板、公式与数据源可配置，</text>
+  <text x="120" y="382" class="body">将产品知识和定价规则沉淀为系统资产，</text>
+  <text x="120" y="417" class="body">支持业务变化下的持续演进。</text>
+  <rect x="120" y="467" width="104" height="38" rx="19" fill="#e4f8fb"/>
+  <text x="172" y="492" text-anchor="middle" class="tag">可配置</text>
+  <rect x="238" y="467" width="104" height="38" rx="19" fill="#edf1ff"/>
+  <text x="290" y="492" text-anchor="middle" class="tag">可复用</text>
+
+  <!-- 02 -->
+  <text x="943" y="238" class="num">02</text>
+  <circle cx="635" cy="270" r="40" fill="url(#icon)"/>
+  <text x="635" y="281" text-anchor="middle" class="iconText">模</text>
+  <text x="695" y="280" class="cardTitle">标准化模板</text>
+  <text x="613" y="347" class="body">报价、核价与 Excel 视图采用统一字段，</text>
+  <text x="613" y="382" class="body">发布版本和单据快照共同固定业务口径，</text>
+  <text x="613" y="417" class="body">减少线下表格分叉和人为解释。</text>
+  <rect x="613" y="467" width="104" height="38" rx="19" fill="#e4f8fb"/>
+  <text x="665" y="492" text-anchor="middle" class="tag">可审查</text>
+  <rect x="731" y="467" width="104" height="38" rx="19" fill="#edf1ff"/>
+  <text x="783" y="492" text-anchor="middle" class="tag">可追溯</text>
+
+  <!-- 03 -->
+  <text x="1435" y="238" class="num">03</text>
+  <circle cx="1127" cy="270" r="40" fill="url(#icon)"/>
+  <text x="1127" y="281" text-anchor="middle" class="iconText">链</text>
+  <text x="1187" y="280" class="cardTitle">BOM 与工艺一体化</text>
+  <text x="1105" y="347" class="body">料件、材料、元素、加工、组装和电镀</text>
+  <text x="1105" y="382" class="body">进入同一计算与校验链，复杂产品报价</text>
+  <text x="1105" y="417" class="body">不再依靠多份表格人工拼接。</text>
+  <rect x="1105" y="467" width="104" height="38" rx="19" fill="#e4f8fb"/>
+  <text x="1157" y="492" text-anchor="middle" class="tag">强校验</text>
+  <rect x="1223" y="467" width="128" height="38" rx="19" fill="#edf1ff"/>
+  <text x="1287" y="492" text-anchor="middle" class="tag">复杂报价</text>
+
+  <!-- 04 -->
+  <text x="450" y="648" class="num">04</text>
+  <circle cx="142" cy="680" r="40" fill="url(#icon)"/>
+  <text x="142" y="691" text-anchor="middle" class="iconText">利</text>
+  <text x="202" y="690" class="cardTitle">成交前利润估算</text>
+  <text x="120" y="757" class="body">成本、费用、汇率、折扣与税费联动，</text>
+  <text x="120" y="792" class="body">在提交审批前呈现价格形成过程，</text>
+  <text x="120" y="827" class="body">让利润空间从黑盒变成白盒。</text>
+  <rect x="120" y="877" width="104" height="38" rx="19" fill="#e4f8fb"/>
+  <text x="172" y="902" text-anchor="middle" class="tag">利润白盒</text>
+  <rect x="238" y="877" width="140" height="38" rx="19" fill="#edf1ff"/>
+  <text x="308" y="902" text-anchor="middle" class="tag">提交前可见</text>
+
+  <!-- 05 -->
+  <text x="943" y="648" class="num">05</text>
+  <circle cx="635" cy="680" r="40" fill="url(#icon)"/>
+  <text x="635" y="691" text-anchor="middle" class="iconText">溯</text>
+  <text x="695" y="690" class="cardTitle">完整数据链</text>
+  <text x="613" y="757" class="body">从数据来源、版本、计算结果到审批、</text>
+  <text x="613" y="792" class="body">输出与变更日志均保留上下文，</text>
+  <text x="613" y="827" class="body">支持定位、复盘和责任边界澄清。</text>
+  <rect x="613" y="877" width="104" height="38" rx="19" fill="#e4f8fb"/>
+  <text x="665" y="902" text-anchor="middle" class="tag">自动留痕</text>
+  <rect x="731" y="877" width="104" height="38" rx="19" fill="#edf1ff"/>
+  <text x="783" y="902" text-anchor="middle" class="tag">一键回溯</text>
+
+  <!-- 06 -->
+  <text x="1435" y="648" class="num">06</text>
+  <circle cx="1127" cy="680" r="40" fill="url(#icon)"/>
+  <text x="1127" y="691" text-anchor="middle" class="iconText">快</text>
+  <text x="1187" y="690" class="cardTitle">报价提速</text>
+  <text x="1105" y="757" class="body">向导化协同、模板复用与自动计算，</text>
+  <text x="1105" y="792" class="body">减少重复整理和跨表核对，推动报价</text>
+  <text x="1105" y="827" class="body">从小时级人工过程走向分钟级出单。</text>
+  <rect x="1105" y="877" width="128" height="38" rx="19" fill="#e4f8fb"/>
+  <text x="1169" y="902" text-anchor="middle" class="tag">降低门槛</text>
+  <rect x="1247" y="877" width="128" height="38" rx="19" fill="#edf1ff"/>
+  <text x="1311" y="902" text-anchor="middle" class="tag">经验沉淀</text>
+
+  <text x="80" y="1056" class="subtitle">注：提速效果取决于模板成熟度、基础数据质量与业务复杂度；“分钟级”表示建设方向，不构成统一性能承诺。</text>
+</svg>

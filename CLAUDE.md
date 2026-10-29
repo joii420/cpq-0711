@@ -209,6 +209,7 @@ Templates and components use JSONB storage for flexible field/formula configurat
 - `docs/HTTP_API_安全配置.md` - HTTP_API 启用步骤 + 安全不变量
 - `docs/列表操作规范.md` - 列表页面的工具栏动作规范（**所有列表页面必须按此规范实现**，详见下方"UI 交互规范"）
 - `docs/报价单核价单功能总结.md` - 报价单与核价单两条主线的功能、流程、视图、状态机、模板体系、数据库主表的整合视图（PRD 没回写核价系统，以本文 + RECORD.md 为准）
+- `docs/CPQ系统白皮书/CPQ系统白皮书.md` - 面向业务决策者与信息化人员的 CPQ 系统白皮书；配套“一张图”和系统亮点高清图，正文只讲定位、能力、价值与架构，不承担操作手册职责
 - ~~`docs/组件管理字段配置指南.md`~~ / ~~`docs/Excel模板配置指南.md`~~ / ~~`docs/配置方法论.md`~~ / ~~`docs/配置方法论-合并版.md`~~ / ~~`docs/rule/报价模板生成规则.md`~~ / ~~`docs/核价树页签组件配置指南.md`~~ / ~~`docs/核价SQL配置手册.md`~~ - ⚠️ **已合并 + 已归档**（2026-06-12 前三份合并为 `配置方法论-合并版.md`；2026-07-24 该合并版连同报价/核价配置文档进一步迁移至 `dev-docs/rule-260724-组件模板配置/`，原件全部移入 `docs/archive/`，仅作历史追溯；新引用一律指向 rule-0724 对应文件）
 - `docs/反模式.md` AP-22 - **多行数据 "X (共N项)" 显示族**（4 类共因：SQL 隐式 JOIN 失效 / 渲染层漏读 row / 视图 COALESCE 遮蔽 NULL / comparison_tag 未注册）
 - `docs/反模式.md` AP-31 - **"加载中…" 永久占位族**（修 `useDriverExpansions.ts` / `QuotationStep2.tsx` / `QuotationWizard.tsx` / `ConfigureProductService` 等写后端 `mat_*` 流程**必读**；4 类共因：fingerprint 漏维度 / pre-enrich 缓存 EMPTY_EXPANSION / invalidate 漏调 / DATA_SOURCE 渲染缺 fallback；含 PR 专项自检清单 + F12 Network 验证步骤）

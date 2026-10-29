@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071a2f"/>
+      <stop offset="1" stop-color="#123c59"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#0bbbd6"/>
+      <stop offset="1" stop-color="#4776e6"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="#03101d" flood-opacity="0.35"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#62d8eb"/>
+    </marker>
+    <style>
+      .font { font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif; }
+      .title { font: 700 52px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .subtitle { font: 400 23px 'Noto Sans SC', sans-serif; fill: #a9ccdc; }
+      .section { font: 700 26px 'Noto Sans SC', sans-serif; fill: #08233a; }
+      .cardTitle { font: 700 23px 'Noto Sans SC', sans-serif; fill: #0a2b44; }
+      .body { font: 400 19px 'Noto Sans SC', sans-serif; fill: #36556a; }
+      .small { font: 500 17px 'Noto Sans SC', sans-serif; fill: #2e566b; }
+      .whiteSmall { font: 500 18px 'Noto Sans SC', sans-serif; fill: #d9eef6; }
+      .step { font: 700 20px 'Noto Sans SC', sans-serif; fill: #fff; }
+      .stepSub { font: 400 15px 'Noto Sans SC', sans-serif; fill: #dff8ff; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="url(#bg)"/>
+  <circle cx="1450" cy="90" r="240" fill="#1c83a7" opacity="0.12"/>
+  <circle cx="130" cy="850" r="300" fill="#4776e6" opacity="0.10"/>
+
+  <text x="80" y="86" class="title">CPQ 系统一张图</text>
+  <text x="82" y="124" class="subtitle">把客户需求、工程数据、成本核算、定价审批与报价输出连接为同一条可复现业务链</text>
+
+  <!-- left input -->
+  <g filter="url(#shadow)">
+    <rect x="70" y="175" width="285" height="520" rx="28" fill="#f7fbfd"/>
+  </g>
+  <rect x="70" y="175" width="285" height="72" rx="28" fill="#dff6fa"/>
+  <rect x="70" y="219" width="285" height="28" fill="#dff6fa"/>
+  <text x="108" y="221" class="section">业务与数据输入</text>
+  <g class="font">
+    <rect x="102" y="282" width="221" height="54" rx="14" fill="#e9f7fb"/>
+    <circle cx="129" cy="309" r="13" fill="#0bbbd6"/>
+    <text x="154" y="316" class="body">客户与联系人</text>
+    <rect x="102" y="352" width="221" height="54" rx="14" fill="#edf3ff"/>
+    <circle cx="129" cy="379" r="13" fill="#4776e6"/>
+    <text x="154" y="386" class="body">产品与客户料号</text>
+    <rect x="102" y="422" width="221" height="54" rx="14" fill="#e9f7fb"/>
+    <circle cx="129" cy="449" r="13" fill="#0bbbd6"/>
+    <text x="154" y="456" class="body">BOM 与工艺路线</text>
+    <rect x="102" y="492" width="221" height="54" rx="14" fill="#edf3ff"/>
+    <circle cx="129" cy="519" r="13" fill="#4776e6"/>
+    <text x="154" y="526" class="body">材料 元素 汇率</text>
+    <rect x="102" y="562" width="221" height="54" rx="14" fill="#e9f7fb"/>
+    <circle cx="129" cy="589" r="13" fill="#0bbbd6"/>
+    <text x="154" y="596" class="body">价格与折扣策略</text>
+    <text x="102" y="653" class="small">Excel 导入 · 系统主数据</text>
+  </g>
+
+  <!-- center platform -->
+  <g filter="url(#shadow)">
+    <rect x="395" y="175" width="810" height="520" rx="28" fill="#ffffff"/>
+  </g>
+  <text x="438" y="220" class="section">配置与计算平台</text>
+  <text x="438" y="252" class="body">把专家经验沉淀为可复用、可发布、可追溯的系统规则</text>
+
+  <!-- config cards -->
+  <g>
+    <rect x="438" y="282" width="220" height="105" rx="18" fill="#e6f8fb"/>
+    <text x="464" y="323" class="cardTitle">组件中心</text>
+    <text x="464" y="356" class="small">字段 · 页签 · 数据源</text>
+    <rect x="690" y="282" width="220" height="105" rx="18" fill="#eef2ff"/>
+    <text x="716" y="323" class="cardTitle">模板中心</text>
+    <text x="716" y="356" class="small">报价 · 核价 · Excel</text>
+    <rect x="942" y="282" width="220" height="105" rx="18" fill="#e6f8fb"/>
+    <text x="968" y="323" class="cardTitle">规则与公式</text>
+    <text x="968" y="356" class="small">取数 · 计算 · 校验</text>
+  </g>
+
+  <!-- main flow -->
+  <rect x="438" y="425" width="724" height="148" rx="24" fill="#0b2941"/>
+  <text x="468" y="463" class="whiteSmall">报价与核价双闭环</text>
+  <line x1="513" y1="516" x2="1082" y2="516" stroke="#62d8eb" stroke-width="4" marker-end="url(#arrow)"/>
+  <g>
+    <circle cx="500" cy="516" r="35" fill="#0bbbd6"/>
+    <text x="500" y="512" text-anchor="middle" class="step">客户</text>
+    <text x="500" y="537" text-anchor="middle" class="stepSub">需求</text>
+    <circle cx="620" cy="516" r="35" fill="#159ec7"/>
+    <text x="620" y="512" text-anchor="middle" class="step">产品</text>
+    <text x="620" y="537" text-anchor="middle" class="stepSub">配置</text>
+    <circle cx="740" cy="516" r="35" fill="#238ac2"/>
+    <text x="740" y="512" text-anchor="middle" class="step">成本</text>
+    <text x="740" y="537" text-anchor="middle" class="stepSub">核算</text>
+    <circle cx="860" cy="516" r="35" fill="#347fca"/>
+    <text x="860" y="512" text-anchor="middle" class="step">定价</text>
+    <text x="860" y="537" text-anchor="middle" class="stepSub">利润</text>
+    <circle cx="980" cy="516" r="35" fill="#4279d5"/>
+    <text x="980" y="512" text-anchor="middle" class="step">审批</text>
+    <text x="980" y="537" text-anchor="middle" class="stepSub">协同</text>
+    <circle cx="1100" cy="516" r="35" fill="#4776e6"/>
+    <text x="1100" y="512" text-anchor="middle" class="step">报价</text>
+    <text x="1100" y="537" text-anchor="middle" class="stepSub">输出</text>
+  </g>
+
+  <rect x="438" y="606" width="724" height="52" rx="14" fill="#f2f6f9"/>
+  <text x="800" y="640" text-anchor="middle" class="small">实时计算预览 · 服务端校验 · 发布版本 · 单据快照</text>
+
+  <!-- right output -->
+  <g filter="url(#shadow)">
+    <rect x="1245" y="175" width="285" height="520" rx="28" fill="#f7fbfd"/>
+  </g>
+  <rect x="1245" y="175" width="285" height="72" rx="28" fill="#e5edff"/>
+  <rect x="1245" y="219" width="285" height="28" fill="#e5edff"/>
+  <text x="1282" y="221" class="section">业务输出</text>
+  <g>
+    <rect x="1277" y="282" width="221" height="96" rx="18" fill="#eef2ff"/>
+    <text x="1303" y="318" class="cardTitle">客户报价</text>
+    <text x="1303" y="350" class="small">页面 · PDF · Excel · 邮件</text>
+    <rect x="1277" y="400" width="221" height="96" rx="18" fill="#e9f7fb"/>
+    <text x="1303" y="436" class="cardTitle">内部决策</text>
+    <text x="1303" y="468" class="small">成本 · 利润 · 差异 · 审批</text>
+    <rect x="1277" y="518" width="221" height="96" rx="18" fill="#eef2ff"/>
+    <text x="1303" y="554" class="cardTitle">经营沉淀</text>
+    <text x="1303" y="586" class="small">版本 · 快照 · 日志 · 复盘</text>
+  </g>
+
+  <!-- arrows between zones -->
+  <line x1="355" y1="437" x2="390" y2="437" stroke="#62d8eb" stroke-width="5" marker-end="url(#arrow)"/>
+  <line x1="1205" y1="437" x2="1240" y2="437" stroke="#62d8eb" stroke-width="5" marker-end="url(#arrow)"/>
+
+  <!-- foundation -->
+  <rect x="70" y="740" width="1460" height="104" rx="25" fill="#0a263d" stroke="#2b718c" stroke-width="2"/>
+  <text x="112" y="785" class="whiteSmall">可信治理底座</text>
+  <g>
+    <rect x="310" y="765" width="240" height="52" rx="26" fill="#123e57"/>
+    <text x="430" y="798" text-anchor="middle" class="whiteSmall">角色权限与审批</text>
+    <rect x="570" y="765" width="240" height="52" rx="26" fill="#123e57"/>
+    <text x="690" y="798" text-anchor="middle" class="whiteSmall">版本与不可变快照</text>
+    <rect x="830" y="765" width="240" height="52" rx="26" fill="#123e57"/>
+    <text x="950" y="798" text-anchor="middle" class="whiteSmall">操作与变更审计</text>
+    <rect x="1090" y="765" width="320" height="52" rx="26" fill="#123e57"/>
+    <text x="1250" y="798" text-anchor="middle" class="whiteSmall">并发控制与数据一致性</text>
+  </g>
+</svg>
