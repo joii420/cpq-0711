@@ -32,8 +32,8 @@
   <circle cx="1450" cy="90" r="240" fill="#1c83a7" opacity="0.12"/>
   <circle cx="130" cy="850" r="300" fill="#4776e6" opacity="0.10"/>
 
-  <text x="80" y="86" class="title">CPQ 系统一张图</text>
-  <text x="82" y="124" class="subtitle">把客户需求、工程数据、成本核算、定价审批与报价输出连接为同一条可复现业务链</text>
+  <text x="80" y="86" class="title">CPQ 业务与能力全景图</text>
+  <text x="82" y="124" class="subtitle">连接客户需求、工程数据、成本核算、定价审批与报价输出的端到端业务闭环</text>
 
   <!-- left input -->
   <g filter="url(#shadow)">
