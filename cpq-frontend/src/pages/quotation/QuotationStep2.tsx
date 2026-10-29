@@ -62,6 +62,7 @@ import { usePagedSearch } from './usePagedSearch';
 import { highlightText } from './highlightText';
 import PagingBar from './PagingBar';
 import { formatProfitBadgeText } from './profitBadge';
+import QuotationVatSubtotal from './QuotationVatSubtotal';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -4160,10 +4161,13 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
               </div>
             </>;
           }
-          return <div className="qt-subtotal-line qt-subtotal-total">
-            <span className="qt-subtotal-label">产品小计</span>
-            <span className="qt-subtotal-value">{formatCurrency(subtotal)}</span>
-          </div>;
+          return <QuotationVatSubtotal
+            subtotal={subtotal}
+            currency={quoteCurrency || 'CNY'}
+            vatRateRatio={item.vatRateRatio}
+            vatRate={item.vatRate}
+            maxDisplayDecimals={maxDisplayDecimals}
+          />;
         })()}
       </div>
       </>

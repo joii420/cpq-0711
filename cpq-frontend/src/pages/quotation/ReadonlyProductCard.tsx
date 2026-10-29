@@ -38,6 +38,7 @@ import {
   materializeReadonlySnapshotInputs,
 } from './readonlySnapshotRows';
 import { formatProfitBadgeText } from './profitBadge';
+import QuotationVatSubtotal from './QuotationVatSubtotal';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -1237,13 +1238,13 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
               maxDisplayDecimals,
             }) ?? '0'} {quoteCurrency}</span>
           </div>
-        </> : <div className="qt-subtotal-line qt-subtotal-total">
-          <span className="qt-subtotal-label">产品小计</span>
-          <span className="qt-subtotal-value">{formatNumber(
-            toDecimal(productSubtotal ?? (lineItem.subtotal ?? '0')).toString(),
-            { isComputed: true, maxDisplayDecimals },
-          ) ?? '0'} {quoteCurrency}</span>
-        </div>}
+        </> : <QuotationVatSubtotal
+          subtotal={productSubtotal ?? (lineItem.subtotal ?? '0')}
+          currency={quoteCurrency}
+          vatRateRatio={lineItem.vatRateRatio}
+          vatRate={lineItem.vatRate}
+          maxDisplayDecimals={maxDisplayDecimals}
+        />}
       </div>
     </div>
   );
