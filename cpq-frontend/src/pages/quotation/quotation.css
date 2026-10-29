@@ -336,6 +336,54 @@
   font-weight: 700;
 }
 
+/* Quote-only subtotal presentation shared by edit and readonly cards. */
+.qt-subtotal-quote-lines {
+  width: 100%;
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.qt-subtotal-quote-line {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.qt-subtotal-quote-value {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  text-align: right;
+  -webkit-overflow-scrolling: touch;
+}
+
+.qt-subtotal-vat-line {
+  margin-top: 5px;
+  align-items: baseline;
+}
+
+.qt-subtotal-vat-content {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  text-align: right;
+  -webkit-overflow-scrolling: touch;
+}
+
+.qt-subtotal-vat-prefix {
+  font-size: 14px;
+  font-weight: 600;
+  opacity: 0.82;
+}
+
+.qt-subtotal-vat-value {
+  font-size: 19px;
+  font-weight: 700;
+  opacity: 0.94;
+}
+
 .qt-subtotal-row {
   background: #f0f7ff;
   font-weight: 600;
