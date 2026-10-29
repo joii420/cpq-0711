@@ -1,8 +1,8 @@
 # 独立测试代理报告
 
-> 执行日期：2026-10-28  
-> 分支：`feat/task-261028-quote-card-vat-total`  
-> worktree：`/home/joii/project/cpq/.claude/worktrees/task-261028-quote-card-vat-total`  
+> 执行日期：2026-10-28
+> 分支：`feat/task-261028-quote-card-vat-total`
+> worktree：`/home/joii/project/cpq/.claude/worktrees/task-261028-quote-card-vat-total`
 > Browser 分类：**Browser plugin not available**；已按规范改用仓库 Playwright + 系统 Chrome 通道。本轮只做 Playwright 用例发现/装载，未连接服务。
 
 ## 1. 独立性与边界
