@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>定稿候选·只读与边界态</title><link rel="stylesheet" href="prototype.css"></head>
+<body><main class="page">
+<section class="panel pad"><h1>定稿候选 · 只读与边界态</h1><div class="muted">ReadonlyProductCard 的报价侧；核价侧不受影响</div><span class="tag orange">待确认</span><span class="tag gray">无删除入口</span></section>
+<section class="panel pad"><h2>详情页默认态</h2><div class="quote-canvas"><div class="quote-card">
+<div class="quote-head"><div class="quote-head-left"><span class="badge sku">客户产品编号: W003374021711</span><span class="badge sku">单位: g</span><span class="badge vat">VAT 13% · 产品税务分类</span><span class="badge profit">利润: -</span></div><div class="quote-head-right"><span class="product-name">料号1</span><span class="badge part">销售料号: S3120011203</span></div></div>
+<div class="quote-tabs"><span class="quote-tab active">产品</span><span class="quote-tab">物料</span><span class="quote-tab">材料成本</span><span class="quote-tab">其他费用</span></div>
+<table class="quote-table"><thead><tr><th>销售料号</th><th>品名</th><th>规格</th><th class="num">税率</th><th class="num">管理费</th></tr></thead><tbody><tr><td>S3120011203</td><td>料号1</td><td>Φ50</td><td class="num">0.13</td><td class="num">10.6455374</td></tr></tbody></table>
+<div class="summary vat-prefix"><div class="summary-inner"><div class="primary"><span class="summary-value">1717.135540717 USD</span></div><div class="vat-line"><span class="vat-mark">(VAT)</span><span class="vat-amount">1940.36316101 USD</span></div></div></div>
+</div></div></section>
+<section class="panel pad"><h2>边界、错误降级与最长值</h2><div class="state-grid">
+<div class="state-card"><h3>VAT 0%</h3><div class="muted small">第二行与第一行相等</div><div class="state-summary summary vat-prefix"><div class="summary-inner"><div class="primary"><span class="summary-value">1717.135540717 USD</span></div><div class="vat-line"><span class="vat-mark">(VAT)</span><span class="vat-amount">1717.135540717 USD</span></div></div></div></div>
+<div class="state-card"><h3>税率缺失 / 非法</h3><div class="muted small">税前仍显示，含税值不伪造</div><div class="state-summary summary vat-prefix"><div class="summary-inner"><div class="primary"><span class="summary-value">1717.135540717 USD</span></div><div class="vat-line"><span class="vat-mark">(VAT)</span><span class="vat-amount bad">-</span></div></div></div></div>
+<div class="state-card"><h3>长金额 + 长币种</h3><div class="muted small">数值内部不断行</div><div class="state-summary summary vat-prefix"><div class="summary-inner"><div class="primary"><span class="summary-value">99999999999999.999999999 USDT</span></div><div class="vat-line"><span class="vat-mark">(VAT)</span><span class="vat-amount">199999999998999.999999999 USDT</span></div></div></div></div>
+</div><div class="alert"><b>纯展示区不适用禁用态；</b>税率异常时只将第二行降级为 <code>(VAT) -</code>，不影响卡片其他区域。</div><p><a href="index.html">← 返回原型导航</a></p></section>
+</main></body></html>

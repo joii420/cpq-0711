@@ -21,7 +21,7 @@
 ### 新立项（2026-10-28）
 | 任务 | 状态 | 入口文档 |
 |---|---|---|
-| `task-260801-公式计算精度优化/task-261028-报价卡片含税总计展示/` | 🟠 **立项 · A0 布局方案待裁决**（移除“产品小计”；税前价下方增加按冻结 VAT 计算的税后价；纯展示不落库） | `需求文档.md`、`原型图/index.html`；关联 `BL-0332` |
+| `task-260801-公式计算精度优化/task-261028-报价卡片含税总计展示/` | 🟠 **立项 · A0 定稿候选待确认**（两行均无价格名称；第二行仅以 `(VAT)` 前缀标识含税价；纯展示不落库） | `需求文档.md`、`原型图/index.html`；关联 `BL-0332` |
 
 ### 新立项（2026-10-26）
 | 任务 | 状态 | 入口文档 |
@@ -461,7 +461,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | ├ `repair-260809-4位截断残留两处/` | 上条清扫的**漏网点**（由 repair-0808 对拍暴露，`BL-0159`）：①`CardSnapshotService:4078` 给 `__amount_total__` 中间键做 `setScale(4)` —— 同语义的另两个登记点（`ConfigureSnapshotService:1477` / `ComponentDataEffectiveRows:216`）和前端都不截断；②`MaterialVersionUpgradeService:388` 写 `q.totalAmount` 用 `setScale(4)`，同字段另一写点 `QuotationService:894` 已是 `PrecisionPolicy.round()`（6 位）。**同一语义后端内部就三分之二实现是对的 → 漏改而非设计** | ⏸️ **被 task-0810 吸收，旧 6 位目标不再单独进场** | `CardSnapshotService.java:4078` `MaterialVersionUpgradeService.java:388` |
 | ├ `task-260810-公式计算12位显示9位/` | 精度契约升级：后端 BigDecimal、前端 Decimal.js Decimal，精度链禁止 Double/JS number；公式节点/快照/持久化保留 12 位，最终显示最多 9 位；decimal string 无损传输；扩 21 个计算金额列；吸收 `BL-0159/0160` | ✅ **已交付 master `df592eab`**（2026-08-11；exact-5 5/5；任务关键 37/37；TC-077 环境 BLOCKED） | `PrecisionPolicy.java` `FormulaCalculator.java` `precision.ts` `formulaEngine.ts` |
 | ├ `task-261027-报价结果按角色显示精度/` | 保留 12 位计算/保存契约，仅在报价最终呈现边界按当前角色将计算结果限制为最多 4/9 位；页面与 HTML/PDF/Excel/邮件同口径，原始输入/基础属性不受影响 | ✅ **已交付 · 用户验收通过（2026-10-28）**（已合并 master `7d9f0a11`；已部署 `2026102702`；`BL-0331`） | `precision.ts` `formatNumber.ts` `NumberFormatUtil.java` `QuotationExportService.java` |
-| ├ `task-261028-报价卡片含税总计展示/` | 报价卡片底部移除“产品小计”，保留税前价并在下方展示按行 VAT 快照派生的税后价；延续角色 4/9 位口径，不落库 | 🟠 **立项 · A0 原型方案待裁决**（`BL-0332`） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `quotation.css` |
+| ├ `task-261028-报价卡片含税总计展示/` | 报价卡片底部移除“产品小计”，第一行只显示税前金额，第二行以 `(VAT)` 前缀展示按行 VAT 快照派生的含税金额；延续角色 4/9 位口径，不落库 | 🟠 **立项 · A0 定稿候选待确认**（`BL-0332`） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `quotation.css` |
 | ├ `repair-260811-输入值原样与结果精度分层/` | **由子任务 `task-0810` 引入**（2026-08-13 按「两层上限」规则从 `task-0810/` 下平铺至此）。修正 task-0810 动态数值分类：INPUT_TEXT/INPUT_NUMBER 保留当前单元格原值；公式过程 12 位、结果 9 位；产品卡片小计与报价总额拆为独立精度变量，预留系统参数入口；闭合 `BL-0162` | ✅ **已交付，AC-1~AC-12 准入**（2026-08-11；真实 PUT/DB/GET；N=2/2N=4 元数据 SQL 均 1；Playwright 旧客户 fixture 环境阻塞） | `DecimalRequestValidator.java` `PrecisionPolicy.java` `losslessJson.ts` `precision.ts` |
 | └ `repair-260812-对账阈值与结果尺度不对称致误报/` | **由子任务 `task-0810` 引入**（目录按「主任务下只挂一层子目录」规则平铺在 `task-0801/` 下，不嵌进 task-0810）。**回归**：前端拿 12 位工作值（`toCalculationString`）去比后端 9 位结果值（`roundFormulaResult`），容差却写死 `1e-12` —— 比两侧结构性差距上界 `5e-10` **小 500 倍** ⇒ 凡第 10~12 位非零的公式列**必然**报「前后端算值不一致」，且**永不消解**（改多少次还是 12 位 vs 9 位）→ 提交闸门 409 卡死，只能重启后端绕过。病根是 **FR-12 规格自相矛盾**（要求按 12 位判定，而后端从不产出 12 位 `formulaResults`）。**数据/显示/导出全对，纯判定层缺陷** | ✅ **已交付合 master**（2026-08-13）。修法＝`valuesReconcile` 比较前两侧按 `formatFormulaResult` 归一到 9 位，容差参数不动；**判定用归一值、展示与上报仍用原始 12 位**（真出分歧时靠第 10~12 位排查）。后端零改动、契约零变更、不改数。**唯一鉴别力证据＝单测级 A/B**（还原修复→TC-01 等 4 条 fail，用的是故障单真实值 `63.211125158028` vs `63.211125158`）。✅ **AC-1/AC-2 已由用户闸门 B 真机验收通过**（主线 harness 无效：未切到物料页签，首次假绿已被 A/B 自查推翻并删除脚本）；AC-5 未验证、**AC-3 阳性能力 BLOCKED**（`BL-0167` 种子缺失）。配套：FR-12 作废改写 + E2E TC-076 重写 + 新增 TC-076b。教训 → `AP-64`/`AP-65` | `QuotationStep2.tsx:2744`（`valuesReconcile`） `formulaEngine.ts:827`（容差） `FormulaCalculator.java:1113,1244` |
 | `task-260801-页签连表公式配置优化/` | 连表公式抽屉改版（左右分栏 / 括号配对可视化 / 试算） | ✅ 已交付 | `TabJoinFormulaDrawer.tsx` `TabFieldMatrix.tsx` |
