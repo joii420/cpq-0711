@@ -18,6 +18,11 @@
 
 ## 0.0 当前项目态势（新 Agent 进场先读这一节）⏱️
 
+### 新立项（2026-10-30）
+| 任务 | 状态 | 入口文档 |
+|---|---|---|
+| `task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/` | 🔧 **开发中 · 闸门 A 已放行**（2026-10-30；路径 A 标准档；无 A0 岔路；后端零改动；分支 `feat/task-261030-costing-card-subtotal`） | `需求文档.md`、`fronttask.md`、`backtask.md`、`api.md`、`test.md`、`原型图/index.html`；关联 `BL-0334`、`BL-0332` |
+
 ### 新立项（2026-10-28）
 | 任务 | 状态 | 入口文档 |
 |---|---|---|
@@ -150,6 +155,7 @@
 
 | 分支 | worktree | 领先 master | 状态 |
 |---|---|---|---|
+| `feat/task-261030-costing-card-subtotal` | `.claude/worktrees/task-261030-costing-card-subtotal` | 0 笔（2026-10-30 闸门 A 放行后新建） | 🔧 **开发中**（`task-261030-核价卡片小计展示调整` / `BL-0334`）；合并并删分支后移除本行 |
 | `feat/task-261013-template-customer-many` / `...-backend` / `...-frontend` / `...-tests` | `.claude/worktrees/task-261013-template-customer-many*` | 0 笔（已合入 master `d1c48339`） | ✅ **已交付 · 用户验收通过（2026-10-14）**；分支/worktree 按规则保留，待用户后续回收 |
 | `feat/task-260923-search-enter-production` | 已合入 master `ffd01987` | 分支实体保留 | ✅ **已结案（闸门 B 2026-09-26 用户验收通过）**（`task-260825/task-260923-单内搜索回车触发与生产料号`）；前端实现 + S-1/S-2/S-3 证据已齐 |
 | `feat/task-260922-partno-production-search` | `.claude/worktrees/task-260922-partno-production-search` | **已全部并入**（合并提交 `30f2641b`，分支 tip `2be72b06`） | ✅ **已交付（闸门 B 2026-09-22 用户验收通过）**；worktree 已移除（先 unlink `node_modules` 软链，再 `--force` 连带删除 25 个与本任务证据逐字节相同的重复截图，用户批准）；**分支实体待用户执行 `git branch -d feat/task-260922-partno-production-search`** |
@@ -232,6 +238,7 @@
 - **未完成区优先级**：**P0 × 4** · P1 × 39 · P2 × 89
 - **已完成区 42 条**
 - **2026-09-22 复数**（按 `docs/BACKLOG.md` 行首状态标记计，HEAD `462488f9`；`task-260920` 登记 `BL-0313`~`BL-0316` 之后）：`- [ ]` **125** · `- [~]` **3** · `- [x]` **15** · `- [-]` **1** —— 上面 08-09 的分类口径（`TODO` / `待开发` …）已不适用于现行条目格式
+- **2026-10-30 复数**（同口径，行首状态标记；`task-261030` 登记 `BL-0334` 之后，含工作区内他会话未提交的 `BL-0333`）：`- [ ]` **132** · `- [~]` **8** · `- [x]` **20** · `- [-]` **1**
 > ⚠️ 计数为**近似值** —— BACKLOG 的状态行有 16 种写法（`TODO` / `待开发` / `[x]` / `✅` / `已修` …），无法精确机器统计。**权威口径以 `BACKLOG.md` 原文为准**。
 
 ### 刷新本节
@@ -461,6 +468,7 @@ done | sort | cut -d'|' -f1 | uniq -c | sort -rn | awk '$1>=4'
 | ├ `repair-260809-4位截断残留两处/` | 上条清扫的**漏网点**（由 repair-0808 对拍暴露，`BL-0159`）：①`CardSnapshotService:4078` 给 `__amount_total__` 中间键做 `setScale(4)` —— 同语义的另两个登记点（`ConfigureSnapshotService:1477` / `ComponentDataEffectiveRows:216`）和前端都不截断；②`MaterialVersionUpgradeService:388` 写 `q.totalAmount` 用 `setScale(4)`，同字段另一写点 `QuotationService:894` 已是 `PrecisionPolicy.round()`（6 位）。**同一语义后端内部就三分之二实现是对的 → 漏改而非设计** | ⏸️ **被 task-0810 吸收，旧 6 位目标不再单独进场** | `CardSnapshotService.java:4078` `MaterialVersionUpgradeService.java:388` |
 | ├ `task-260810-公式计算12位显示9位/` | 精度契约升级：后端 BigDecimal、前端 Decimal.js Decimal，精度链禁止 Double/JS number；公式节点/快照/持久化保留 12 位，最终显示最多 9 位；decimal string 无损传输；扩 21 个计算金额列；吸收 `BL-0159/0160` | ✅ **已交付 master `df592eab`**（2026-08-11；exact-5 5/5；任务关键 37/37；TC-077 环境 BLOCKED） | `PrecisionPolicy.java` `FormulaCalculator.java` `precision.ts` `formulaEngine.ts` |
 | ├ `task-261027-报价结果按角色显示精度/` | 保留 12 位计算/保存契约，仅在报价最终呈现边界按当前角色将计算结果限制为最多 4/9 位；页面与 HTML/PDF/Excel/邮件同口径，原始输入/基础属性不受影响 | ✅ **已交付 · 用户验收通过（2026-10-28）**（已合并 master `7d9f0a11`；已部署 `2026102702`；`BL-0331`） | `precision.ts` `formatNumber.ts` `NumberFormatUtil.java` `QuotationExportService.java` |
+| ├ `task-261030-核价卡片小计展示调整/` | 核价卡片底部金额区：无核价数据显示 `-`（修详情页串报价侧小计）、去「产品小计/外币小计」字样、币种缩写在后不用 `¥`、左列 CNY 右列报价币种 × 上行税前下行 `(VAT)`、报价币种 CNY 只留一列 | 🔧 **开发中 · 闸门 A 已放行**（2026-10-30；`BL-0334`） | `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `QuotationVatSubtotal.tsx` `quotation.css` |
 | ├ `task-261028-报价卡片含税总计展示/` | 报价卡片底部移除“产品小计”，第一行只显示税前金额，第二行以 `(VAT)` 前缀展示按行 VAT 快照派生的含税金额；延续角色 4/9 位口径，不落库 | 🟡 **已合并 master `96cc0241` · 已打包 `2026102901` · 待部署亲验**（2026-10-29；`BL-0332`） | `QuotationVatSubtotal.tsx` `QuotationStep2.tsx` `ReadonlyProductCard.tsx` `quotation.css` |
 | ├ `repair-260811-输入值原样与结果精度分层/` | **由子任务 `task-0810` 引入**（2026-08-13 按「两层上限」规则从 `task-0810/` 下平铺至此）。修正 task-0810 动态数值分类：INPUT_TEXT/INPUT_NUMBER 保留当前单元格原值；公式过程 12 位、结果 9 位；产品卡片小计与报价总额拆为独立精度变量，预留系统参数入口；闭合 `BL-0162` | ✅ **已交付，AC-1~AC-12 准入**（2026-08-11；真实 PUT/DB/GET；N=2/2N=4 元数据 SQL 均 1；Playwright 旧客户 fixture 环境阻塞） | `DecimalRequestValidator.java` `PrecisionPolicy.java` `losslessJson.ts` `precision.ts` |
 | └ `repair-260812-对账阈值与结果尺度不对称致误报/` | **由子任务 `task-0810` 引入**（目录按「主任务下只挂一层子目录」规则平铺在 `task-0801/` 下，不嵌进 task-0810）。**回归**：前端拿 12 位工作值（`toCalculationString`）去比后端 9 位结果值（`roundFormulaResult`），容差却写死 `1e-12` —— 比两侧结构性差距上界 `5e-10` **小 500 倍** ⇒ 凡第 10~12 位非零的公式列**必然**报「前后端算值不一致」，且**永不消解**（改多少次还是 12 位 vs 9 位）→ 提交闸门 409 卡死，只能重启后端绕过。病根是 **FR-12 规格自相矛盾**（要求按 12 位判定，而后端从不产出 12 位 `formulaResults`）。**数据/显示/导出全对，纯判定层缺陷** | ✅ **已交付合 master**（2026-08-13）。修法＝`valuesReconcile` 比较前两侧按 `formatFormulaResult` 归一到 9 位，容差参数不动；**判定用归一值、展示与上报仍用原始 12 位**（真出分歧时靠第 10~12 位排查）。后端零改动、契约零变更、不改数。**唯一鉴别力证据＝单测级 A/B**（还原修复→TC-01 等 4 条 fail，用的是故障单真实值 `63.211125158028` vs `63.211125158`）。✅ **AC-1/AC-2 已由用户闸门 B 真机验收通过**（主线 harness 无效：未切到物料页签，首次假绿已被 A/B 自查推翻并删除脚本）；AC-5 未验证、**AC-3 阳性能力 BLOCKED**（`BL-0167` 种子缺失）。配套：FR-12 作废改写 + E2E TC-076 重写 + 新增 TC-076b。教训 → `AP-64`/`AP-65` | `QuotationStep2.tsx:2744`（`valuesReconcile`） `formulaEngine.ts:827`（容差） `FormulaCalculator.java:1113,1244` |

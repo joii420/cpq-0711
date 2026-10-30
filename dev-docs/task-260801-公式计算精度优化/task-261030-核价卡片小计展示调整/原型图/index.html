@@ -1,0 +1,13 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>核价卡片金额区·原型导航</title><link rel="stylesheet" href="prototype.css"></head><body><main class="page">
+<section class="panel pad"><h1>📌 当前基准 · 核价卡片金额区</h1><div class="muted">task-261030-核价卡片小计展示调整 · 2026-10-30 · 路径 A 标准档 · BL-0334</div><span class="tag">待闸门 A 定稿</span><span class="tag gray">编辑态 + 只读态</span><span class="tag orange">只管核价侧</span><div class="alert"><b>口径（用户 2026-10-30 澄清定稿）：</b>左右分币种（左 CNY、右报价币种）、上下分含税（上税前、下 <code>(VAT)</code>）；去掉「产品小计」「外币小计」字样；金额文字统一白色（外币列不再用蓝色）；币种缩写放金额后、不用 <code>¥</code>；报价币种为 CNY 只留一列；没有核价数据显示 <code>-</code>。</div><div class="alert warn"><b>与报价侧基准的关系：</b>报价侧金额区仍以 <code>../../task-261028-报价卡片含税总计展示/原型图/05、06</code> 为当前基准，本原型不覆盖它；它页内「核价侧两行小计 · 现状保留」一句将在本任务收尾时补偏差说明。</div></section>
+<section class="panel pad"><h2>基准页</h2><div class="nav"><a href="01-核价编辑态.html"><b>📌 编辑态</b><span>夹具 C 默认态（2 列 × 2 行）、报价币种 CNY、4 位角色、改造前对照。</span></a><a href="02-核价只读与边界态.html"><b>📌 只读与边界态</b><span>详情默认态、三种「没有核价数据」、VAT 0% / 缺失、长金额、390 宽窄屏。</span></a></div></section>
+<section class="panel pad"><h2>已经实查的口径</h2><table class="facts"><thead><tr><th>项</th><th>值 / 行为</th></tr></thead><tbody>
+<tr><td>夹具 C</td><td>报价币种 <code>USD</code>、汇率 <code>7.1234</code>、行 VAT ratio <code>0.13</code>、核价小计 <code>1717.135540717</code> CNY、报价小计 <code>888.123456789</code></td></tr>
+<tr><td>CNY 列</td><td><code>1717.135540717 CNY</code> / <code>(VAT) 1940.36316101 CNY</code>（<code>× 1.13 = 1940.36316101021</code>）</td></tr>
+<tr><td>外币列</td><td><code>241.055611185 USD</code> / <code>(VAT) 272.392840639 USD</code>（CNY 金额 ÷ 7.1234，先进 12 位工作值）</td></tr>
+<tr><td>销售角色（4 位）</td><td><code>1717.1355 CNY</code> / <code>(VAT) 1940.3632 CNY</code>；<code>241.0556 USD</code> / <code>(VAT) 272.3928 USD</code></td></tr>
+<tr><td>串值根因</td><td>报价行只有一个 <code>subtotal</code> 字段（报价侧）；详情页核价组件为空时计算退回读它，金额区又在任何状态下都渲染</td></tr>
+<tr><td>保存 / 后端</td><td>不新增字段、不落库、不改 API；只在最终展示边界派生</td></tr>
+</tbody></table></section>
+<section class="panel pad"><h2>本原型接管与不接管的区域</h2><div class="scope"><div><b>✅ 本次原型定义</b><ul><li>核价卡片底部紫色金额区的列、行、文案、币种写法</li><li>编辑态与只读态同口径</li><li>无核价数据 / 缺税率 / 0% / 长金额 / 窄屏</li></ul></div><div><b>🚫 现状保留，不在本期改</b><ul><li>卡片头部、页签、表格、行小计与页签合计</li><li>报价侧金额区（task-261028 基准）</li><li>编辑页「未绑定核价模板」整页提示、生成失败告警卡</li><li>核价管理页「核价单据总价：¥…」</li><li>Excel 视图、比对视图、导出</li></ul></div></div></section>
+</main></body></html>

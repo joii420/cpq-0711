@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>核价卡片金额区·编辑态</title><link rel="stylesheet" href="prototype.css"></head>
+<body><main class="page">
+<section class="panel pad"><h1>📌 当前基准 · 核价卡片金额区 · 编辑态</h1><div class="muted">报价单编辑页 → 第 2 步 →「核价单 · 产品卡片」；QuotationStep2 的 COSTING 分支</div><span class="tag">待闸门 A 定稿</span><span class="tag gray">夹具 C：报价币种 USD · 汇率 7.1234 · VAT 13% · 核价小计 1717.135540717 CNY</span></section>
+
+<section class="panel pad"><h2>默认态（系统管理员，最多 9 位）</h2><div class="quote-canvas"><div class="quote-card">
+<div class="quote-head"><div class="quote-head-left"><span class="badge sku">客户产品编号: W003374021711</span><span class="badge sku">单位: g</span><span class="badge vat">VAT 13% · 产品税务分类</span></div><div class="quote-head-right"><span class="product-name">料号1</span><span class="badge part">销售料号: S3120011203</span><span class="delete">🗑</span></div></div>
+<div class="quote-tabs"><span class="quote-tab active">物料BOM</span><span class="quote-tab">来料固定加工费</span><span class="quote-tab">组装加工费</span></div>
+<table class="quote-table"><thead><tr><th>料号</th><th>材料名</th><th>单位</th><th class="num">用量</th><th class="num">材料成本</th></tr></thead><tbody><tr><td>00144</td><td>H85</td><td>g/pcs</td><td class="num">2.365</td><td class="num">1717.135540717</td></tr></tbody></table>
+<div class="cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">1717.135540717 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">1940.36316101 CNY</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">241.055611185 USD</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">272.392840639 USD</span></span></div>
+</div></div></div>
+</div></div>
+<div class="mark-row">左列 CNY、右列报价币种；每列上行税前、下行 <code>(VAT)</code> 含税；金额文字统一白色。无「产品小计」「外币小计」字样，无 <code>¥</code>。卡片头部、页签、表格均为现状，本期不改。</div>
+</section>
+
+<section class="panel pad"><h2>其他状态</h2><div class="state-grid">
+<div class="state-card"><h3>报价币种为 CNY</h3><div class="muted small">只留 CNY 一列（币种为空同此）</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">1717.135540717 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">1940.36316101 CNY</span></span></div>
+</div></div></div></div>
+<div class="state-card"><h3>销售代表 / 销售经理（最多 4 位）</h3><div class="muted small">HALF_UP 后去尾零</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">1717.1355 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">1940.3632 CNY</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">241.0556 USD</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">272.3928 USD</span></span></div>
+</div></div></div></div>
+<div class="state-card"><h3>改造前（将被替换，仅作对照）</h3><div class="muted small">现状：两行带字样，CNY 币种在前</div><div class="state-summary summary"><div class="summary-inner"><div class="summary-row"><span class="summary-label">产品小计</span><span class="summary-value">CNY 1717.135540717</span></div><div class="summary-row taxed"><span class="summary-label">外币小计</span><span class="summary-value" style="color:#1677ff">241.055611185 USD</span></div></div></div></div>
+</div>
+<div class="alert"><b>编辑页的「没有核价数据」：</b>未绑定核价模板时整页显示「该报价单未绑定核价模板」提示、不渲染卡片；核价数据生成失败时整张卡片被告警替换、金额区不渲染。两者均维持现状，所以编辑页不出现 <code>-</code> 态 —— 该态见 <a href="02-核价只读与边界态.html">只读与边界态</a>。</div>
+<p><a href="index.html">← 返回原型导航</a></p></section>
+</main></body></html>

@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>核价卡片金额区·只读与边界态</title><link rel="stylesheet" href="prototype.css"></head>
+<body><main class="page">
+<section class="panel pad"><h1>📌 当前基准 · 核价卡片金额区 · 只读与边界态</h1><div class="muted">报价详情页 / 核价管理页 →「核价单 · 产品卡片」；ReadonlyProductCard 的 COSTING 分支</div><span class="tag">待闸门 A 定稿</span><span class="tag gray">无删除入口</span></section>
+
+<section class="panel pad"><h2>详情页默认态（夹具 C，系统管理员）</h2><div class="quote-canvas"><div class="quote-card">
+<div class="quote-head"><div class="quote-head-left"><span class="badge sku">客户产品编号: W003374021711</span><span class="badge sku">单位: g</span><span class="badge vat">VAT 13% · 产品税务分类</span></div><div class="quote-head-right"><span class="product-name">料号1</span><span class="badge part">销售料号: S3120011203</span></div></div>
+<div class="quote-tabs"><span class="quote-tab active">物料BOM</span><span class="quote-tab">来料固定加工费</span><span class="quote-tab">组装加工费</span></div>
+<table class="quote-table"><thead><tr><th>料号</th><th>材料名</th><th>单位</th><th class="num">用量</th><th class="num">材料成本</th></tr></thead><tbody><tr><td>00144</td><td>H85</td><td>g/pcs</td><td class="num">2.365</td><td class="num">1717.135540717</td></tr></tbody></table>
+<div class="cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">1717.135540717 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">1940.36316101 CNY</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">241.055611185 USD</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">272.392840639 USD</span></span></div>
+</div></div></div>
+</div></div></section>
+
+<section class="panel pad"><h2>没有核价数据：一律 <code>-</code>，不再显示报价侧金额</h2>
+<div class="state-grid">
+<div class="state-card"><h3>无核价结构</h3><div class="muted small">卡片主体：暂无组件数据</div><div class="quote-table" style="margin-top:10px;border:1px dashed #d9d9d9;padding:14px;text-align:center;color:#999">暂无组件数据</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col empty"><span class="cost-main">-</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">-</span></span></div>
+</div></div></div></div>
+<div class="state-card"><h3>核价数据生成失败</h3><div class="muted small">卡片主体：红字失败提示</div><div style="margin-top:10px;border:1px dashed #ffccc7;padding:14px;text-align:center;color:#cf1322;background:#fff2f0;border-radius:4px">核价数据生成失败：页签 $view 执行报错</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col empty"><span class="cost-main">-</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">-</span></span></div>
+</div></div></div></div>
+<div class="state-card"><h3>组件结构加载中</h3><div class="muted small">卡片主体：加载组件结构...</div><div style="margin-top:10px;padding:14px;text-align:center;color:#999">加载组件结构...</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col empty"><span class="cost-main">-</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">-</span></span></div>
+</div></div></div></div>
+</div>
+<div class="alert warn"><b>改造前：</b>上面三种状态的金额区会显示该行<b>报价侧</b>产品小计（如 <code>¥ 888.123456789</code> / <code>124.676903837 USD</code>），用户会误当成核价金额。改造后只显示一列 <code>-</code> / <code>(VAT) -</code>，不带任何币种。</div>
+</section>
+
+<section class="panel pad"><h2>税率边界与最长值</h2><div class="state-grid">
+<div class="state-card"><h3>VAT 0%</h3><div class="muted small">每列下行等于上行</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">1717.135540717 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">1717.135540717 CNY</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">241.055611185 USD</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">241.055611185 USD</span></span></div>
+</div></div></div></div>
+<div class="state-card"><h3>税率缺失 / 非法</h3><div class="muted small">税前照常，含税不伪造</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">1717.135540717 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">-</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">241.055611185 USD</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">-</span></span></div>
+</div></div></div></div>
+<div class="state-card"><h3>长金额 + 长币种（1280 宽）</h3><div class="muted small">汇率 0.5 · VAT 0.99999999999 · USDT；数值内部不断行</div><div class="state-summary cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">99999999999999.999999999 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">199999999998999.999999998 CNY</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">199999999999999.999999998 USDT</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">399999999997999.999999996 USDT</span></span></div>
+</div></div></div></div>
+</div></section>
+
+<section class="panel pad"><h2>窄屏（390 宽）：放不下两列时第二列整列换行，CNY 在上</h2>
+<div class="narrow-frame"><div class="cost-summary"><div class="summary-inner"><div class="cost-grid">
+  <div class="cost-col"><span class="cost-main">99999999999999.999999999 CNY</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">199999999998999.999999998 CNY</span></span></div>
+  <div class="cost-col fx"><span class="cost-main">199999999999999.999999998 USDT</span><span class="cost-vat"><span class="vat-mark">(VAT)</span><span class="vat-amount">399999999997999.999999996 USDT</span></span></div>
+</div></div></div></div>
+<div class="alert"><b>纯展示区不适用禁用态；</b>没有按钮或输入控件。缺数据 / 缺税率是它的降级态，显示 <code>-</code>，不出红色遮罩。数值放不下时在本行内横向滚动，不拆行、不撑破页面。</div>
+<p><a href="index.html">← 返回原型导航</a></p></section>
+</main></body></html>
