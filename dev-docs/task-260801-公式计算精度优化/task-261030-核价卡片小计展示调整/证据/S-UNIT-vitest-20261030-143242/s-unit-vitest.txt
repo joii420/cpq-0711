@@ -1,0 +1,58 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90m/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend[39m
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-01 / AC-2 夹具 C 按 'SALES_REP / SALES_MANAGER（最多 4 位）' 显示
+[22m[39m[T261030_COST_][T-01 limit=4] roots=1 columns=[{"currency":"CNY","lines":["1717.1355 CNY","(VAT) 1940.3632 CNY"]},{"currency":"USD","lines":["241.0556 USD","(VAT) 272.3928 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-01 / AC-2 夹具 C 按 'PRICING_MANAGER / SYSTEM_ADMIN（最多 9 位…' 显示
+[22m[39m[T261030_COST_][T-01 limit=9] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) 272.392840639 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-01 / AC-2 超出 JS 安全整数的小计在 9 位下仍逐位精确（派生值不经 number）
+[22m[39m[T261030_COST_][T-01 big limit=9] roots=1 columns=[{"currency":"CNY","lines":["9007199254740993.000000001 CNY","(VAT) 10178135157857322.090000001 CNY"]},{"currency":"USD","lines":["4503599627370496.500000001 USD","(VAT) 5089067578928661.045000001 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-01 / AC-2 超出 JS 安全整数的小计在 4 位下仍逐位精确（派生值不经 number）
+[22m[39m[T261030_COST_][T-01 big limit=4] roots=1 columns=[{"currency":"CNY","lines":["9007199254740993 CNY","(VAT) 10178135157857322.09 CNY"]},{"currency":"USD","lines":["4503599627370496.5 USD","(VAT) 5089067578928661.045 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '① vatRateRatio="0" → 两列第二行等于第一行'
+[22m[39m[T261030_COST_][T-02 ① vatRateRatio="0" → 两列第二行等于第一行] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1717.135540717 CNY"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) 241.055611185 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '② 无 vatRateRatio、vatRate="13" → 同 AC-1'
+[22m[39m[T261030_COST_][T-02 ② 无 vatRateRatio、vatRate="13" → 同 AC-1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) 272.392840639 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '② 变体：vatRateRatio=null、vatRate="13" →…'
+[22m[39m[T261030_COST_][T-02 ② 变体：vatRateRatio=null、vatRate="13" → 同 AC-1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) 272.392840639 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '③ vatRateRatio="0.13"、vatRate="5" → r…'
+[22m[39m[T261030_COST_][T-02 ③ vatRateRatio="0.13"、vatRate="5" → ratio 优先，仍同 AC-1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) 272.392840639 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '边界（由「大于 1 → -」推出）：vatRateRatio="1" 为合…'
+[22m[39m[T261030_COST_][T-02 边界（由「大于 1 → -」推出）：vatRateRatio="1" 为合法上界] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 3434.271081434 CNY"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) 482.11122237 USD"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '④ 两字段都缺失（undefined）'
+[22m[39m[T261030_COST_][T-02 ④ 两字段都缺失（undefined）] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) -"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '④ 两字段都缺失（null）'
+[22m[39m[T261030_COST_][T-02 ④ 两字段都缺失（null）] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) -"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '④ ratio 非数字（无 vatRate）'
+[22m[39m[T261030_COST_][T-02 ④ ratio 非数字（无 vatRate）] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) -"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '④ ratio 非数字且 vatRate="13" 存在 → 不回退（仅缺…'
+[22m[39m[T261030_COST_][T-02 ④ ratio 非数字且 vatRate="13" 存在 → 不回退（仅缺失时才用 vatRate）] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) -"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '④ ratio 小于 0'
+[22m[39m[T261030_COST_][T-02 ④ ratio 小于 0] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) -"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-02 / AC-5 '④ ratio 大于 1'
+[22m[39m[T261030_COST_][T-02 ④ ratio 大于 1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) -"]},{"currency":"USD","lines":["241.055611185 USD","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT[2m > [22m[2mT-03 / AC-8 长值夹具的 4 段文本（几何由 Playwright 静态页量）
+[22m[39m[T261030_COST_][T-03 long] roots=1 columns=[{"currency":"CNY","lines":["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"]},{"currency":"USDT","lines":["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]}]
+
+ [32m✓[39m src/pages/quotation/task261030-costing-subtotal.test.tsx [2m([22m[2m17 tests[22m[2m)[22m[32m 23[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m17 passed[39m[22m[90m (17)[39m
+[2m   Start at [22m 14:32:43
+[2m   Duration [22m 188ms[2m (transform 51ms, setup 0ms, import 86ms, tests 23ms, environment 0ms)[22m
+

@@ -634,7 +634,7 @@ const QuotationDetail: React.FC = () => {
       <Drawer
         title="导出PDF / 打印选项"
         placement="right"
-        width={480}
+        size={480}
         open={pdfDrawerOpen}
         onClose={() => setPdfDrawerOpen(false)}
         destroyOnClose
@@ -667,7 +667,7 @@ const QuotationDetail: React.FC = () => {
       <Drawer
         title="导出Excel选项"
         placement="right"
-        width={480}
+        size={480}
         open={excelDrawerOpen}
         onClose={() => setExcelDrawerOpen(false)}
         destroyOnClose
@@ -697,7 +697,7 @@ const QuotationDetail: React.FC = () => {
       <Drawer
         title="发送报价单邮件"
         placement="right"
-        width={600}
+        size={600}
         open={emailDrawerOpen}
         onClose={() => setEmailDrawerOpen(false)}
         destroyOnClose
@@ -731,7 +731,7 @@ const QuotationDetail: React.FC = () => {
       <Drawer
         title="延长有效期"
         placement="right"
-        width={480}
+        size={480}
         open={extendDrawerOpen}
         onClose={() => setExtendDrawerOpen(false)}
         destroyOnClose
@@ -753,7 +753,7 @@ const QuotationDetail: React.FC = () => {
       <Drawer
         title="拒绝报价"
         placement="right"
-        width={480}
+        size={480}
         open={rejectDrawerOpen}
         onClose={() => setRejectDrawerOpen(false)}
         destroyOnClose

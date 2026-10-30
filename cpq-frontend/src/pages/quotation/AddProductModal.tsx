@@ -281,7 +281,7 @@ const AddProductModal: React.FC<AddProductModalProps> = ({
     <Drawer
       title="添加产品 — 从已有产品"
       placement="right"
-      width={960}
+      size={960}
       open={open}
       onClose={onCancel}
       destroyOnClose

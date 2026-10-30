@@ -63,6 +63,7 @@ import { highlightText } from './highlightText';
 import PagingBar from './PagingBar';
 import { formatProfitBadgeText } from './profitBadge';
 import QuotationVatSubtotal from './QuotationVatSubtotal';
+import CostingSubtotalSummary from './CostingSubtotalSummary';
 import './quotation.css';
 
 // 与 QuotationWizard / BulkImportPartsDrawer / ReadonlyProductCard 中的同名函数保持完全对齐。
@@ -3123,14 +3124,6 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
     });
   }, [item.componentData, executeDsQuery]);
 
-  // 金额显示：公式结果不自动套汇率；报价侧只把结果标记为报价单结算币种。
-  const formatCurrency = (val: DecimalValue | null | undefined) => {
-    return `${cardSide === 'QUOTE' ? (quoteCurrency || 'CNY') : 'CNY'} ${formatNumber(toDecimal(val ?? '0').toString(), {
-      isComputed: true,
-      maxDisplayDecimals,
-    }) ?? '0'}`;
-  };
-
   // 2026-05-17 WYSIWYG 原则: 模板配几个组件就显示几个 Tab.
   // 2026-05-19 (方案 A 用户决议, 推翻同日 QT-1409 的"自动隐藏空 Tab"策略):
   //   严格按模板 publish 时的结构展示, **不再隐藏空数据 Tab**. SUBTOTAL 仍只渲染为底部"产品小计".
@@ -4138,28 +4131,22 @@ const ProductCard: React.FC<ProductCardProps> = ({ item, index, onRemove, onUpda
         </div>
       )}
 
-      {/* Subtotal Bar：报价侧一行；核价侧按裁决拆成 CNY / 外币两行。 */}
+      {/* Subtotal Bar：报价侧两行（task-261028）；核价侧按 task-261030 左右分币种、上下分含税。 */}
       <div className="qt-subtotal-bar-multi">
         {(() => {
           const subtotal = item.componentData.length > 0
             ? computeProductSubtotal(item, driverExpansions, customerId, allComponentSubtotals)
             : item.subtotal;
-          const rate = quoteExchangeRate && !toDecimal(quoteExchangeRate).isZero() ? toDecimal(quoteExchangeRate) : toDecimal('1');
-          const foreignSubtotal = formatNumber(toDecimal(subtotal ?? '0').dividedBy(rate).toString(), {
-            isComputed: true,
-            maxDisplayDecimals,
-          }) ?? '0';
           if (cardSide === 'COSTING') {
-            return <>
-              <div className="qt-subtotal-line qt-subtotal-total">
-                <span className="qt-subtotal-label">产品小计</span>
-                <span className="qt-subtotal-value">{formatCurrency(subtotal)}</span>
-              </div>
-              <div className="qt-subtotal-line qt-subtotal-total">
-                <span className="qt-subtotal-label">外币小计</span>
-                <span className="qt-subtotal-value" style={{ color: '#1677ff' }}>{foreignSubtotal} {quoteCurrency || 'CNY'}</span>
-              </div>
-            </>;
+            // task-261030：核价侧无组件时 item.subtotal 是报价侧小计，不得串入核价金额区。
+            return <CostingSubtotalSummary
+              subtotal={item.componentData.length > 0 ? subtotal : null}
+              currency={quoteCurrency}
+              exchangeRate={quoteExchangeRate}
+              vatRateRatio={item.vatRateRatio}
+              vatRate={item.vatRate}
+              maxDisplayDecimals={maxDisplayDecimals}
+            />;
           }
           return <QuotationVatSubtotal
             subtotal={subtotal}

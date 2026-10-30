@@ -200,14 +200,17 @@ async function switchToCosting(page: Page): Promise<void> {
   await assertSettled(page, 'costing card view');
 }
 
+// task-261030 T-09⑤：BL-0332 的 AC-6「核价侧仍是产品小计 / 外币小计」已被 task-261030 改写
+// （核价金额区改为 `.qt-subtotal-costing` 分币种两列、去掉字样）。函数名保留以免改动调用处。
 async function assertCostingFooterUnchanged(page: Page): Promise<void> {
   const card = await uniqueCard(page, PART_NO);
-  const footer = card.locator('.qt-subtotal-bar, .qt-subtotal-bar-multi').last();
-  await expect(footer.getByText('产品小计', { exact: true }), 'Costing net label must remain').toHaveCount(1);
-  await expect(footer.getByText('外币小计', { exact: true }), 'Costing foreign label must remain').toHaveCount(1);
-  expect(await footer.getByText('(VAT)', { exact: true }).count(), 'Costing footer must not gain VAT').toBe(0);
-  expect((await footer.locator('.qt-subtotal-line').allInnerTexts()).every((text) => text.trim().length > 0),
-    'Costing subtotal lines must be non-empty').toBe(true);
+  const costing = card.locator('.qt-subtotal-costing');
+  await expect(costing, 'Costing card must render exactly one .qt-subtotal-costing summary (task-261030)').toHaveCount(1);
+  expect(await costing.locator('.qt-subtotal-costing-col').count(), 'Costing summary must have at least one column')
+    .toBeGreaterThan(0);
+  const cardText = await card.innerText();
+  expect(cardText, 'Costing card must not show the removed 产品小计 label').not.toContain('产品小计');
+  expect(cardText, 'Costing card must not show the removed 外币小计 label').not.toContain('外币小计');
 }
 
 test.beforeAll(() => {
@@ -298,7 +301,7 @@ test('T-05 / AC-5: saving only project text does not persist VAT-inclusive displ
   if (restoreFailure) throw restoreFailure;
 });
 
-test('T-06 / AC-6: costing edit and readonly cards keep the legacy two labels and no VAT line', async ({ page }) => {
+test('T-06 / AC-6 (rewritten by task-261030): costing edit and readonly cards show the .qt-subtotal-costing summary without the removed 产品小计/外币小计 labels', async ({ page }) => {
   await login(page, ADMIN);
   await openEditStep2(page);
   await switchToCosting(page);

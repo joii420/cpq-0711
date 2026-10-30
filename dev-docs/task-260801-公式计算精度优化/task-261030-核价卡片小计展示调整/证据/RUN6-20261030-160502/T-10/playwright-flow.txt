@@ -1,0 +1,50 @@
+$ npx playwright test -c e2e/task261030-costing-subtotal-flow.config.ts
+[2m[WebServer] [22m
+[2m[WebServer] [22m  [32m[1mVITE[22m v8.0.8[39m  [2mready in [0m[1m118[22m[2m[0m ms[22m
+[2m[WebServer] [22m
+[2m[WebServer] [22m  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5292[22m/[39m
+
+Running 13 tests using 1 worker
+
+  -   1 e2e/task261030-costing-subtotal-flow.spec.ts:342:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-1 夹具 C 在 master 上算出核价 1717.135540717、报价 888.123456789 USD 两行
+  -   2 e2e/task261030-costing-subtotal-flow.spec.ts:353:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-2 无核价结构 / 生成失败夹具在 master 详情页复现原缺陷（核价卡片显示了金额而非 -）
+[T261030_COST_][identity] target=candidate status=200 module=true
+[T261030_COST_][T-05] {"cols":2,"currencies":["CNY","USD"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-05 colors] [{"where":"col0.main","color":"rgb(255, 255, 255)","opacity":"1"},{"where":"col0.vat","color":"rgb(255, 255, 255)","opacity":"1"},{"where":"col0.vat > span[1]","color":"rgb(255, 255, 255)","opacity":"0.82"},{"where":"col0.vat > span[2]","color":"rgb(255, 255, 255)","opacity":"0.94"},{"where":"col0.prefix","color":"rgb(255, 255, 255)","opacity":"0.82"},{"where":"col0.value","color":"rgb(255, 255, 255)","opacity":"0.94"},{"where":"col1.main","color":"rgb(255, 255, 255)","opacity":"1"},{"where":"col1.vat","color":"rgb(255, 255, 255)","opacity":"1"},{"where":"col1.vat > span[1]","color":"rgb(255, 255, 255)","opacity":"0.82"},{"where":"col1.vat > span[2]","color":"rgb(255, 255, 255)","opacity":"0.94"},{"where":"col1.prefix","color":"rgb(255, 255, 255)","opacity":"0.82"},{"where":"col1.value","color":"rgb(255, 255, 255)","opacity":"0.94"}]
+  ✓   3 e2e/task261030-costing-subtotal-flow.spec.ts:378:1 › T-05 / AC-1 编辑页「核价单 · 产品卡片」默认布局、精确值与白色字 (2.8s)
+  ✓   4 e2e/task261030-costing-subtotal-flow.spec.ts:402:1 › T-05b / AC-1 卡片头部、页签、表格与改造前一致（A/B） (4.7s)
+[T261030_COST_][T-06 CNY edit] {"cols":1,"currencies":["CNY"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]]}
+[T261030_COST_][T-06 CNY detail] {"cols":1,"currencies":["CNY"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]]}
+[T261030_COST_][T-06 blank-currency detail] {"cols":1,"currencies":["CNY"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]]}
+  ✓   5 e2e/task261030-costing-subtotal-flow.spec.ts:415:1 › T-06 / AC-3 报价币种 CNY（编辑页 + 详情页）与币种为空（详情页）只显示 CNY 一列 (7.0s)
+[T261030_COST_][T-07 NO_COSTING_STRUCTURE] {"cols":1,"currencies":[""],"lines":[["-","(VAT) -"]]}
+[T261030_COST_][T-07 NO_COSTING_STRUCTURE quote] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+[T261030_COST_][T-07 COSTING_FAILED] {"cols":1,"currencies":[""],"lines":[["-","(VAT) -"]]}
+[T261030_COST_][T-07 COSTING_FAILED quote] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+  ✓   6 e2e/task261030-costing-subtotal-flow.spec.ts:436:1 › T-07 / AC-4 详情页没有核价数据（无核价结构 / 生成失败）金额区只显示 - / (VAT) -，报价侧照常 (5.0s)
+[T261030_COST_][T-08 ①] {"cols":2,"currencies":["CNY","USD"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-08 quote] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+[T261030_COST_][T-08 back] {"cols":2,"currencies":["CNY","USD"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-08 ②] {"cols":2,"currencies":["CNY","USD"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-08 ③] {"cols":2,"currencies":["CNY","USD"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+  ✓   7 e2e/task261030-costing-subtotal-flow.spec.ts:468:1 › T-08 / AC-6 编辑 → 报价单 → 核价单 → 详情 → 编辑刷新，三次记录逐字等于 AC-1 (9.6s)
+[T261030_COST_][T-09① edit] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+[T261030_COST_][T-09① detail] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+  ✓   8 e2e/task261030-costing-subtotal-flow.spec.ts:517:1 › T-09 ① / AC-7 报价侧编辑/详情卡片仍是 task-261028 两行，且无核价金额区与第二列 (4.7s)
+[T261030_COST_][T-09② review] {"cols":2,"currencies":["CNY","USD"],"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-09② total row] 核价单据总价：¥1717.135540717
+  ✓   9 e2e/task261030-costing-subtotal-flow.spec.ts:532:1 › T-09 ② / AC-7 核价管理页：核价金额区同 AC-1；「核价单据总价」一行与改造前逐字相同（A/B） (2.4s)
+[T261030_COST_][T-09③a] excel=400 chars
+  ✓  10 e2e/task261030-costing-subtotal-flow.spec.ts:561:1 › T-09 ③a / AC-7 详情页核价 Excel 视图的金额文本与改造前相同（A/B） (2.4s)
+[T261030_COST_][T-09③b] comparison=471 chars
+  ✓  11 e2e/task261030-costing-subtotal-flow.spec.ts:573:1 › T-09 ③b / AC-7 详情页比对视图的金额文本与改造前相同（A/B） (2.4s)
+[T261030_COST_][T-09④] 9 key paths
+  ✓  12 e2e/task261030-costing-subtotal-flow.spec.ts:586:1 › T-09 ④ / AC-7 只改「关联项目」后保存：请求体键集合与改造前相同，不含含税/外币派生字段（A/B） (2.6s)
+[T261030_COST_][T-11 after save costing] {"cols":2,"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-11 after save quote] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+[T261030_COST_][T-11 after reload costing] {"cols":2,"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]]}
+[T261030_COST_][T-11 after reload quote] quote lines=["888.123456789 USD","(VAT) 1003.579506172 USD"]
+  ✓  13 e2e/task261030-costing-subtotal-flow.spec.ts:646:1 › T-11 / AC-10 只改「关联项目」保存后不刷新：核价仍 2 列同 AC-1、报价首行仍为 USD；刷新后不变 (5.7s)
+
+  2 skipped
+  11 passed (52.3s)

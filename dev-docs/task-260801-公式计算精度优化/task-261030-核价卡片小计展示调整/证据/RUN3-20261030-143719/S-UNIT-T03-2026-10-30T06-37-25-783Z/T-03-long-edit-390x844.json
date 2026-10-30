@@ -1,0 +1,124 @@
+{
+  "runId": "T261030_COST_1793342244892_add7fff7",
+  "harnessStyled": true,
+  "rootCount": 1,
+  "colCount": 2,
+  "currencies": [
+    "CNY",
+    "USDT"
+  ],
+  "lines": [
+    [
+      "99999999999999.999999999 CNY",
+      "(VAT) 199999999998999.999999998 CNY"
+    ],
+    [
+      "199999999999999.999999998 USDT",
+      "(VAT) 399999999997999.999999996 USDT"
+    ]
+  ],
+  "card": {
+    "x": 16,
+    "y": 16,
+    "width": 358,
+    "height": 223,
+    "right": 374,
+    "bottom": 239
+  },
+  "content": {
+    "left": 60,
+    "right": 330
+  },
+  "cols": [
+    {
+      "main": {
+        "x": 60,
+        "y": 91,
+        "width": 270,
+        "height": 24,
+        "right": 330,
+        "bottom": 115
+      },
+      "vatRow": {
+        "x": 60,
+        "y": 120,
+        "width": 270,
+        "height": 20,
+        "right": 330,
+        "bottom": 140
+      },
+      "prefix": {
+        "x": 60,
+        "y": 123,
+        "width": 47,
+        "height": 16,
+        "right": 107,
+        "bottom": 139
+      },
+      "value": {
+        "x": 107,
+        "y": 120,
+        "width": 338,
+        "height": 20,
+        "right": 445,
+        "bottom": 140
+      },
+      "mainLines": 1,
+      "valueLines": 1,
+      "mainWhiteSpace": "nowrap",
+      "valueWhiteSpace": "nowrap",
+      "counts": {
+        "main": 1,
+        "vat": 1,
+        "prefix": 1,
+        "value": 1
+      }
+    },
+    {
+      "main": {
+        "x": 60,
+        "y": 150,
+        "width": 270,
+        "height": 24,
+        "right": 330,
+        "bottom": 174
+      },
+      "vatRow": {
+        "x": 60,
+        "y": 179,
+        "width": 270,
+        "height": 20,
+        "right": 330,
+        "bottom": 199
+      },
+      "prefix": {
+        "x": 60,
+        "y": 182,
+        "width": 47,
+        "height": 16,
+        "right": 107,
+        "bottom": 198
+      },
+      "value": {
+        "x": 107,
+        "y": 179,
+        "width": 352,
+        "height": 20,
+        "right": 459,
+        "bottom": 199
+      },
+      "mainLines": 1,
+      "valueLines": 1,
+      "mainWhiteSpace": "nowrap",
+      "valueWhiteSpace": "nowrap",
+      "counts": {
+        "main": 1,
+        "vat": 1,
+        "prefix": 1,
+        "value": 1
+      }
+    }
+  ],
+  "scrollWidth": 390,
+  "clientWidth": 390
+}

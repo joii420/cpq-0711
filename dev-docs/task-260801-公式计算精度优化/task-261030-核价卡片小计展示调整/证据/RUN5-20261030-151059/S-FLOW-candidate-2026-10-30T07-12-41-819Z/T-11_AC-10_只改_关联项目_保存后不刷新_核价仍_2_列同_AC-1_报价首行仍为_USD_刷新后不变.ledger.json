@@ -1,0 +1,19 @@
+{
+  "hits": {
+    "P-1 auth.me": 4,
+    "E-5 customers.page": 4,
+    "D-3/E-8 globalVariables": 8,
+    "D-1/E-1 quotation.get": 4,
+    "P-2 notifications.unread": 4,
+    "E-3 customer.get": 4,
+    "E-4 customer.contacts": 4,
+    "E-9 template.effectiveColumns": 2,
+    "E-6 productCategories": 4,
+    "D-4/E-10/E-11 template.get": 4,
+    "E-13 quotation.draft.put": 1
+  },
+  "unhandled": [],
+  "console": [
+    "error: Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead."
+  ]
+}

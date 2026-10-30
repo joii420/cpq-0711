@@ -1,0 +1,140 @@
+[T261030_COST_][global-setup] vitest output:
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90m/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend[39m
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.static.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT static pages for T-03[2m > [22m[2mT-03 / AC-8 writes long/default static pages inside both real shells
+[22m[39m[T261030_COST_][static] stylesheets=["pages/quotation/quotation.css"]
+[T261030_COST_][static] wrote long-edit.html (643 chars of markup)
+[T261030_COST_][static] wrote long-readonly.html (643 chars of markup)
+[T261030_COST_][static] wrote default-edit.html (594 chars of markup)
+[T261030_COST_][static] wrote default-readonly.html (594 chars of markup)
+
+ [32m✓[39m src/pages/quotation/task261030-costing-subtotal.static.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 9[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m   Start at [22m 14:39:11
+[2m   Duration [22m 171ms[2m (transform 47ms, setup 0ms, import 77ms, tests 9ms, environment 0ms)[22m
+
+
+
+Running 6 tests using 1 worker
+
+[T261030_COST_][T-03 control] {"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]],"currencies":["CNY","USD"],"harnessStyled":true}
+  ✓  1 e2e/task261030-costing-subtotal-geometry.spec.ts:191:1 › T-03 harness 阳性对照（edit 外壳）：默认夹具静态页已上样式且为 2 列（1280 宽下并排、CNY 在左） (124ms)
+[T261030_COST_][T-03 edit desktop] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=1280/1280 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 desktop] layout=side-by-side
+  ✓  2 e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 edit 外壳 1280×720 (193ms)
+[T261030_COST_][T-03 edit mobile] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=390/390 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 mobile] layout=stacked
+  ✘  3 e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 edit 外壳 390×844 (145ms)
+[T261030_COST_][T-03 control] {"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]],"currencies":["CNY","USD"],"harnessStyled":true}
+  ✓  4 e2e/task261030-costing-subtotal-geometry.spec.ts:191:1 › T-03 harness 阳性对照（readonly 外壳）：默认夹具静态页已上样式且为 2 列（1280 宽下并排、CNY 在左） (139ms)
+[T261030_COST_][T-03 readonly desktop] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=1280/1280 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 desktop] layout=side-by-side
+  ✓  5 e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 readonly 外壳 1280×720 (184ms)
+[T261030_COST_][T-03 readonly mobile] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=390/390 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 mobile] layout=stacked
+  ✘  6 e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 readonly 外壳 390×844 (153ms)
+
+
+  1) e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 edit 外壳 390×844 ───────
+
+    Error: col0.value 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m374.5[39m
+    Received:    [31m445[39m
+
+      258 |       expect(box.width > 0 && box.height > 0, `${name} 必须有非空盒子`).toBe(true);
+      259 |       expect.soft(box.x, `${name} 左缘在卡片内`).toBeGreaterThanOrEqual(m.card.x - 0.5);
+    > 260 |       expect.soft(box.right, `${name} 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）`).toBeLessThanOrEqual(m.card.right + 0.5);
+          |                                                                        ^
+      261 |     }
+      262 |
+      263 |     // ── 互不覆盖 ──
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-geometry.spec.ts:260:72
+
+    Error: col1.value 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m374.5[39m
+    Received:    [31m459[39m
+
+      258 |       expect(box.width > 0 && box.height > 0, `${name} 必须有非空盒子`).toBe(true);
+      259 |       expect.soft(box.x, `${name} 左缘在卡片内`).toBeGreaterThanOrEqual(m.card.x - 0.5);
+    > 260 |       expect.soft(box.right, `${name} 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）`).toBeLessThanOrEqual(m.card.right + 0.5);
+          |                                                                        ^
+      261 |     }
+      262 |
+      263 |     // ── 互不覆盖 ──
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-geometry.spec.ts:260:72
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-40db9--03-AC-8-长值-edit-外壳-390×844/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-40db9--03-AC-8-长值-edit-外壳-390×844/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-40db9--03-AC-8-长值-edit-外壳-390×844/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-40db9--03-AC-8-长值-edit-外壳-390×844/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 readonly 外壳 390×844 ───
+
+    Error: col0.value 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m374.5[39m
+    Received:    [31m445[39m
+
+      258 |       expect(box.width > 0 && box.height > 0, `${name} 必须有非空盒子`).toBe(true);
+      259 |       expect.soft(box.x, `${name} 左缘在卡片内`).toBeGreaterThanOrEqual(m.card.x - 0.5);
+    > 260 |       expect.soft(box.right, `${name} 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）`).toBeLessThanOrEqual(m.card.right + 0.5);
+          |                                                                        ^
+      261 |     }
+      262 |
+      263 |     // ── 互不覆盖 ──
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-geometry.spec.ts:260:72
+
+    Error: col1.value 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoBeLessThanOrEqual[2m([22m[32mexpected[39m[2m)[22m
+
+    Expected: <= [32m374.5[39m
+    Received:    [31m459[39m
+
+      258 |       expect(box.width > 0 && box.height > 0, `${name} 必须有非空盒子`).toBe(true);
+      259 |       expect.soft(box.x, `${name} 左缘在卡片内`).toBeGreaterThanOrEqual(m.card.x - 0.5);
+    > 260 |       expect.soft(box.right, `${name} 右缘在卡片内（元素盒；实测裁剪容器见 JSON clips）`).toBeLessThanOrEqual(m.card.right + 0.5);
+          |                                                                        ^
+      261 |     }
+      262 |
+      263 |     // ── 互不覆盖 ──
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-geometry.spec.ts:260:72
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-b697c-AC-8-长值-readonly-外壳-390×844/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-b697c-AC-8-长值-readonly-外壳-390×844/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-b697c-AC-8-长值-readonly-外壳-390×844/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-unit-output-2/task261030-costing-subtota-b697c-AC-8-长值-readonly-外壳-390×844/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2 failed
+    e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 edit 外壳 390×844 ────────
+    e2e/task261030-costing-subtotal-geometry.spec.ts:214:3 › T-03 / AC-8 长值 readonly 外壳 390×844 ────
+  4 passed (2.6s)

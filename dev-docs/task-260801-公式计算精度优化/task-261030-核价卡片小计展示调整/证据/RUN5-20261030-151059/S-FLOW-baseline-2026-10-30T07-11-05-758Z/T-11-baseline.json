@@ -1,0 +1,68 @@
+{
+  "trigger": "save-button",
+  "saveResponse": {
+    "code": 200,
+    "message": "success",
+    "data": {
+      "id": "26103000-0000-4000-8000-0000000000a1",
+      "quotationNumber": "T261030_COST_QT-USD",
+      "customerId": "26103000-0000-4000-8000-0000000000c1",
+      "name": "T261030_COST_夹具USD",
+      "contactId": null,
+      "contactName": null,
+      "contactPhone": null,
+      "contactEmail": null,
+      "projectName": "T261030_COST_P1_PROJECT_AC10",
+      "opportunityId": null,
+      "salesRepId": null,
+      "quoteType": null,
+      "priority": null,
+      "stage": null,
+      "expectedCloseDate": null,
+      "status": "DRAFT",
+      "totalAmount": "888.123456789",
+      "expiryDate": "2026-11-29",
+      "paymentTerms": null,
+      "deliveryCycle": null,
+      "originalAmount": "888.123456789",
+      "systemDiscountRate": null,
+      "finalDiscountRate": null,
+      "taxRate": null,
+      "taxAmount": null,
+      "discountAdjustmentReason": null,
+      "isManuallyAdjusted": null,
+      "sourceQuotationId": null,
+      "assignedApproverId": null,
+      "customerTemplateId": "26103000-0000-4000-8000-0000000000b1",
+      "categoryId": null,
+      "costingCardTemplateId": "26103000-0000-4000-8000-0000000000b2",
+      "remarks": null,
+      "snapshotCustomerName": "T261030_COST_客户",
+      "snapshotCustomerLevel": null,
+      "snapshotCustomerRegion": null,
+      "snapshotCustomerIndustry": null,
+      "snapshotCustomerAddress": null,
+      "createdAt": null,
+      "updatedAt": "2026-10-30T10:05:00+08:00",
+      "userDataVersion": 1,
+      "lineItems": []
+    }
+  },
+  "afterSave": {
+    "costingCols": 0,
+    "costingLines": [],
+    "costingFooter": "VAT 13% · 税率快照 利润: - T261030_COST_产品1 销售料号: T261030_COST_P1 删除 T261030_COST_核价明细 核价金额 1717.135540717 🔗 1717.135540717 合计 + 添加行 产品小计 CNY 1717.135540717 外币小计 1717.135540717 CNY",
+    "quote": [
+      "888.123456789 CNY",
+      "(VAT) 1003.579506172 CNY"
+    ]
+  },
+  "afterReload": {
+    "costingCols": 0,
+    "costingLines": [],
+    "quote": [
+      "888.123456789 USD",
+      "(VAT) 1003.579506172 USD"
+    ]
+  }
+}

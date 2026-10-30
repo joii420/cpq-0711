@@ -277,7 +277,7 @@ const CostingReviewPage: React.FC = () => {
       <Drawer
         title="驳回核价单"
         placement="right"
-        width={480}
+        size={480}
         open={rejectDrawerOpen}
         onClose={() => setRejectDrawerOpen(false)}
         destroyOnClose

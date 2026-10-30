@@ -155,7 +155,7 @@ export const ComparisonBoard: React.FC<ComparisonBoardProps> = ({
   };
 
   if (loading) {
-    return <div style={{ textAlign: 'center', padding: 48 }}><Spin tip="加载比对视图…" /></div>;
+    return <div style={{ textAlign: 'center', padding: 48 }}><Spin description="加载比对视图…" /></div>;
   }
   if (error) {
     return <Alert type="error" showIcon message={error} style={{ margin: 16 }} />;

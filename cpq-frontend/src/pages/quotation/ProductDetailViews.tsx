@@ -347,7 +347,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       {mainTab === 'quote' && viewType === 'card' && (
         <Row justify="end" style={{ marginTop: 16 }}>
           <Col>
-            <Space direction="vertical" align="end">
+            <Space orientation="vertical" align="end">
               <Text>
                 原价合计：
                 <Text strong>
@@ -386,7 +386,7 @@ const ProductDetailViews: React.FC<Props> = ({ quotation, locateTarget, frozen, 
       {!!coid && mainTab === 'costing' && viewType === 'card' && (
         <Row justify="end" style={{ marginTop: 16 }}>
           <Col>
-            <Space direction="vertical" align="end">
+            <Space orientation="vertical" align="end">
               <Text style={{ fontSize: 16 }}>
                 核价单据总价：
                 <Text strong style={{ fontSize: 18, color: '#c00' }}>

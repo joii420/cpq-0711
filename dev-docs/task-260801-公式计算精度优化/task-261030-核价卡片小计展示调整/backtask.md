@@ -8,7 +8,7 @@
 
 | 编号 | 服务的 AC | 内容 |
 |---|---|---|
-| B-1 | AC-4、AC-7、AC-9 | **只读**审核后端契约并产出 S-FLOW 夹具的字段依据：① 从后端 DTO / 序列化代码确认报价查询响应中「报价币种、汇率、核价卡片结构、报价行 `subtotal`、`vatRate`、`vatRateRatio`、`costingCardValues`（含生成失败标记 `__cardValueFailed` / `__errorMsg`）」的**真实字段名、类型与空值形态**，以及「没有核价结构」时 `costingCardStructure` 的真实取值（`null` / 缺省 / 空 tabs），写成 `backend-audit.md` 的字段样本表，供测试员造 mock 夹具时对齐；② 确认 `quotation_line_item` 只有一个 `subtotal` 列且为报价侧小计（立项时本机库已实查列清单，复核即可）；③ 确认 `cpq-backend/src/main/**`、Flyway 迁移、Dockerfile、后端测试代码对本任务的 `git diff` 为空。 |
+| B-1 | AC-4、AC-7、AC-9、AC-10 | **只读**审核后端契约并产出 S-FLOW 夹具的字段依据：① 从后端 DTO / 序列化代码确认报价查询响应中「报价币种、汇率、核价卡片结构、报价行 `subtotal`、`vatRate`、`vatRateRatio`、`costingCardValues`（含生成失败标记 `__cardValueFailed` / `__errorMsg`）」的**真实字段名、类型与空值形态**，以及「没有核价结构」时 `costingCardStructure` 的真实取值（`null` / 缺省 / 空 tabs），写成 `backend-audit.md` 的字段样本表，供测试员造 mock 夹具时对齐；② 确认 `quotation_line_item` 只有一个 `subtotal` 列且为报价侧小计（立项时本机库已实查列清单，复核即可）；③ 确认 `cpq-backend/src/main/**`、Flyway 迁移、Dockerfile、后端测试代码对本任务的 `git diff` 为空。 |
 
 ## 为什么不改后端
 
@@ -33,3 +33,7 @@
 
 - 定向 `git diff` 与字段样本表原始依据（文件:行）写入 `backend-audit.md`。
 - 🚫 不启动迁移、不连共享库、不改任何后端文件；遇 `CLAUDE.md §3.2` 红线停下报告。
+
+## B-1 补充（开工后 2026-10-30，服务 AC-7、AC-10）
+
+在 `backend-audit.md` 追加三份夹具依据（只读，仍不改任何代码）：① `SaveDraftResponse` 的**完整**字段清单与最小响应样本（AC-10 要用它证明响应不含币种 / 汇率）；② 核价 Excel 视图所需的 `costingExcelColumns` 与对应行值的最小样本（AC-7③a）；③ 比对视图 D-8 三个接口（meta / data / config）的最小响应样本（AC-7③b）。字段名以后端真实序列化为准，附 `文件:行`。

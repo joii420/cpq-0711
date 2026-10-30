@@ -1,0 +1,43 @@
+== tsc test
+exit=0
+== tsc e2e
+exit=0
+== eslint
+exit=0
+== pw unit list
+Listing tests:
+  task261030-costing-subtotal-geometry.spec.ts:173:1 › T-03 harness 阳性对照（edit 外壳）：默认夹具静态页已上样式且为 2 列（1280 宽下并排、CNY 在左）
+  task261030-costing-subtotal-geometry.spec.ts:196:3 › T-03 / AC-8 长值 edit 外壳 1280×720
+  task261030-costing-subtotal-geometry.spec.ts:196:3 › T-03 / AC-8 长值 edit 外壳 390×844
+  task261030-costing-subtotal-geometry.spec.ts:173:1 › T-03 harness 阳性对照（readonly 外壳）：默认夹具静态页已上样式且为 2 列（1280 宽下并排、CNY 在左）
+  task261030-costing-subtotal-geometry.spec.ts:196:3 › T-03 / AC-8 长值 readonly 外壳 1280×720
+  task261030-costing-subtotal-geometry.spec.ts:196:3 › T-03 / AC-8 长值 readonly 外壳 390×844
+Total: 6 tests in 1 file
+exit=0
+== pw flow list
+Listing tests:
+  task261030-costing-subtotal-flow.spec.ts:342:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-1 夹具 C 在 master 上算出核价 1717.135540717、报价 888.123456789 USD 两行
+  task261030-costing-subtotal-flow.spec.ts:353:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-2 无核价结构 / 生成失败夹具在 master 详情页复现原缺陷（核价卡片显示报价小计）
+  task261030-costing-subtotal-flow.spec.ts:369:1 › T-05 / AC-1 编辑页「核价单 · 产品卡片」默认布局、精确值与白色字
+  task261030-costing-subtotal-flow.spec.ts:393:1 › T-05b / AC-1 卡片头部、页签、表格与改造前一致（A/B）
+  task261030-costing-subtotal-flow.spec.ts:406:1 › T-06 / AC-3 报价币种 CNY（编辑页 + 详情页）与币种为空（详情页）只显示 CNY 一列
+  task261030-costing-subtotal-flow.spec.ts:427:1 › T-07 / AC-4 详情页没有核价数据（无核价结构 / 生成失败）金额区只显示 - / (VAT) -，报价侧照常
+  task261030-costing-subtotal-flow.spec.ts:459:1 › T-08 / AC-6 编辑 → 报价单 → 核价单 → 详情 → 编辑刷新，三次记录逐字等于 AC-1
+  task261030-costing-subtotal-flow.spec.ts:508:1 › T-09 ① / AC-7 报价侧编辑/详情卡片仍是 task-261028 两行，且无核价金额区与第二列
+  task261030-costing-subtotal-flow.spec.ts:523:1 › T-09 ② / AC-7 核价管理页：核价金额区同 AC-1；「核价单据总价」一行与改造前逐字相同（A/B）
+  task261030-costing-subtotal-flow.spec.ts:550:1 › T-09 ③a / AC-7 详情页核价 Excel 视图的金额文本与改造前相同（A/B）
+  task261030-costing-subtotal-flow.spec.ts:562:1 › T-09 ③b / AC-7 详情页比对视图的金额文本与改造前相同（A/B）
+  task261030-costing-subtotal-flow.spec.ts:574:1 › T-09 ④ / AC-7 只改「关联项目」后保存：请求体键集合与改造前相同，不含含税/外币派生字段（A/B）
+  task261030-costing-subtotal-flow.spec.ts:634:1 › T-11 / AC-10 只改「关联项目」保存后不刷新：核价仍 2 列同 AC-1、报价首行仍为 USD；刷新后不变
+Total: 13 tests in 1 file
+exit=0
+== pw 261028 list (isolated dummy env, no services)
+Listing tests:
+  task261028-vat-subtotal-flow.spec.ts:236:1 › T-04 / AC-3: edit -> detail -> edit refresh keeps two exact quotation lines
+  task261028-vat-subtotal-flow.spec.ts:258:1 › T-05 / AC-5: saving only project text does not persist VAT-inclusive display data
+  task261028-vat-subtotal-flow.spec.ts:304:1 › T-06 / AC-6: costing edit and readonly cards keep the legacy two labels and no VAT line
+  task261028-vat-subtotal-flow.spec.ts:316:1 › T-07 / AC-7: long totals remain ordered, single-line and inside the page at 1280 and 390
+Total: 4 tests in 1 file
+exit=0
+== ports
+port-grep-exit=1

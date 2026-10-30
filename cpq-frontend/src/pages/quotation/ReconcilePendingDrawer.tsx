@@ -57,7 +57,7 @@ const ReconcilePendingDrawer: React.FC<Props> = ({ open, conflicts, onLocate, on
   ];
 
   return (
-    <Drawer title="提交校验未通过：前后端算值不一致" placement="right" width={960} open={open} onClose={onClose}>
+    <Drawer title="提交校验未通过：前后端算值不一致" placement="right" size={960} open={open} onClose={onClose}>
       <Alert
         type="error"
         showIcon

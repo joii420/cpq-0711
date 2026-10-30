@@ -384,6 +384,66 @@
   opacity: 0.94;
 }
 
+/* task-261030: costing-only amount area — columns by currency (CNY first), rows by tax.
+   A column that cannot fit beside the previous one wraps as a whole onto the next line. */
+.qt-subtotal-costing {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: flex-start;
+  column-gap: 44px;
+  row-gap: 10px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.5);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+.qt-subtotal-costing-col {
+  min-width: 0;
+  max-width: 100%;
+  text-align: right;
+}
+
+.qt-subtotal-costing-main,
+.qt-subtotal-costing-vat {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  text-align: right;
+  color: #fff;
+  -webkit-overflow-scrolling: touch;
+}
+
+.qt-subtotal-costing-main {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.qt-subtotal-costing-vat {
+  margin-top: 5px;
+}
+
+.qt-subtotal-costing .qt-subtotal-vat-prefix,
+.qt-subtotal-costing .qt-subtotal-vat-value {
+  color: #fff;
+}
+
+@media (max-width: 600px) {
+  .qt-subtotal-costing-main {
+    font-size: 20px;
+  }
+
+  .qt-subtotal-costing .qt-subtotal-vat-value {
+    font-size: 17px;
+  }
+}
+
 .qt-subtotal-row {
   background: #f0f7ff;
   font-weight: 600;

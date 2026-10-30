@@ -1,0 +1,17 @@
+{
+  "hits": {
+    "P-1 auth.me": 2,
+    "E-5 customers.page": 2,
+    "D-3/E-8 globalVariables": 2,
+    "D-1/E-1 quotation.get": 2,
+    "P-2 notifications.unread": 2,
+    "E-3 customer.get": 2,
+    "E-4 customer.contacts": 2,
+    "E-9 template.effectiveColumns": 1,
+    "E-6 productCategories": 2,
+    "D-4/E-10/E-11 template.get": 1,
+    "E-13 quotation.draft.put": 1
+  },
+  "unhandled": [],
+  "console": []
+}

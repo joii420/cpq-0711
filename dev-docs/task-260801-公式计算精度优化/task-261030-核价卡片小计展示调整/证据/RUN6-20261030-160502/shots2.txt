@@ -1,0 +1,23 @@
+[2m[WebServer] [22m
+[2m[WebServer] [22m  [32m[1mVITE[22m v8.0.8[39m  [2mready in [0m[1m112[22m[2m[0m ms[22m
+[2m[WebServer] [22m
+[2m[WebServer] [22m  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5292[22m/[39m
+
+Running 7 tests using 1 worker
+
+[T261030_COST_][SHOT edit-costing-USD-2cols-1280] 1717.135540717 CNY (VAT) 1940.36316101 CNY 241.055611185 USD (VAT) 272.392840639 USD | {"docScrollWidth":1280,"docClientWidth":1280,"cardWidth":914,"shellWidth":862} | 
+  ✓  1 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT edit-costing-USD-2cols 1280 (3.2s)
+[T261030_COST_][SHOT edit-costing-CNY-1col-1280] 1717.135540717 CNY (VAT) 1940.36316101 CNY | {"docScrollWidth":1280,"docClientWidth":1280,"cardWidth":914,"shellWidth":862} | 
+  ✓  2 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT edit-costing-CNY-1col 1280 (2.9s)
+[T261030_COST_][SHOT detail-costing-USD-2cols-1280] 1717.135540717 CNY (VAT) 1940.36316101 CNY 241.055611185 USD (VAT) 272.392840639 USD | {"docScrollWidth":1280,"docClientWidth":1280,"cardWidth":818,"shellWidth":766} | 
+  ✓  3 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT detail-costing-USD-2cols 1280 (2.6s)
+[T261030_COST_][SHOT detail-costing-NO_COSTING_STRUCTURE-dash-1280] - (VAT) - | {"docScrollWidth":1280,"docClientWidth":1280,"cardWidth":818,"shellWidth":766} | 
+  ✓  4 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT detail-costing-NO_COSTING_STRUCTURE-dash 1280 (2.6s)
+[T261030_COST_][SHOT detail-costing-COSTING_FAILED-dash-1280] - (VAT) - | {"docScrollWidth":1280,"docClientWidth":1280,"cardWidth":818,"shellWidth":766} | 
+  ✓  5 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT detail-costing-COSTING_FAILED-dash 1280 (2.6s)
+[T261030_COST_][SHOT edit-costing-USD-2cols-390] 1717.135540717 CNY (VAT) 1940.36316101 CNY 241.055611185 USD (VAT) 272.392840639 USD | {"docScrollWidth":390,"docClientWidth":390,"cardWidth":52,"shellWidth":36} | 
+  ✓  6 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT edit-costing-USD-2cols 390 (2.8s)
+[T261030_COST_][SHOT detail-costing-USD-2cols-390] 1717.135540717 CNY (VAT) 1940.36316101 CNY 241.055611185 USD (VAT) 272.392840639 USD | {"docScrollWidth":390,"docClientWidth":390,"cardWidth":52,"shellWidth":36} | 
+  ✓  7 e2e/task261030-costing-subtotal-shots.spec.ts:43:3 › SHOT detail-costing-USD-2cols 390 (2.5s)
+
+  7 passed (20.1s)

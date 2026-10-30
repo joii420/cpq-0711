@@ -1,0 +1,31 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90m/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend[39m
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-04 / AC-4 subtotal=null：'夹具 C 其余字段齐全（USD / 7.1234 / 0.13）'
+[22m[39m[T261030_COST_][T-04 夹具 C 其余字段齐全（USD / 7.1234 / 0.13）] roots=1 columns=[{"currency":"","empty":"true","lines":["-","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-04 / AC-4 subtotal=null：'报价币种 CNY'
+[22m[39m[T261030_COST_][T-04 报价币种 CNY] roots=1 columns=[{"currency":"","empty":"true","lines":["-","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-04 / AC-4 subtotal=null：'4 位上限'
+[22m[39m[T261030_COST_][T-04 4 位上限] roots=1 columns=[{"currency":"","empty":"true","lines":["-","(VAT) -"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-06c / AC-3 'currency=\'CNY\'、汇率 1' → 只有 CNY 一列
+[22m[39m[T261030_COST_][T-06c currency='CNY'、汇率 1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-06c / AC-3 'currency=\'\'（空串）、汇率 1' → 只有 CNY 一列
+[22m[39m[T261030_COST_][T-06c currency=''（空串）、汇率 1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-06c / AC-3 'currency=\'   \'（trim 后为空）、汇率 1' → 只有 CNY 一列
+[22m[39m[T261030_COST_][T-06c currency='   '（trim 后为空）、汇率 1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]}]
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal-flow.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-FLOW component level[2m > [22m[2mT-06c / AC-3 'currency 未传、汇率 1' → 只有 CNY 一列
+[22m[39m[T261030_COST_][T-06c currency 未传、汇率 1] roots=1 columns=[{"currency":"CNY","lines":["1717.135540717 CNY","(VAT) 1940.36316101 CNY"]}]
+
+ [32m✓[39m src/pages/quotation/task261030-costing-subtotal-flow.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m7 passed[39m[22m[90m (7)[39m
+[2m   Start at [22m 14:32:44
+[2m   Duration [22m 166ms[2m (transform 46ms, setup 0ms, import 75ms, tests 13ms, environment 0ms)[22m
+

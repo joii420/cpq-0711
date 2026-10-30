@@ -1,0 +1,182 @@
+{
+  "runId": "T261030_COST_1793343393467_add1af38",
+  "harnessStyled": true,
+  "rootCount": 1,
+  "colCount": 2,
+  "currencies": [
+    "CNY",
+    "USDT"
+  ],
+  "lines": [
+    [
+      "99999999999999.999999999 CNY",
+      "(VAT) 199999999998999.999999998 CNY"
+    ],
+    [
+      "199999999999999.999999998 USDT",
+      "(VAT) 399999999997999.999999996 USDT"
+    ]
+  ],
+  "card": {
+    "x": 16,
+    "y": 16,
+    "width": 358,
+    "height": 221,
+    "right": 374,
+    "bottom": 237
+  },
+  "content": {
+    "left": 60,
+    "right": 330
+  },
+  "cols": [
+    {
+      "main": {
+        "x": 60,
+        "y": 91,
+        "width": 270,
+        "height": 23,
+        "right": 330,
+        "bottom": 114
+      },
+      "vatRow": {
+        "x": 60,
+        "y": 119,
+        "width": 270,
+        "height": 20,
+        "right": 330,
+        "bottom": 139
+      },
+      "prefix": {
+        "x": 60,
+        "y": 122,
+        "width": 39.546875,
+        "height": 15,
+        "right": 99.546875,
+        "bottom": 137
+      },
+      "value": {
+        "x": 99.546875,
+        "y": 119,
+        "width": 249.34375,
+        "height": 19,
+        "right": 348.890625,
+        "bottom": 138
+      },
+      "mainLines": 1,
+      "valueLines": 1,
+      "mainScroll": {
+        "scrollWidth": 283,
+        "clientWidth": 270,
+        "overflowX": "hidden"
+      },
+      "vatScroll": {
+        "scrollWidth": 289,
+        "clientWidth": 270,
+        "overflowX": "hidden"
+      },
+      "mainWhiteSpace": "nowrap",
+      "valueWhiteSpace": "nowrap",
+      "counts": {
+        "main": 1,
+        "vat": 1,
+        "prefix": 1,
+        "value": 1
+      }
+    },
+    {
+      "main": {
+        "x": 60,
+        "y": 149,
+        "width": 270,
+        "height": 23,
+        "right": 330,
+        "bottom": 172
+      },
+      "vatRow": {
+        "x": 60,
+        "y": 177,
+        "width": 270,
+        "height": 20,
+        "right": 330,
+        "bottom": 197
+      },
+      "prefix": {
+        "x": 60,
+        "y": 180,
+        "width": 39.546875,
+        "height": 15,
+        "right": 99.546875,
+        "bottom": 195
+      },
+      "value": {
+        "x": 99.546875,
+        "y": 177,
+        "width": 257.859375,
+        "height": 19,
+        "right": 357.40625,
+        "bottom": 196
+      },
+      "mainLines": 1,
+      "valueLines": 1,
+      "mainScroll": {
+        "scrollWidth": 303,
+        "clientWidth": 270,
+        "overflowX": "hidden"
+      },
+      "vatScroll": {
+        "scrollWidth": 297,
+        "clientWidth": 270,
+        "overflowX": "hidden"
+      },
+      "mainWhiteSpace": "nowrap",
+      "valueWhiteSpace": "nowrap",
+      "counts": {
+        "main": 1,
+        "vat": 1,
+        "prefix": 1,
+        "value": 1
+      }
+    }
+  ],
+  "clips": [
+    {
+      "element": "qt-subtotal-costing-main",
+      "elementRight": 330,
+      "clipper": "qt-subtotal-costing-main",
+      "clipperOverflowX": "hidden",
+      "clipperRight": 330,
+      "clipperClientWidth": 270,
+      "clipperScrollWidth": 283
+    },
+    {
+      "element": "qt-subtotal-vat-value",
+      "elementRight": 348.890625,
+      "clipper": "qt-subtotal-costing-vat",
+      "clipperOverflowX": "hidden",
+      "clipperRight": 330,
+      "clipperClientWidth": 270,
+      "clipperScrollWidth": 289
+    },
+    {
+      "element": "qt-subtotal-costing-main",
+      "elementRight": 330,
+      "clipper": "qt-subtotal-costing-main",
+      "clipperOverflowX": "hidden",
+      "clipperRight": 330,
+      "clipperClientWidth": 270,
+      "clipperScrollWidth": 303
+    },
+    {
+      "element": "qt-subtotal-vat-value",
+      "elementRight": 357.40625,
+      "clipper": "qt-subtotal-costing-vat",
+      "clipperOverflowX": "hidden",
+      "clipperRight": 330,
+      "clipperClientWidth": 270,
+      "clipperScrollWidth": 297
+    }
+  ],
+  "scrollWidth": 390,
+  "clientWidth": 390
+}

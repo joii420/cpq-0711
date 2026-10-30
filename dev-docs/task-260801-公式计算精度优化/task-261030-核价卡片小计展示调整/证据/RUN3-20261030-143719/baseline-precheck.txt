@@ -1,0 +1,8 @@
+== baseline precheck at 2026-10-30T14:39:28+08:00
+master
+6896d30d088de73e91656392275e2579d8fab126
+-- uncommitted cpq-frontend:
+-- commits since 1ac02a1d touching cpq-frontend:
+ls: cannot access '/home/joii/project/cpq/cpq-frontend/src/pages/quotation/CostingSubtotalSummary.tsx': No such file or directory
+-- ports:
+-- procs:

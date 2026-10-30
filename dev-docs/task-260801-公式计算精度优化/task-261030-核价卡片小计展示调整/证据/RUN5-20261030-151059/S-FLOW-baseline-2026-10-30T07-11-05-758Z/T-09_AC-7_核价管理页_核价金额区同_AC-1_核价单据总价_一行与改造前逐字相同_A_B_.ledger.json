@@ -1,0 +1,13 @@
+{
+  "hits": {
+    "P-1 auth.me": 2,
+    "C-1 costingOrder.get": 2,
+    "P-2 notifications.unread": 2,
+    "D-6/E-12 formulas.batchEvaluate": 2
+  },
+  "unhandled": [],
+  "console": [
+    "error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.",
+    "error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead."
+  ]
+}

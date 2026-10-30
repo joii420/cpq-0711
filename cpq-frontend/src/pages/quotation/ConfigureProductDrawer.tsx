@@ -385,7 +385,7 @@ const ConfigureProductDrawer: React.FC<Props> = ({
       title="添加产品 — 选配"
       open={open}
       onClose={handleClose}
-      width={960}
+      size={960}
       placement="right"
       destroyOnClose
       /*

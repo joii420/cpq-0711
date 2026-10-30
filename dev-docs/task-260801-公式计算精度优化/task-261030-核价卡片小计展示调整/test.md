@@ -5,11 +5,19 @@
 | 分片 | 唯一认领的 AC | 范围 | 写入面 / 纪律 |
 |---|---|---|---|
 | S-UNIT | AC-2、AC-5、AC-8 | 核价金额区纯函数与共享组件（SSR 静态标记）、长值几何（SSR 输出装进静态页由 Playwright 量几何） | **只读片**：不启动后端、不连任何库、不写业务数据；只写任务命名的测试文件 |
-| S-FLOW | AC-1、AC-3、AC-4、AC-6、AC-7、AC-9 | 真实页面路径：编辑页「核价单 · 产品卡片」、报价详情页、核价管理页；报价侧回归；保存请求体；构建回归 | **只读片**：本 worktree 独立 Vite 端口；`/api/**` 全部由 Playwright `page.route` 用夹具应答，**不连后端、不连任何库**。夹具字段名 / 类型 / 空值形态必须按 `backend-audit.md` 字段样本表（`B-1` 产出）造；夹具命名前缀 `T261030_COST_` |
+| S-FLOW | AC-1、AC-3、AC-4、AC-6、AC-7、AC-9、AC-10 | 真实页面路径：编辑页「核价单 · 产品卡片」、报价详情页、核价管理页；报价侧回归；保存请求体；构建回归 | **只读片**：本 worktree 独立 Vite 端口；`/api/**` 全部由 Playwright `page.route` 用夹具应答，**不连后端、不连任何库**。夹具字段名 / 类型 / 空值形态必须按 `backend-audit.md` 字段样本表（`B-1` 产出）造；夹具命名前缀 `T261030_COST_` |
 
 **为什么 S-FLOW 用夹具应答而不连真实后端**（立项时实测，2026-10-30）：本机库 `cpq_db` 报价 / 客户 / 产品均为 0 条，造一张带核价模板的报价需先从零配齐客户、产品、报价模板与核价模板；共享开发库与测试服务器 `10.177.152.12` 从本机不可达（`curl` 5173 返回 000）。本任务后端零改动，页面只消费既有字段，夹具应答足以覆盖渲染与保存请求体；**真实后端数据的验证落在主线亲验**（见 §7）。
 
 由**一名测试工程师**依次认领两片：开工后与实现并行写用例 → 主线审用例 → S-UNIT 在 F-1 完成后执行 → S-FLOW 在 F-2 / F-3 / F-4 完成且 `B-1` 字段样本表落盘后执行。两片都不写全局状态，不设 `S-全局`。
+
+**A/B 基线（开工后补定 2026-10-30）**：基线 = 主工作区 `/home/joii/project/cpq/cpq-frontend`（`master@1ac02a1d`，不含本任务前端改动；只读使用，不改其中任何文件），Vite 临时端口 `5293`；候选 = 本 worktree，端口 `5292`。两边 `node_modules` 是同一目录（worktree 为软链），**候选与基线必须先后串行跑，不得同时起两个 Vite**，避免共享的 `node_modules/.vite` 预构建缓存被并发覆盖。
+
+**浏览器**：WSL 内原无 Chrome / Playwright 浏览器（2026-10-30 实查 `~/.cache/ms-playwright` 不存在；Chromium 所需系统库已在）。用户 2026-10-30 确认方案「在 WSL 装 Playwright 自带 Chromium」：主线执行 `npx playwright install chromium`（Playwright 1.59.1 拒认 Ubuntu 26.04，安装时加 `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`），落 `~/.cache/ms-playwright`（实测 631M：chromium-1217 / chromium_headless_shell-1217 / ffmpeg-1011），启动冒烟通过（Chromium 147.0.7727.15，运行时**不需要**该变量）。用例 config 一律用 Playwright 自带 Chromium，🚫 不设 `channel: 'chrome'`。回收：删除该目录即可。
+
+**AC-8 口径（主线 2026-10-30 依定稿原型裁定）**：原型 `02-核价只读与边界态.html` 写明「数值放不下时在本行内横向滚动，不拆行、不撑破页面」。故 AC-8「4 段都在卡片内」判的是**每一行的滚动容器**（`.qt-subtotal-costing-main` / `.qt-subtotal-costing-vat`）右缘在卡片内；行内金额节点可超出容器宽度，但该行必须可横向滚动（`scrollWidth > clientWidth`），页面整体不得横向溢出。
+
+**截图字体**：已按用户裁决复用 Windows 字体（`~/.config/fontconfig/fonts.conf`），截图中文可读。
 
 ## 2. AC 可追溯矩阵
 
@@ -23,8 +31,11 @@
 | T-06 | S-FLOW | AC-3 | Playwright E2E | 夹具 C 改币种 `CNY`、汇率 `1`，编辑页与详情页各一次：列数 1，文本 `1717.135540717 CNY` / `(VAT) 1940.36316101 CNY`，金额区 `USD` 计数 0；再以币种空串夹具复跑一次详情页，结果相同。 |
 | T-07 | S-FLOW | AC-4 | Playwright E2E | 详情页「核价单 · 产品卡片」：① 夹具无核价结构（字段形态按 `backend-audit.md`）→ 先断言卡片主体出现「暂无组件数据」；② 目标行核价值为生成失败标记 → 先断言主体出现「核价数据生成失败」。两者金额区列数 1、`-` / `(VAT) -`，不含 `888.123456789` / `1717.135540717` / `CNY` / `USD` / `¥`。切「报价单」视图，报价侧金额区首行为 `888.123456789 USD`。 |
 | T-08 | S-FLOW | AC-6 | Playwright E2E | 编辑页核价卡片记录 4 段 → 切「报价单」（断言 `888.123456789 USD` / `(VAT) 1003.579506172 USD`）→ 切回「核价单」→ 进详情页「核价单 · 产品卡片」记录 → 回编辑页刷新再记录；三次逐字等于 AC-1；每步「加载中」、红色错误提示、框架错误遮罩为 0。 |
-| T-09 | S-FLOW | AC-7 | Playwright E2E + 请求捕获 | ① 报价侧编辑 / 详情卡片 `.qt-subtotal-costing` 计数 0、`.qt-subtotal-quote-lines` 两行文本同 T-08；② 核价管理页打开夹具 C，核价金额区同 T-05，「核价单据总价」整行文本与 master 同夹具运行结果逐字相同；③ 核价 Excel 视图、比对视图金额文本做 master / 分支同夹具 A/B，差异为 0；④ 只改「关联项目」后保存，捕获请求体，键集合与 master 同操作逐字相同，不含 `vatInclusive` / `taxInclusive` / `foreign` / `display` 前缀键。 |
+| T-09 | S-FLOW | AC-7 | Playwright E2E + 请求捕获 | ① 报价侧编辑 / 详情卡片 `.qt-subtotal-costing` 计数 0、`.qt-subtotal-quote-lines` 两行文本同 T-08；② 核价管理页打开夹具 C，核价金额区同 T-05，「核价单据总价」整行文本与 master 同夹具运行结果逐字相同；③ 核价 Excel 视图、比对视图金额文本做 master / 分支同夹具 A/B，差异为 0；④ 只改「关联项目」后保存，捕获请求体，键集合与 master 同操作逐字相同，不含 `vatInclusive` / `taxInclusive` 键，且相对 master **新增**的键里不含 `foreign` / `display` 前缀键（主线 2026-10-30 审用例时认可此口径，避免误伤 master 已有键）；⑤ 同步改写 `e2e/task261028-vat-subtotal-flow.spec.ts` 的 `assertCostingFooterUnchanged`：BL-0332 的 AC-6「核价侧仍是产品小计 / 外币小计」已被本任务改写，该断言改为断言核价卡片出现 `.qt-subtotal-costing`、无「产品小计」「外币小计」字样。 |
 | T-10 | S-FLOW | AC-9 | 构建 + E2E | `npx tsc -b`、本任务定向 Vitest、`task261028-vat-subtotal.test.tsx` / `task261027RoleDisplayPrecision.test.ts` / `ComponentCell.readonlyPrecision.test.tsx`、`npm run build`、本任务 Playwright；记录命令、用例数、退出码、控制台 `error/warn` 计数、框架遮罩计数。 |
+| T-10 补充 | S-FLOW | AC-9 | **（2026-10-30 用户裁决）**控制台 `error/warn` 断言保持为 **0**，不改成「相对 master 不新增」；master 既有 5 类输出由 F-7 消除。基线（master）侧 console 只记录不断言。 |
+| T-10 补充② | S-FLOW | AC-9 | **（2026-10-30）**第五轮候选侧仅 T-09④ / T-11 因第 6 类静态 `message` 告警判红（用例本体全部通过）；用户裁决由 F-8 消除，F-8 完成后重跑这两条及全量 flow，断言不改。另：为亲验逐屏比对原型，补核价金额区**元素级**截图（编辑页 / 详情页，1280 与 390）。 |
+| T-11 | S-FLOW | AC-10 | Playwright E2E + 请求捕获 | **（开工后扩范围 2026-10-30）**夹具 C 编辑页只改「关联项目」→ 触发保存，路由里抓 `PUT /api/cpq/quotations/{id}/draft`，其响应按 `backend-audit.md` 的 `SaveDraftResponse` 字段清单造（**不含** `currency` / `exchangeRate*`，用例先断言响应体确无这两个键）→ 不刷新进入第 2 步「核价单 · 产品卡片」：先断言 `.qt-subtotal-costing-col` 恰好 2 个，4 段逐字等于 AC-1；切「报价单」首行为 `888.123456789 USD`；再刷新一次，两处不变。基线模式（master）作证伪：同一步骤下核价列数必须为 1 或报价首行币种为 `CNY`（证明用例能打红）。 |
 
 ## 3. 独立测试实现边界
 
@@ -40,7 +51,7 @@
 - 默认精确值同时由组件级（T-01 的 9 位分支）与真实页面（T-05）覆盖。
 - 编辑 / 详情 / 核价管理三个入口都有页面级用例（T-05~T-09）。
 - 「没有核价数据」既有组件级（T-04：`null` 输入的呈现）也有页面级（T-07：无核价结构、生成失败两种真实触发形态）。「加载组件结构...」是瞬时态，页面级难稳定截获 —— 其「传 `null`」判据由主线审 F-3 交付时逐行核对，并在 `test-report.md` 标为「代码审查覆盖，非用例覆盖」。
-- 每条 AC 恰好属于一片：S-UNIT = AC-2 / 5 / 8；S-FLOW = AC-1 / 3 / 4 / 6 / 7 / 9（AC-4 的组件级 T-04 与页面级 T-07 同在 S-FLOW；T-04 只依赖 F-1，可先于页面级用例执行）。
+- 每条 AC 恰好属于一片：S-UNIT = AC-2 / 5 / 8；S-FLOW = AC-1 / 3 / 4 / 6 / 7 / 9 / 10（AC-4 的组件级 T-04 与页面级 T-07 同在 S-FLOW；T-04 只依赖 F-1，可先于页面级用例执行）。
 
 ## 5. 反向与边界覆盖自检
 
@@ -65,8 +76,8 @@
 
 | 角色 | 认领 | 并行 / 解锁 |
 |---|---|---|
-| 前端工程师（`cpq-frontend`） | `F-1`~`F-5` | 开工后首批并行；只改前端实现，不改测试产出 |
+| 前端工程师（`cpq-frontend`） | `F-1`~`F-8`（F-6~F-8 为开工后扩范围） | 开工后首批并行；只改前端实现，不改测试产出 |
 | 后端工程师（`cpq-backend`） | `B-1` | 开工后首批并行；只读审核 + 字段样本表，不改后端文件 |
-| 测试工程师（`cpq-tester`）×1 | S-UNIT：AC-2 / 5 / 8；S-FLOW：AC-1 / 3 / 4 / 6 / 7 / 9 | 开工后并行写用例；主线审用例；S-UNIT 待 F-1 完成执行；S-FLOW 待 F-2~F-4 完成且 `backend-audit.md` 落盘后执行 |
+| 测试工程师（`cpq-tester`）×1 | S-UNIT：AC-2 / 5 / 8；S-FLOW：AC-1 / 3 / 4 / 6 / 7 / 9 / 10 | 开工后并行写用例；主线审用例；S-UNIT 待 F-1 完成执行；S-FLOW 待 F-2~F-4 完成且 `backend-audit.md` 落盘后执行 |
 
 预定分支 `feat/task-261030-costing-card-subtotal`；预定 worktree `/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal`。两者只在用户发出「开工」后创建。

@@ -1,0 +1,243 @@
+[2m[WebServer] [22m
+[2m[WebServer] [22m  [32m[1mVITE[22m v8.0.8[39m  [2mready in [0m[1m120[22m[2m[0m ms[22m
+[2m[WebServer] [22m
+[2m[WebServer] [22m  [32m➜[39m  [1mLocal[22m:   [36mhttp://127.0.0.1:[1m5293[22m/[39m
+
+Running 13 tests using 1 worker
+
+[T261030_COST_][identity] target=baseline status=200 module=false
+[T261030_COST_][CAL-1 quote] quote lines=["0 USD","(VAT) 0 USD"]
+[T261030_COST_][baseline console] ["error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.","error: In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <form> form \n\n  ...\n    <Card title={<Space>} extra={<Space>}>\n      <div ref={null} className=\"ant-card a...\" style={{}}>\n        <div>\n        <div className=\"ant-card-body\" style={{}}>\n          <Steps>\n          <InternalForm form={{...}} layout=\"vertical\" onValuesChange={function onValuesChange} initialValues={{...}}>\n            <DisabledContextProvider disabled={false}>\n              <FormProvider validateMessages={{default:\"F...\", ...}}>\n                <FormProvider$1 validateMessages={{default:\"F...\", ...}}>\n                  <NoFormStyle status={true}>\n                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>\n>                     <form\n>                       id={undefined}\n>                       style={{}}\n>                       className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr...\"\n>                       ref={{current:HTMLFormElement}}\n>                       onSubmit={function onSubmit}\n>                       onReset={function onReset}\n>                     >\n                        ...\n                          <NoFormStyle status={true}>\n                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>\n>                             <form\n>                               id={undefined}\n>                               style={{}}\n>                               className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n...\"\n>                               ref={{current:null}}\n>                               onSubmit={function onSubmit}\n>                               onReset={function onReset}\n>                             >\n          ...\n","error: <%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. form <form>"]
+  ✘   1 e2e/task261030-costing-subtotal-flow.spec.ts:342:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-1 夹具 C 在 master 上算出核价 1717.135540717、报价 888.123456789 USD 两行 (3.0s)
+[T261030_COST_][identity] target=baseline status=200 module=false
+[T261030_COST_][CAL-2 NO_COSTING_STRUCTURE] VAT 13% · 税率快照 利润: - T261030_COST_产品1 销售料号: T261030_COST_P1 暂无组件数据 产品小计 ¥ 888.123456789 外币小计 124.676903837 USD
+[T261030_COST_][CAL-2 COSTING_FAILED] VAT 13% · 税率快照 利润: - T261030_COST_产品1 销售料号: T261030_COST_P1 核价数据生成失败：核价渲染失败: T261030_COST_mock 产品小计 ¥ 0 外币小计 0 USD
+[T261030_COST_][baseline console] ["error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.","error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.","error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead."]
+  ✘   2 e2e/task261030-costing-subtotal-flow.spec.ts:353:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-2 无核价结构 / 生成失败夹具在 master 详情页复现原缺陷（核价卡片显示报价小计） (5.1s)
+[T261030_COST_][identity] target=baseline status=200 module=false
+  -   3 e2e/task261030-costing-subtotal-flow.spec.ts:369:1 › T-05 / AC-1 编辑页「核价单 · 产品卡片」默认布局、精确值与白色字
+[T261030_COST_][baseline console] ["error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.","error: In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <form> form \n\n  ...\n    <Card title={<Space>} extra={<Space>}>\n      <div ref={null} className=\"ant-card a...\" style={{}}>\n        <div>\n        <div className=\"ant-card-body\" style={{}}>\n          <Steps>\n          <InternalForm form={{...}} layout=\"vertical\" onValuesChange={function onValuesChange} initialValues={{...}}>\n            <DisabledContextProvider disabled={false}>\n              <FormProvider validateMessages={{default:\"F...\", ...}}>\n                <FormProvider$1 validateMessages={{default:\"F...\", ...}}>\n                  <NoFormStyle status={true}>\n                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>\n>                     <form\n>                       id={undefined}\n>                       style={{}}\n>                       className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr...\"\n>                       ref={{current:HTMLFormElement}}\n>                       onSubmit={function onSubmit}\n>                       onReset={function onReset}\n>                     >\n                        ...\n                          <NoFormStyle status={true}>\n                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>\n>                             <form\n>                               id={undefined}\n>                               style={{}}\n>                               className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n...\"\n>                               ref={{current:null}}\n>                               onSubmit={function onSubmit}\n>                               onReset={function onReset}\n>                             >\n          ...\n","error: <%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. form <form>","error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.","error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead."]
+  ✓   4 e2e/task261030-costing-subtotal-flow.spec.ts:393:1 › T-05b / AC-1 卡片头部、页签、表格与改造前一致（A/B） (4.8s)
+  -   5 e2e/task261030-costing-subtotal-flow.spec.ts:406:1 › T-06 / AC-3 报价币种 CNY（编辑页 + 详情页）与币种为空（详情页）只显示 CNY 一列
+  -   6 e2e/task261030-costing-subtotal-flow.spec.ts:427:1 › T-07 / AC-4 详情页没有核价数据（无核价结构 / 生成失败）金额区只显示 - / (VAT) -，报价侧照常
+  -   7 e2e/task261030-costing-subtotal-flow.spec.ts:459:1 › T-08 / AC-6 编辑 → 报价单 → 核价单 → 详情 → 编辑刷新，三次记录逐字等于 AC-1
+[T261030_COST_][baseline console] ["error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.","error: In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <form> form \n\n  ...\n    <Card title={<Space>} extra={<Space>}>\n      <div ref={null} className=\"ant-card a...\" style={{}}>\n        <div>\n        <div className=\"ant-card-body\" style={{}}>\n          <Steps>\n          <InternalForm form={{...}} layout=\"vertical\" onValuesChange={function onValuesChange} initialValues={{...}}>\n            <DisabledContextProvider disabled={false}>\n              <FormProvider validateMessages={{default:\"F...\", ...}}>\n                <FormProvider$1 validateMessages={{default:\"F...\", ...}}>\n                  <NoFormStyle status={true}>\n                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>\n>                     <form\n>                       id={undefined}\n>                       style={{}}\n>                       className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr...\"\n>                       ref={{current:HTMLFormElement}}\n>                       onSubmit={function onSubmit}\n>                       onReset={function onReset}\n>                     >\n                        ...\n                          <NoFormStyle status={true}>\n                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>\n>                             <form\n>                               id={undefined}\n>                               style={{}}\n>                               className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n...\"\n>                               ref={{current:null}}\n>                               onSubmit={function onSubmit}\n>                               onReset={function onReset}\n>                             >\n          ...\n","error: <%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. form <form>"]
+  ✘   8 e2e/task261030-costing-subtotal-flow.spec.ts:508:1 › T-09 ① / AC-7 报价侧编辑/详情卡片仍是 task-261028 两行，且无核价金额区与第二列 (32.7s)
+[T261030_COST_][identity] target=baseline status=200 module=false
+[T261030_COST_][baseline console] ["error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.","error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead."]
+  ✘   9 e2e/task261030-costing-subtotal-flow.spec.ts:523:1 › T-09 ② / AC-7 核价管理页：核价金额区同 AC-1；「核价单据总价」一行与改造前逐字相同（A/B） (22.2s)
+[T261030_COST_][identity] target=baseline status=200 module=false
+[T261030_COST_][T-09③a] excel=400 chars
+[T261030_COST_][baseline console] ["error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.","error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead."]
+  ✓  10 e2e/task261030-costing-subtotal-flow.spec.ts:550:1 › T-09 ③a / AC-7 详情页核价 Excel 视图的金额文本与改造前相同（A/B） (2.4s)
+[T261030_COST_][T-09③b] comparison=471 chars
+[T261030_COST_][baseline console] ["error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.","error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Spin] `tip` is deprecated. Please use `description` instead."]
+  ✓  11 e2e/task261030-costing-subtotal-flow.spec.ts:562:1 › T-09 ③b / AC-7 详情页比对视图的金额文本与改造前相同（A/B） (2.4s)
+[T261030_COST_][T-09④] 9 key paths
+[T261030_COST_][baseline console] ["error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.","error: In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <form> form \n\n  ...\n    <Card title={<Space>} extra={<Space>}>\n      <div ref={null} className=\"ant-card a...\" style={{}}>\n        <div>\n        <div className=\"ant-card-body\" style={{}}>\n          <Steps>\n          <InternalForm form={{...}} layout=\"vertical\" onValuesChange={function onValuesChange} initialValues={{...}}>\n            <DisabledContextProvider disabled={false}>\n              <FormProvider validateMessages={{default:\"F...\", ...}}>\n                <FormProvider$1 validateMessages={{default:\"F...\", ...}}>\n                  <NoFormStyle status={true}>\n                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>\n>                     <form\n>                       id={undefined}\n>                       style={{}}\n>                       className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr...\"\n>                       ref={{current:HTMLFormElement}}\n>                       onSubmit={function onSubmit}\n>                       onReset={function onReset}\n>                     >\n                        ...\n                          <NoFormStyle status={true}>\n                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>\n>                             <form\n>                               id={undefined}\n>                               style={{}}\n>                               className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n...\"\n>                               ref={{current:null}}\n>                               onSubmit={function onSubmit}\n>                               onReset={function onReset}\n>                             >\n          ...\n","error: <%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. form <form>","error: Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead."]
+  ✓  12 e2e/task261030-costing-subtotal-flow.spec.ts:575:1 › T-09 ④ / AC-7 只改「关联项目」后保存：请求体键集合与改造前相同，不含含税/外币派生字段（A/B） (2.6s)
+[T261030_COST_][baseline console] ["error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead.","error: Warning: [antd: Alert] `message` is deprecated. Please use `title` instead.","error: In HTML, %s cannot be a descendant of <%s>.\nThis will cause a hydration error.%s <form> form \n\n  ...\n    <Card title={<Space>} extra={<Space>}>\n      <div ref={null} className=\"ant-card a...\" style={{}}>\n        <div>\n        <div className=\"ant-card-body\" style={{}}>\n          <Steps>\n          <InternalForm form={{...}} layout=\"vertical\" onValuesChange={function onValuesChange} initialValues={{...}}>\n            <DisabledContextProvider disabled={false}>\n              <FormProvider validateMessages={{default:\"F...\", ...}}>\n                <FormProvider$1 validateMessages={{default:\"F...\", ...}}>\n                  <NoFormStyle status={true}>\n                    <Form$2 id={undefined} onValuesChange={function onValuesChange} initialValues={{...}} ...>\n>                     <form\n>                       id={undefined}\n>                       style={{}}\n>                       className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-not-overr...\"\n>                       ref={{current:HTMLFormElement}}\n>                       onSubmit={function onSubmit}\n>                       onReset={function onReset}\n>                     >\n                        ...\n                          <NoFormStyle status={true}>\n                            <Form$2 id={undefined} name={undefined} onFinishFailed={function onInternalFinishFailed} ...>\n>                             <form\n>                               id={undefined}\n>                               style={{}}\n>                               className=\"ant-form ant-form-vertical css-var-_r_0_ ant-form-css-var css-dev-only-do-n...\"\n>                               ref={{current:null}}\n>                               onSubmit={function onSubmit}\n>                               onReset={function onReset}\n>                             >\n          ...\n","error: <%s> cannot contain a nested %s.\nSee this log for the ancestor stack trace. form <form>","error: Warning: [antd: message] Static function can not consume context like dynamic theme. Please use 'App' component instead."]
+  ✘  13 e2e/task261030-costing-subtotal-flow.spec.ts:635:1 › T-11 / AC-10 只改「关联项目」保存后不刷新：核价仍 2 列同 AC-1、报价首行仍为 USD；刷新后不变 (32.9s)
+
+
+  1) e2e/task261030-costing-subtotal-flow.spec.ts:342:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-1 夹具 C 在 master 上算出核价 1717.135540717、报价 888.123456789 USD 两行 
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoEqual[2m([22m[32mexpected[39m[2m) // deep equality[22m
+
+    [32m- Expected  - 2[39m
+    [31m+ Received  + 2[39m
+
+    [2m  Array [[22m
+    [32m-   "888.123456789 USD",[39m
+    [32m-   "(VAT) 1003.579506172 USD",[39m
+    [31m+   "0 USD",[39m
+    [31m+   "(VAT) 0 USD",[39m
+    [2m  ][22m
+
+      343 |     await openEditStep2(page, IDS.quotationUsd);
+      344 |     await showCards(page, '报价单');
+    > 345 |     expect(await quoteLines(await targetCard(page), 'CAL-1 quote')).toEqual(QUOTE_LINES_USD);
+          |                                                                     ^
+      346 |     await showCards(page, '核价单');
+      347 |     const footer = (await (await targetCard(page)).innerText()).replace(/\s+/g, ' ');
+      348 |     console.info(`[T261030_COST_][CAL-1 master costing card] ${footer}`);
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:345:69
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-3da48-717、报价-888-123456789-USD-两行/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-3da48-717、报价-888-123456789-USD-两行/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-3da48-717、报价-888-123456789-USD-两行/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-3da48-717、报价-888-123456789-USD-两行/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) e2e/task261030-costing-subtotal-flow.spec.ts:353:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-2 无核价结构 / 生成失败夹具在 master 详情页复现原缺陷（核价卡片显示报价小计） 
+
+    Error: COSTING_FAILED: master 上必须复现「显示报价侧金额」（证明 T-07 有能力打红）
+
+    [2mexpect([22m[31mreceived[39m[2m).[22mtoContain[2m([22m[32mexpected[39m[2m) // indexOf[22m
+
+    Expected substring: [32m"888.123456789"[39m
+    Received string:    [31m"VAT 13% · 税率快照 利润: - T261030_COST_产品1 销售料号: T261030_COST_P1 核价数据生成失败：核价渲染失败: T261030_COST_mock 产品小计 ¥ 0 外币小计 0 USD"[39m
+
+      359 |       expect(text, `${variant}: 卡片主体必须是对应的无数据形态`)
+      360 |         .toContain(variant === 'NO_COSTING_STRUCTURE' ? '暂无组件数据' : '核价数据生成失败');
+    > 361 |       expect(text, `${variant}: master 上必须复现「显示报价侧金额」（证明 T-07 有能力打红）`).toContain('888.123456789');
+          |                                                                        ^
+      362 |       await shot(page, `CAL-2-master-${variant}`);
+      363 |     }
+      364 |   });
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:361:72
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-6c31d-master-详情页复现原缺陷（核价卡片显示报价小计）/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-6c31d-master-详情页复现原缺陷（核价卡片显示报价小计）/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-6c31d-master-详情页复现原缺陷（核价卡片显示报价小计）/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-6c31d-master-详情页复现原缺陷（核价卡片显示报价小计）/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) e2e/task261030-costing-subtotal-flow.spec.ts:508:1 › T-09 ① / AC-7 报价侧编辑/详情卡片仍是 task-261028 两行，且无核价金额区与第二列 
+
+    Error: T-09① edit: 「加载中」最终为 0
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  getByText('加载中')
+    Expected: [32m0[39m
+    Received: [31m1[39m
+    Timeout:  30000ms
+
+    Call log:
+    [2m  - T-09① edit: 「加载中」最终为 0 with timeout 30000ms[22m
+    [2m  - waiting for getByText('加载中')[22m
+    [2m    33 × locator resolved to 1 element[22m
+    [2m       - unexpected value "1"[22m
+
+
+      131 | /** AC-6：「加载中」、红色错误提示、框架错误遮罩最终均为 0。`allowErrorAlert` 仅给 AC-4 生成失败卡片用。 */
+      132 | async function assertSettled(page: Page, label: string, opts: { allowErrorAlert?: boolean } = {}): Promise<void> {
+    > 133 |   await expect(page.getByText('加载中', { exact: false }), `${label}: 「加载中」最终为 0`).toHaveCount(0, { timeout: 30_000 });
+          |                                                                                 ^
+      134 |   await expect(
+      135 |     page.locator('.ant-spin-spinning:visible, .ant-btn-loading:visible'),
+      136 |     `${label}: 可见加载指示最终为 0`,
+        at assertSettled (/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:133:81)
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:515:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-389fa--task-261028-两行，且无核价金额区与第二列/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-389fa--task-261028-两行，且无核价金额区与第二列/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-389fa--task-261028-两行，且无核价金额区与第二列/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-389fa--task-261028-两行，且无核价金额区与第二列/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) e2e/task261030-costing-subtotal-flow.spec.ts:523:1 › T-09 ② / AC-7 核价管理页：核价金额区同 AC-1；「核价单据总价」一行与改造前逐字相同（A/B） 
+
+    Error: 「核价单据总价」一行必须存在
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoBeVisible[2m([22m[2m)[22m failed
+
+    Locator: getByText(/核价单据总价/).first()
+    Expected: visible
+    Timeout: 20000ms
+    Error: element(s) not found
+
+    Call log:
+    [2m  - 「核价单据总价」一行必须存在 with timeout 20000ms[22m
+    [2m  - waiting for getByText(/核价单据总价/).first()[22m
+
+
+      533 |   // TODO(selector)：「核价单据总价」所在行的容器；先取包含该文字的最小元素的父元素文本。
+      534 |   const totalLabel = page.getByText(/核价单据总价/).first();
+    > 535 |   await expect(totalLabel, '「核价单据总价」一行必须存在').toBeVisible();
+          |                                              ^
+      536 |   const totalRow = await totalLabel.evaluate((el) => (el.parentElement?.textContent ?? el.textContent ?? '').replace(/\s+/g, ' ').trim());
+      537 |   console.info(`[T261030_COST_][T-09② total row] ${totalRow}`);
+      538 |   expect(totalRow.length, '「核价单据总价」行文本非空').toBeGreaterThan('核价单据总价'.length);
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:535:46
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-13fd5-C-1；「核价单据总价」一行与改造前逐字相同（A-B）/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-13fd5-C-1；「核价单据总价」一行与改造前逐字相同（A-B）/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-13fd5-C-1；「核价单据总价」一行与改造前逐字相同（A-B）/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-13fd5-C-1；「核价单据总价」一行与改造前逐字相同（A-B）/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) e2e/task261030-costing-subtotal-flow.spec.ts:635:1 › T-11 / AC-10 只改「关联项目」保存后不刷新：核价仍 2 列同 AC-1、报价首行仍为 USD；刷新后不变 
+
+    Error: T-11 after save costing: 「加载中」最终为 0
+
+    [2mexpect([22m[31mlocator[39m[2m).[22mtoHaveCount[2m([22m[32mexpected[39m[2m)[22m failed
+
+    Locator:  getByText('加载中')
+    Expected: [32m0[39m
+    Received: [31m1[39m
+    Timeout:  30000ms
+
+    Call log:
+    [2m  - T-11 after save costing: 「加载中」最终为 0 with timeout 30000ms[22m
+    [2m  - waiting for getByText('加载中')[22m
+    [2m    33 × locator resolved to 1 element[22m
+    [2m       - unexpected value "1"[22m
+
+
+      131 | /** AC-6：「加载中」、红色错误提示、框架错误遮罩最终均为 0。`allowErrorAlert` 仅给 AC-4 生成失败卡片用。 */
+      132 | async function assertSettled(page: Page, label: string, opts: { allowErrorAlert?: boolean } = {}): Promise<void> {
+    > 133 |   await expect(page.getByText('加载中', { exact: false }), `${label}: 「加载中」最终为 0`).toHaveCount(0, { timeout: 30_000 });
+          |                                                                                 ^
+      134 |   await expect(
+      135 |     page.locator('.ant-spin-spinning:visible, .ant-btn-loading:visible'),
+      136 |     `${label}: 可见加载指示最终为 0`,
+        at assertSettled (/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:133:81)
+        at readEditStep2Pair (/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:624:9)
+        at /home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/e2e/task261030-costing-subtotal-flow.spec.ts:667:21
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-145eb--2-列同-AC-1、报价首行仍为-USD；刷新后不变/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-145eb--2-列同-AC-1、报价首行仍为-USD；刷新后不变/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-145eb--2-列同-AC-1、报价首行仍为-USD；刷新后不变/trace.zip
+    Usage:
+
+        npx playwright show-trace ../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN3-20261030-143719/pw-flow-baseline/task261030-costing-subtota-145eb--2-列同-AC-1、报价首行仍为-USD；刷新后不变/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5 failed
+    e2e/task261030-costing-subtotal-flow.spec.ts:342:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-1 夹具 C 在 master 上算出核价 1717.135540717、报价 888.123456789 USD 两行 
+    e2e/task261030-costing-subtotal-flow.spec.ts:353:3 › 夹具自证（baseline 模式在 master 上跑） › CAL-2 无核价结构 / 生成失败夹具在 master 详情页复现原缺陷（核价卡片显示报价小计） 
+    e2e/task261030-costing-subtotal-flow.spec.ts:508:1 › T-09 ① / AC-7 报价侧编辑/详情卡片仍是 task-261028 两行，且无核价金额区与第二列 
+    e2e/task261030-costing-subtotal-flow.spec.ts:523:1 › T-09 ② / AC-7 核价管理页：核价金额区同 AC-1；「核价单据总价」一行与改造前逐字相同（A/B） 
+    e2e/task261030-costing-subtotal-flow.spec.ts:635:1 › T-11 / AC-10 只改「关联项目」保存后不刷新：核价仍 2 列同 AC-1、报价首行仍为 USD；刷新后不变 
+  4 skipped
+  4 passed (2.0m)

@@ -1,0 +1,16 @@
+{
+  "hits": {
+    "P-1 auth.me": 2,
+    "D-1/E-1 quotation.get": 2,
+    "P-2 notifications.unread": 2,
+    "D-3/E-8 globalVariables": 2,
+    "D-4/E-10/E-11 template.get": 1,
+    "D-2 template.gvBindings": 1,
+    "D-6/E-12 formulas.batchEvaluate": 3
+  },
+  "unhandled": [],
+  "console": [
+    "error: Warning: [antd: Space] `direction` is deprecated. Please use `orientation` instead.",
+    "error: Warning: [antd: Drawer] `width` is deprecated. Please use `size` instead."
+  ]
+}

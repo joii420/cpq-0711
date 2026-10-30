@@ -48,7 +48,7 @@ const RowKeyConflictDrawer: React.FC<Props> = ({ open, conflicts, onLocate, onCl
   ];
 
   return (
-    <Drawer title="提交校验未通过：行键重复" placement="right" width={720} open={open} onClose={onClose}>
+    <Drawer title="提交校验未通过：行键重复" placement="right" size={720} open={open} onClose={onClose}>
       <Alert
         type="error"
         showIcon

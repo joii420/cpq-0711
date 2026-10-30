@@ -53,7 +53,7 @@ const CopyQuotationDrawer: React.FC<Props> = ({ open, defaultTemplateId, onClose
     <Drawer
       title="复制报价单 — 选择模板"
       placement="right"
-      width={480}
+      size={480}
       open={open}
       onClose={onClose}
       destroyOnClose

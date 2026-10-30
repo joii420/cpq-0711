@@ -1,0 +1,18 @@
+worktree=/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend head=1ac02a1df7fc7fc743638112ce777ebf9a71b021 at=2026-10-30T15:13:20+08:00
+tsc                          exit=0  npx tsc -b
+vitest-task261030            exit=0  npx vitest run src/pages/quotation/task261030-costing-subtotal.test.tsx src/pages/quotation/task261030-costing-subtotal-flow.test.tsx
+vitest-regression            exit=0  npx vitest run src/pages/quotation/task261028-vat-subtotal.test.tsx src/utils/task261027RoleDisplayPrecision.test.ts src/pages/quotation/components/ComponentCell.readonlyPrecision.test.tsx
+build                        exit=0  npm run build
+playwright-unit              exit=0  npx playwright test -c e2e/task261030-costing-subtotal-unit.config.ts
+playwright-flow              exit=1  npx playwright test -c e2e/task261030-costing-subtotal-flow.config.ts
+EMPTY-OUTPUT tsc.txt
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m30 passed[39m[22m[90m (30)[39m
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m24 passed[39m[22m[90m (24)[39m
+  2 failed
+  9 passed (55.6s)
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+  6 passed (2.0s)
+evidence=/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend/../dev-docs/task-260801-公式计算精度优化/task-261030-核价卡片小计展示调整/证据/RUN5-20261030-151059/T-10

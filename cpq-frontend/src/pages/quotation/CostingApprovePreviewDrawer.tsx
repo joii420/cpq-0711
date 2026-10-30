@@ -495,7 +495,7 @@ const CostingApprovePreviewDrawer: React.FC<Props> = ({
     <Drawer
       title={titleNode}
       placement="right"
-      width={1200}
+      size={1200}
       open={open}
       onClose={onClose}
       destroyOnClose

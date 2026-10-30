@@ -30,10 +30,24 @@
 
 列顺序：DOM 中 CNY 列在前、外币列在后。
 
+### 3.1 共享呈现组件契约（前端实现与组件级测试的唯一对齐物，开工时补定 2026-10-30）
+
+| 项 | 约定 |
+|---|---|
+| 文件 | `cpq-frontend/src/pages/quotation/CostingSubtotalSummary.tsx` |
+| 导出 | 具名导出 `CostingSubtotalSummary`（同时 `export default`）；纯组件，无 hook / effect / 网络，可 `renderToStaticMarkup` |
+| props | `subtotal: DecimalValue \| null`（核价小计 CNY；`null` = 没有核价数据）· `currency?: string`（报价币种，`trim` 后为空视作 `CNY`）· `exchangeRate?: DecimalValue \| null`（缺失 / 非数字 / 0 时按 `1`）· `vatRateRatio?: DecimalString \| null` · `vatRate?: DecimalString \| null` · `maxDisplayDecimals: number` |
+| 输出 | 符合本节上表 DOM 定位点；文本口径见 `需求文档.md` ③ |
+| 外壳 | 组件**只**渲染 `.qt-subtotal-costing` 根节点，不含紫色渐变外壳；外壳由父级容器负责：编辑页 `div.qt-subtotal-bar-multi`，只读页 `div.qt-subtotal-bar.qt-subtotal-bar-multi`（两者均为现状，本任务不改）。组件级几何用例须按这两种真实容器各包一次 |
+| 文本节点 | 「金额 币种」在同一文本节点内、以一个半角空格分隔；`(VAT)` 前缀节点文本为 `"(VAT) "`（带尾空格），与报价侧同款 |
+
+`DecimalValue` / `DecimalString` 即 `cpq-frontend/src/utils/precision` 现有类型（`task-261028` 的 `QuotationVatSubtotal` 已用同名类型）。
+
 ## 4. 查询与保存契约不变
 
 - 报价查询、草稿保存、卡片编辑、重算、快照、对账与提交的请求 / 响应不携带核价含税或外币派生值，不新增 `vatInclusive*` / `taxInclusive*` / `foreign*` / `display*` 字段。
 - 销售角色看到的 4 位文本与其他角色的 9 位文本都不回写 API。
+- **（AC-10，开工后扩范围 2026-10-30）**`PUT /api/cpq/quotations/{id}/draft` 的请求 `SaveDraftRequest` 与响应 `SaveDraftResponse` 都**不含** `currency` / `exchangeRate` / `exchangeRateDate` / `exchangeRateSource` / `exchangeRateCapturedAt`（现状，本任务不改）。前端合并保存响应时这几个字段「响应缺失即沿用上一份」（F-6）。后端契约不变，不回写 `main-api.md`。
 
 ## 5. 错误、权限与降级
 
@@ -48,3 +62,4 @@
 | AC-4 | §2「没有核价数据」两项判定 + 报价行 `subtotal` 禁用 |
 | AC-6、AC-7 | §3 报价侧定位点不变；§4 保存契约不变 |
 | AC-9 | 不改 API；构建与回归由前端 / 测试完成 |
+| AC-10 | §4 保存响应不含币种 / 汇率，前端沿用 |

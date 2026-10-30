@@ -126,7 +126,7 @@ const QuotationPriceRevisionsDrawer: React.FC<QuotationPriceRevisionsDrawerProps
     <Drawer
       title="价格版本"
       placement="right"
-      width={1000}
+      size={1000}
       open={open}
       onClose={onClose}
       destroyOnClose

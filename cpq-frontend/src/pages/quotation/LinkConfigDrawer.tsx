@@ -293,7 +293,7 @@ export const LinkConfigDrawer: React.FC<LinkConfigDrawerProps> = ({ open, meta, 
     <Drawer
       title="新增比对列 · 连线配置"
       placement="right"
-      width={960}
+      size={960}
       styles={{ body: { padding: '20px 24px' } }}
       open={open}
       onClose={onClose}

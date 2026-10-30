@@ -970,7 +970,14 @@ const QuotationWizard: React.FC = () => {
       //   这几个字段 saveDraft 本来就不会改,响应缺失即沿用上一份(与上面 4 份结构快照同款守卫)。
       //   🚫 不含 expiryDate / finalDiscountRate 等**用户可编辑**字段 —— 它们清空成 null 是合法操作,
       //      沿用旧值会让页面显示一个用户刚删掉的值。
-      for (const k of ['status', 'quotationNumber', 'baseCurrency', 'snapshotCustomerName', 'customer']) {
+      //   task-261030 F-6(AC-10):币种与汇率五件套(currency / exchangeRate / exchangeRateDate /
+      //      exchangeRateSource / exchangeRateCapturedAt)同属此类 —— SaveDraftRequest 不含它们,保存改不了;
+      //      SaveDraftResponse 也不带回,整块覆盖曾把它们抹掉,卡片随即按 'CNY' / '1' 兜底(USD 单保存后
+      //      核价外币列消失、报价侧显示成 CNY)。沿用旧值不会掩盖真实变化。
+      for (const k of [
+        'status', 'quotationNumber', 'baseCurrency', 'snapshotCustomerName', 'customer',
+        'currency', 'exchangeRate', 'exchangeRateDate', 'exchangeRateSource', 'exchangeRateCapturedAt',
+      ]) {
         if (merged[k] == null && prev?.[k] != null) merged[k] = prev[k];
       }
       return merged;

@@ -144,7 +144,7 @@ const BomTreeAddLeafDrawer: React.FC<Props> = ({ item, quotationId, request, onC
     <Drawer
       title="新增叶子料号"
       placement="right"
-      width={480}
+      size={480}
       open={!!request}
       onClose={handleClose}
       destroyOnClose

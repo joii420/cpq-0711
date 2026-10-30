@@ -1,0 +1,2 @@
+1717.135540717 CNY (VAT) 1940.36316101 CNY 241.055611185 USD (VAT) 272.392840639 USD
+{"docScrollWidth":1280,"docClientWidth":1280,"cardWidth":914,"shellWidth":862}

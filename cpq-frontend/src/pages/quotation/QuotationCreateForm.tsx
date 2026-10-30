@@ -319,14 +319,14 @@ const QuotationCreateForm: React.FC<Props> = ({
   // 渲染模板匹配状态提示
   const renderMatchHint = () => {
     if (!value.categoryId) return null;
-    if (matching) return <Spin size="small" tip="匹配模板中…" />;
+    if (matching) return <Spin size="small" description="匹配模板中…" />;
     if (!matchResult) return null;
     if (matchResult.matchType === 'NONE') {
       return (
         <Alert
           type="warning"
           showIcon
-          message="未找到适用的报价模板"
+          title="未找到适用的报价模板"
           description="该客户在此产品分类下没有客户专属模板，系统中也没有通用模板。建议先去「模板配置」配置一个模板。"
           style={{ marginBottom: 12 }}
         />
@@ -340,7 +340,7 @@ const QuotationCreateForm: React.FC<Props> = ({
         <Alert
           type="success"
           showIcon
-          message={`客户专属 ${specificCount} 个 + 通用 ${generalCount} 个可选`}
+          title={`客户专属 ${specificCount} 个 + 通用 ${generalCount} 个可选`}
           description="客户专属模板已为该客户定制,优先推荐使用;通用模板作为补充选择。"
           style={{ marginBottom: 12 }}
         />
@@ -351,7 +351,7 @@ const QuotationCreateForm: React.FC<Props> = ({
       <Alert
         type={isFallback ? 'info' : 'success'}
         showIcon
-        message={isFallback ? '使用通用模板(无客户专属)' : '已匹配客户专属模板'}
+        title={isFallback ? '使用通用模板(无客户专属)' : '已匹配客户专属模板'}
         description={
           isFallback
             ? '该客户在此分类下未配置专属模板，系统将使用通用模板。'
@@ -363,7 +363,7 @@ const QuotationCreateForm: React.FC<Props> = ({
   };
 
   return (
-    <Form layout="vertical">
+    <Form layout="vertical" component={false}>
       {/* 客户（只读展示） */}
       <Form.Item label="客户">
         <Input value={customerName} disabled />
@@ -390,7 +390,7 @@ const QuotationCreateForm: React.FC<Props> = ({
         <Alert
           type="info"
           showIcon
-          message="报价单已生成 — 客户、产品分类、报价模板、核价模板 已锁定,不可修改"
+          title="报价单已生成 — 客户、产品分类、报价模板、核价模板 已锁定,不可修改"
           description="如需更换,请新建报价单。联系人、报价单名称等仍可编辑。"
           style={{ marginBottom: 12 }}
         />
@@ -513,7 +513,7 @@ const QuotationCreateForm: React.FC<Props> = ({
             <Alert
               type="warning"
               showIcon
-              message="未匹配到已发布的核价模板"
+              title="未匹配到已发布的核价模板"
               description="请前往「模板配置」配置核价模板。当前留空，报价单仍可创建。"
               style={{ marginBottom: 0 }}
             />

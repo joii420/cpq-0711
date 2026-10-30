@@ -229,18 +229,18 @@ const LinkedExcelView: React.FC<Props> = ({
   if (!linkedTemplateId) {
     return (
       <Alert type="info" showIcon
-        message={`本报价单未绑定${viewLabel || ''}模板`}
+        title={`本报价单未绑定${viewLabel || ''}模板`}
         description="无法定位关联 Excel 模板。请先确认报价单已选择模板。"
         style={{ margin: 16 }} />
     );
   }
   if (resolvedLoading) return <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div>;
-  if (resolvedError) return <Alert type="error" showIcon message={resolvedError} style={{ margin: 16 }} />;
+  if (resolvedError) return <Alert type="error" showIcon title={resolvedError} style={{ margin: 16 }} />;
   // v2 引用配置无 excelTemplate（列由后端解析），不走"未找到关联"分支。
   if (!excelTemplate && !isV2) {
     return (
       <Alert type="warning" showIcon
-        message="未找到关联的 Excel 模板"
+        title="未找到关联的 Excel 模板"
         description="请前往「Excel 模板配置」菜单：在某个 Excel 模板上把「关联模板」设为本报价单使用的模板，并发布；同一关联模板内可设一份默认。"
         style={{ margin: 16 }} />
     );
@@ -248,7 +248,7 @@ const LinkedExcelView: React.FC<Props> = ({
   if (parsedColumns.length === 0) {
     return (
       <Alert type="warning" showIcon
-        message={isV2 ? 'Excel 视图暂无可显示的列' : '关联的 Excel 模板未配置任何列'}
+        title={isV2 ? 'Excel 视图暂无可显示的列' : '关联的 Excel 模板未配置任何列'}
         description={isV2
           ? '请确认模板已「引用 EXCEL 组件」并配置列，且本报价单已添加产品行后重试。'
           : `Excel 模板「${excelTemplate?.name}」没有列定义。请前往「Excel 模板配置」打开它，添加列后重试。`}

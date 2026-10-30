@@ -126,7 +126,7 @@ const BomTreeDeleteConfirmDrawer: React.FC<Props> = ({ item, quotationId, reques
     <Drawer
       title={request?.mode === 'PRUNE' ? '确认剪枝（含子树）' : '确认删除该行'}
       placement="right"
-      width={720}
+      size={720}
       open={!!request}
       onClose={handleClose}
       destroyOnClose

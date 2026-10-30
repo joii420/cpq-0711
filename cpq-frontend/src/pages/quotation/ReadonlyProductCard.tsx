@@ -39,6 +39,7 @@ import {
 } from './readonlySnapshotRows';
 import { formatProfitBadgeText } from './profitBadge';
 import QuotationVatSubtotal from './QuotationVatSubtotal';
+import CostingSubtotalSummary from './CostingSubtotalSummary';
 import './quotation.css';
 
 /** Readonly product card for quotation detail page */
@@ -204,11 +205,6 @@ function buildFormulaCache(
   return caches;
 }
 
-// task-0801（AP-50：详情页须与编辑页 QuotationStep2.formatCurrency 同口径）：不再固定 2 位
-// toLocaleString，改走 formatNumber（DISPLAY_SCALE=6 兜底去尾零）。
-const formatCurrency = (val: DecimalValue | null | undefined, maxDisplayDecimals: number) =>
-  `¥ ${formatNumber(val ?? '0', { isComputed: true, maxDisplayDecimals }) ?? '0'}`;
-
 /** 单元格值格式化 — V197 同 QuotationStep2.formatPathValue 同款逻辑, 支持 JSONB 包装对象 */
 const formatCellValue = (v: any): string => {
   if (v == null || v === '') return '—';
@@ -271,7 +267,6 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
   const side = sideProp ?? 'QUOTE';
   const isCosting = side === 'COSTING';
   const quoteCurrency = currency || 'CNY';
-  const rate = exchangeRate != null && !toDecimal(exchangeRate).isZero() ? toDecimal(exchangeRate) : toDecimal('1');
   // task-0806 FR-1（阶段①，AP-50：与 QuotationStep2.tsx 的 isDraft 同一判定口径）：
   // DRAFT 单据的行内 FORMULA 单元格取值改走前端引擎；非 DRAFT 仍读快照 formulaResults。
   // 提到最前面统一算一次，供下方 useSnap（快照读取总闸）之外单独叠加到 snapFormula 的读分支——
@@ -546,7 +541,9 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
     customerId,
     compSubtotals,
   );
-  const foreignProductSubtotal = toDecimal(productSubtotal ?? '0').dividedBy(rate).toFixed(12);
+  // task-261030：与下方卡片主体分支同源（生成失败 / 加载组件结构... / 暂无组件数据）。
+  // 这三种状态下 computeProductSubtotal 会退回报价行 subtotal（报价侧小计），核价金额区不得显示它。
+  const costingHasNoData = cardValueFailed || loading || normalComponents.length === 0;
 
   // task-0712 只读核价树修复：activeDriverExpansion 提升到组件顶层作用域（与编辑页
   // QuotationStep2.tsx activeDriverExpansion / activeComponentBomTree 同源），
@@ -1222,23 +1219,16 @@ const ReadonlyProductCard: React.FC<ReadonlyProductCardProps> = ({
         <div className="qt-no-component-data">暂无组件数据</div>
       )}
 
-      {/* 卡片底部：报价侧一行；核价侧按裁决拆成 CNY / 外币两行。 */}
+      {/* 卡片底部：报价侧两行（task-261028）；核价侧按 task-261030 左右分币种、上下分含税。 */}
       <div className={isCosting ? 'qt-subtotal-bar qt-subtotal-bar-multi' : 'qt-subtotal-bar'}>
-        {isCosting ? <>
-          <div className="qt-subtotal-line qt-subtotal-total">
-            <span className="qt-subtotal-label">产品小计</span>
-            <span className="qt-subtotal-value">{formatCurrency(
-              productSubtotal ?? (lineItem.subtotal ?? '0'), maxDisplayDecimals,
-            )}</span>
-          </div>
-          <div className="qt-subtotal-line qt-subtotal-total">
-            <span className="qt-subtotal-label">外币小计</span>
-            <span className="qt-subtotal-value" style={{ color: '#1677ff' }}>{formatNumber(foreignProductSubtotal, {
-              isComputed: true,
-              maxDisplayDecimals,
-            }) ?? '0'} {quoteCurrency}</span>
-          </div>
-        </> : <QuotationVatSubtotal
+        {isCosting ? <CostingSubtotalSummary
+          subtotal={costingHasNoData ? null : productSubtotal}
+          currency={quoteCurrency}
+          exchangeRate={exchangeRate}
+          vatRateRatio={lineItem.vatRateRatio}
+          vatRate={lineItem.vatRate}
+          maxDisplayDecimals={maxDisplayDecimals}
+        /> : <QuotationVatSubtotal
           subtotal={productSubtotal ?? (lineItem.subtotal ?? '0')}
           currency={quoteCurrency}
           vatRateRatio={lineItem.vatRateRatio}

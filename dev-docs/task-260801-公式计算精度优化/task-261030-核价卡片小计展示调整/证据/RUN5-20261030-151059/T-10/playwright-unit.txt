@@ -1,0 +1,57 @@
+$ npx playwright test -c e2e/task261030-costing-subtotal-unit.config.ts
+[T261030_COST_][global-setup] vitest output:
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.4 [39m[90m/home/joii/project/cpq/.claude/worktrees/task-261030-costing-card-subtotal/cpq-frontend[39m
+
+[90mstdout[2m | src/pages/quotation/task261030-costing-subtotal.static.test.tsx[2m > [22m[2mtask261030-costing-subtotal / S-UNIT static pages for T-03[2m > [22m[2mT-03 / AC-8 writes long/default static pages inside both real shells
+[22m[39m[T261030_COST_][static] stylesheets=["pages/quotation/quotation.css"]
+[T261030_COST_][static] wrote long-edit.html (643 chars of markup)
+[T261030_COST_][static] wrote long-readonly.html (643 chars of markup)
+[T261030_COST_][static] wrote default-edit.html (594 chars of markup)
+[T261030_COST_][static] wrote default-readonly.html (594 chars of markup)
+
+ [32m✓[39m src/pages/quotation/task261030-costing-subtotal.static.test.tsx [2m([22m[2m1 test[22m[2m)[22m[32m 9[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[32m1 passed[39m[22m[90m (1)[39m
+[2m   Start at [22m 15:13:50
+[2m   Duration [22m 168ms[2m (transform 47ms, setup 0ms, import 77ms, tests 9ms, environment 0ms)[22m
+
+
+
+Running 6 tests using 1 worker
+
+[T261030_COST_][T-03 control] {"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]],"currencies":["CNY","USD"],"harnessStyled":true}
+  ✓  1 e2e/task261030-costing-subtotal-geometry.spec.ts:198:1 › T-03 harness 阳性对照（edit 外壳）：默认夹具静态页已上样式且为 2 列（1280 宽下并排、CNY 在左） (160ms)
+[T261030_COST_][T-03 edit desktop] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=1280/1280 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 edit desktop] col0.main 行 scroll=340/340 overflowX=auto overflowing=false
+[T261030_COST_][T-03 edit desktop] col0.vat 行 scroll=340/340 overflowX=auto overflowing=false
+[T261030_COST_][T-03 edit desktop] col1.main 行 scroll=364/364 overflowX=auto overflowing=false
+[T261030_COST_][T-03 edit desktop] col1.vat 行 scroll=364/364 overflowX=auto overflowing=false
+[T261030_COST_][T-03 desktop] layout=side-by-side
+  ✓  2 e2e/task261030-costing-subtotal-geometry.spec.ts:221:3 › T-03 / AC-8 长值 edit 外壳 1280×720 (192ms)
+[T261030_COST_][T-03 edit mobile] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=390/390 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 edit mobile] col0.main 行 scroll=283/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 edit mobile] col0.vat 行 scroll=289/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 edit mobile] col1.main 行 scroll=303/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 edit mobile] col1.vat 行 scroll=297/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 mobile] layout=stacked
+  ✓  3 e2e/task261030-costing-subtotal-geometry.spec.ts:221:3 › T-03 / AC-8 长值 edit 外壳 390×844 (141ms)
+[T261030_COST_][T-03 control] {"lines":[["1717.135540717 CNY","(VAT) 1940.36316101 CNY"],["241.055611185 USD","(VAT) 272.392840639 USD"]],"currencies":["CNY","USD"],"harnessStyled":true}
+  ✓  4 e2e/task261030-costing-subtotal-geometry.spec.ts:198:1 › T-03 harness 阳性对照（readonly 外壳）：默认夹具静态页已上样式且为 2 列（1280 宽下并排、CNY 在左） (111ms)
+[T261030_COST_][T-03 readonly desktop] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=1280/1280 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 readonly desktop] col0.main 行 scroll=340/340 overflowX=auto overflowing=false
+[T261030_COST_][T-03 readonly desktop] col0.vat 行 scroll=340/340 overflowX=auto overflowing=false
+[T261030_COST_][T-03 readonly desktop] col1.main 行 scroll=364/364 overflowX=auto overflowing=false
+[T261030_COST_][T-03 readonly desktop] col1.vat 行 scroll=364/364 overflowX=auto overflowing=false
+[T261030_COST_][T-03 desktop] layout=side-by-side
+  ✓  5 e2e/task261030-costing-subtotal-geometry.spec.ts:221:3 › T-03 / AC-8 长值 readonly 外壳 1280×720 (172ms)
+[T261030_COST_][T-03 readonly mobile] lines=[["99999999999999.999999999 CNY","(VAT) 199999999998999.999999998 CNY"],["199999999999999.999999998 USDT","(VAT) 399999999997999.999999996 USDT"]] scroll=390/390 whiteSpace=[["nowrap","nowrap"],["nowrap","nowrap"]]
+[T261030_COST_][T-03 readonly mobile] col0.main 行 scroll=283/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 readonly mobile] col0.vat 行 scroll=289/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 readonly mobile] col1.main 行 scroll=303/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 readonly mobile] col1.vat 行 scroll=297/270 overflowX=auto overflowing=true
+[T261030_COST_][T-03 mobile] layout=stacked
+  ✓  6 e2e/task261030-costing-subtotal-geometry.spec.ts:221:3 › T-03 / AC-8 长值 readonly 外壳 390×844 (126ms)
+
+  6 passed (2.0s)
